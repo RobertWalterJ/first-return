@@ -139,6 +139,7 @@ button{cursor:pointer}
     <div class="recbar" id="recbar" hidden><i id="recfill"></i></div>
     <div class="float">
       <button class="fb" id="photoView" aria-label="Line up with the photo" title="Line up with the photo" hidden><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4"/></svg></button>
+      <button class="fb" id="panBtn" aria-pressed="false" aria-label="Pan: drag slides the view" title="Pan: drag slides the view"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"/><path d="M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/></svg></button>
       <button class="fb" id="spin" aria-pressed="false" aria-label="Turntable" title="Turntable"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="15" rx="8" ry="3"/><path d="M12 12V4"/><path d="M16 7l-4-3-4 3"/></svg></button>
       <button class="fb" id="compareBtn" aria-label="Hold to see the original photo" title="Hold to see the original photo"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 5v14"/><path d="M12 9l9 6"/></svg></button>
     </div>
@@ -229,6 +230,7 @@ const S = {
   labels:[], placing:false,
   faces:[], anon:false, anonLevel:1, faceMask:null, facesFound:false,
   yaw:0, pitch:0, zoom:1, target:[0,0,-2], spin:false,
+  pivot:[0,0,-2], pan:[0,0,0], refDist:2, userMoved:false, panMode:false,   // where turning is centred, and how far the view has slid
   count:0, cpu:null, rng:[1,2], yr:[0,1], floor3d:null,
   dirtyBuild:true, dirtyDraw:true, lowDetail:false, recording:false,
   tab:null, ctrl:'dots', undo:[], shape:'photo'
@@ -697,6 +699,8 @@ function build(){
   if (R.live.length){ const all=R.live.reduce((a,c)=>[a[0]+c.sx, a[1]+(c.minY+c.maxY)/2*c.n, a[2]+c.sz, a[3]+c.n],[0,0,0,0]);
     S.target=[all[0]/all[3], all[1]/all[3], all[2]/all[3]]; }
   else S.target=[0,0,-zOf(0.5)];
+  S.refDist = Math.abs(S.target[2]) || 2;
+  if (!S.userMoved){ S.pivot = S.target.slice(); S.pan = [0,0,0]; }
   const ex = extents(R.out, R.n); S.rng=ex.rng; S.yr=ex.yr;
   uploadCloud(R.out, R.n);
   refreshLabelPositions(); renderPins();
@@ -833,22 +837,23 @@ function targets(w,h,key){
 // ---------------------------------------------------------------- camera
 function frameAspect(){ const pa = S.photo ? S.photo.w/S.photo.h : 1;
   return S.shape==='wide'?16/9:S.shape==='square'?1:S.shape==='tall'?9/16:pa; }
-function viewMatrix(yaw, pitch, zoom){
-  // yaw = pitch = 0 and zoom = 1 is exactly the photo's own viewpoint; turning pivots on the subject
-  const t = S.target, back = (zoom-1)*Math.abs(t[2]);
+function viewMatrix(yaw, pitch, zoom, pivot, pan){
+  // yaw = pitch = 0, zoom = 1 and no pan is exactly the photo's own viewpoint. Turning happens about
+  // the pivot; pan slides the camera in its own plane (and along its axis when the pivot is re-centred).
+  const t = pivot || S.target, pn = pan || [0,0,0], back = (zoom-1)*S.refDist;
   const R = M4.mul(M4.rx(pitch*Math.PI/180), M4.ry(yaw*Math.PI/180));
-  return M4.mul(M4.tr(0,0,-back), M4.mul(M4.tr(t[0],t[1],t[2]), M4.mul(R, M4.tr(-t[0],-t[1],-t[2]))));
+  return M4.mul(M4.tr(-pn[0],-pn[1],-back-pn[2]), M4.mul(M4.tr(t[0],t[1],t[2]), M4.mul(R, M4.tr(-t[0],-t[1],-t[2]))));
 }
+function viewTan(aspect){ const pa = S.photo ? S.photo.w/S.photo.h : 1; return aspect < pa ? S.tanV*pa/aspect : S.tanV; }
 function projMatrix(aspect){
   const pa = S.photo ? S.photo.w/S.photo.h : 1;
-  let tv = S.tanV; if (aspect < pa) tv = S.tanV*pa/aspect;       // tall frames keep the photo's width
-  return M4.persp(2*Math.atan(tv), aspect, 0.05, 400);
+  return M4.persp(2*Math.atan(viewTan(aspect)), aspect, 0.05, 400);   // tall frames keep the photo's width
 }
 
 // Render one cloud at W x H into the canvas (viewport origin bottom left).
 function renderView(W, H, o){
   const T = targets(W, H, o.targetKey||'main');
-  const aspect = W/H, V = viewMatrix(o.yaw, o.pitch, o.zoom), Pm = projMatrix(aspect);
+  const aspect = W/H, V = o.thumb ? viewMatrix(o.yaw, o.pitch, o.zoom, S.target, null) : viewMatrix(o.yaw, o.pitch, o.zoom, S.pivot, S.pan), Pm = projMatrix(aspect);
   if (!o.thumb){ S.V=V; S.P=Pm; }
   gl.bindFramebuffer(gl.FRAMEBUFFER, T.sF); gl.viewport(0,0,W,H);
   gl.clearColor(0.004,0.005,0.006,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
@@ -1140,7 +1145,7 @@ function isCustom(){ const L=LOOKS[look]; return LOOK_KEYS.some(k=>typeof L[k]==
 function applyLook(name, keepView){
   pushUndo(); look=name; const L=LOOKS[name];
   LOOK_KEYS.forEach(k=>{ P[k]=L[k]; });
-  if (!keepView){ S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; }
+  if (!keepView){ S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pan=[0,0,0]; S.userMoved=false; }
   S.dirtyBuild=true; commit(); viewButton();
 }
 
@@ -1160,6 +1165,7 @@ function modeText(){
   if (S.placing==='face') return 'Tap a face to cover it.';
   if (S.placing==='label') return 'Tap a person or thing to name it.';
   if (S.tab==='subject') return S.picks.length ? 'Tap more things to add them. Tap a ring to remove it.' : 'Tap what matters in the picture.';
+  if (S.panMode) return 'Drag to slide the view. Double tap a spot to centre on it.';
   return '';
 }
 
@@ -1312,7 +1318,7 @@ function pickPoint(cx, cy){
     const sx=(c[0]*.5+.5)*S.cssW, sy=(1-(c[1]*.5+.5))*S.cssH, dd=(sx-cx)**2+(sy-cy)**2; if (dd<best){best=dd; bi=i;} }
   if (bi<0 || best > 44*44) return null;
   const o=bi*10, uv=uvOf([out[o],out[o+1],out[o+2]]);
-  return {u:uv[0], v:uv[1], comp:S.cpuComp[bi]};
+  return {u:uv[0], v:uv[1], comp:S.cpuComp[bi], p:[out[o],out[o+1],out[o+2]]};
 }
 async function onTap(cx, cy){
   if (S.tab==='subject'){
@@ -1338,30 +1344,72 @@ async function onTap(cx, cy){
 }
 
 // ---------------------------------------------------------------- gestures
-const ptrs=new Map(); let pinch0=0, zoom0=1, moved=0, lastTap=0;
-cv.addEventListener('pointerdown', e=>{ cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); moved=0;
-  if (ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch0=Math.hypot(a.x-b.x,a.y-b.y); zoom0=S.zoom; } });
+// ---------------------------------------------------------------- panning and the centre of turning
+function rotOnly(){ return M4.mul(M4.rx(S.pitch*Math.PI/180), M4.ry(S.yaw*Math.PI/180)); }
+// Move the pivot to t without changing what is on screen, by folding the difference into the pan.
+function setPivotKeepingView(t){
+  const V = viewMatrix(S.yaw,S.pitch,S.zoom,S.pivot,S.pan), T=[V[12],V[13],V[14]], Rt = M4.xf(rotOnly(), t), back=(S.zoom-1)*S.refDist;
+  S.pan = [t[0]-Rt[0]-T[0], t[1]-Rt[1]-T[1], t[2]-Rt[2]-T[2]-back]; S.pivot = t.slice();
+}
+// After a slide, turn about whatever is now in the middle of the screen, at the old pivot's depth.
+function recentrePivot(){
+  const V = viewMatrix(S.yaw,S.pitch,S.zoom,S.pivot,S.pan), pv = M4.xf(V, S.pivot), T=[V[12],V[13],V[14]];
+  const c = [0-T[0], 0-T[1], pv[2]-T[2]], Rinv = M4.mul(M4.ry(-S.yaw*Math.PI/180), M4.rx(-S.pitch*Math.PI/180));
+  setPivotKeepingView(M4.xf(Rinv, c));
+}
+function panBy(dx, dy){
+  const V = viewMatrix(S.yaw,S.pitch,S.zoom,S.pivot,S.pan), depth = Math.max(0.2, -M4.xf(V, S.pivot)[2]);
+  const k = 2*viewTan(S.cssW/S.cssH)*depth/S.cssH;
+  S.pan[0] -= dx*k; S.pan[1] += dy*k; S.userMoved = true; S.dirtyDraw = true; didPan = true; viewButton();
+}
+let glide = 0;
+function centreOn(p){
+  // glide the tapped point to the middle of the screen, then make it the centre of turning
+  setPivotKeepingView(p);
+  const V = viewMatrix(S.yaw,S.pitch,S.zoom,S.pivot,S.pan), pv = M4.xf(V, p);
+  const from = S.pan.slice(), to = [S.pan[0]+pv[0], S.pan[1]+pv[1], S.pan[2]], job = ++glide;
+  S.userMoved = true; viewButton();
+  if (matchMedia('(prefers-reduced-motion:reduce)').matches){ S.pan = to; S.dirtyDraw = true; return; }
+  const t0 = performance.now();
+  const step = () => { if (job!==glide) return; const t = Math.min(1,(performance.now()-t0)/260), e = t*t*(3-2*t);
+    S.pan = from.map((f,i)=>f+(to[i]-f)*e); S.dirtyDraw = true; if (t<1) requestAnimationFrame(step); else S.pan = to; };
+  requestAnimationFrame(step);
+}
+
+const ptrs=new Map(); let pinch0=0, zoom0=1, moved=0, lastTap=0, mid0=null, panDrag=false, didPan=false;
+const midOf = () => { const v=[...ptrs.values()]; return [(v[0].x+v[1].x)/2, (v[0].y+v[1].y)/2]; };
+cv.addEventListener('contextmenu', e=>e.preventDefault());
+cv.addEventListener('pointerdown', e=>{ try { cv.setPointerCapture(e.pointerId); } catch(err){} if (!ptrs.size) didPan=false; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); moved=0; glide++;
+  // pan with the Pan button on, a right or middle mouse button, or Shift held
+  panDrag = S.panMode || e.button===1 || e.button===2 || e.shiftKey;
+  if (ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch0=Math.hypot(a.x-b.x,a.y-b.y); zoom0=S.zoom; mid0=midOf(); } });
 cv.addEventListener('pointermove', e=>{ const p=ptrs.get(e.pointerId); if(!p || S.recording) return;
   const dx=e.clientX-p.x, dy=e.clientY-p.y; p.x=e.clientX; p.y=e.clientY; moved+=Math.abs(dx)+Math.abs(dy);
   if (moved<8) return;
-  if (ptrs.size===1){ S.yaw+=dx*0.35; S.pitch=Math.max(-80,Math.min(80,S.pitch+dy*0.3)); }
-  else if (ptrs.size===2){ const [a,b]=[...ptrs.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y); if (pinch0) S.zoom=Math.max(0.35,Math.min(5,zoom0*pinch0/d)); }
+  if (ptrs.size===1){ if (panDrag) panBy(dx, dy); else { S.yaw+=dx*0.35; S.pitch=Math.max(-80,Math.min(80,S.pitch+dy*0.3)); } }
+  else if (ptrs.size===2){ const [a,b]=[...ptrs.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y); if (pinch0) S.zoom=Math.max(0.35,Math.min(5,zoom0*pinch0/d));
+    // two fingers moving together slide the view
+    const m=midOf(); if (mid0){ panBy(m[0]-mid0[0], m[1]-mid0[1]); } mid0=m; }
   S.dirtyDraw=true; viewButton(); });
 cv.addEventListener('pointerup', e=>{
-  if (ptrs.size===1 && moved<8){ const r=cv.getBoundingClientRect(), now=performance.now();
-    if (S.tab!=='subject' && !S.placing && now-lastTap<320){ resetView(); lastTap=0; }
-    else { lastTap=now; onTap(e.clientX-r.left, e.clientY-r.top); } }
-  ptrs.delete(e.pointerId); pinch0=0; });
-cv.addEventListener('pointercancel', e=>ptrs.delete(e.pointerId));
+  if (ptrs.size===1 && moved<8){ const r=cv.getBoundingClientRect(), now=performance.now(), cx=e.clientX-r.left, cy=e.clientY-r.top;
+    if (S.tab!=='subject' && !S.placing && now-lastTap<320){ const hit=pickPoint(cx,cy); if (hit) centreOn(hit.p); lastTap=0; }
+    else { lastTap=now; onTap(cx, cy); } }
+  ptrs.delete(e.pointerId); pinch0=0; mid0 = ptrs.size===2 ? midOf() : null;
+  if (didPan && ptrs.size===0){ recentrePivot(); didPan=false; } });
+cv.addEventListener('pointercancel', e=>{ ptrs.delete(e.pointerId); mid0=null; });
 cv.addEventListener('wheel', e=>{ e.preventDefault(); S.zoom=Math.max(0.35,Math.min(5,S.zoom*Math.exp(e.deltaY*0.001))); S.dirtyDraw=true; viewButton(); }, {passive:false});
-cv.addEventListener('keydown', e=>{ const k={ArrowLeft:[-4,0],ArrowRight:[4,0],ArrowUp:[0,-4],ArrowDown:[0,4]}[e.key]; if(!k) return; e.preventDefault(); S.yaw+=k[0]; S.pitch=Math.max(-80,Math.min(80,S.pitch+k[1])); S.dirtyDraw=true; viewButton(); });
+cv.addEventListener('keydown', e=>{ const k={ArrowLeft:[-4,0],ArrowRight:[4,0],ArrowUp:[0,-4],ArrowDown:[0,4]}[e.key]; if(!k) return; e.preventDefault();
+  if (e.shiftKey){ panBy(-k[0]*6, -k[1]*6); recentrePivot(); return; }
+  S.yaw+=k[0]; S.pitch=Math.max(-80,Math.min(80,S.pitch+k[1])); S.dirtyDraw=true; viewButton(); });
 
 // ---------------------------------------------------------------- picture buttons
-function viewButton(){ const L=LOOKS[look]; $('#photoView').hidden = !(Math.abs(S.yaw-L.yaw)>0.5||Math.abs(S.pitch-L.pitch)>0.5||Math.abs(S.zoom-L.zoom)>0.01); }
-function resetView(){ const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.spin=false; syncSpin(); S.dirtyDraw=true; viewButton(); }
+function viewButton(){ const L=LOOKS[look]; $('#photoView').hidden = !(S.userMoved||Math.abs(S.yaw-L.yaw)>0.5||Math.abs(S.pitch-L.pitch)>0.5||Math.abs(S.zoom-L.zoom)>0.01); }
+function resetView(){ const L=LOOKS[look]; glide++; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pivot=S.target.slice(); S.pan=[0,0,0]; S.userMoved=false; S.spin=false; syncSpin(); S.dirtyDraw=true; viewButton(); }
 function syncSpin(){ $('#spin').setAttribute('aria-pressed', S.spin); }
 $('#photoView').addEventListener('click', resetView);
 $('#spin').addEventListener('click', ()=>{ S.spin=!S.spin; syncSpin(); });
+$('#panBtn').addEventListener('click', ()=>{ S.panMode=!S.panMode; $('#panBtn').setAttribute('aria-pressed', S.panMode); banner(modeText()); });
 let compareURL=null;
 function invalidateCompare(){ if (compareURL){ URL.revokeObjectURL(compareURL); compareURL=null; } }
 async function showCompare(on){
@@ -1416,7 +1464,7 @@ async function setPhoto(ph, D, credit){
   S.plane=fitFloor(S.depth); S.ground=groundMask(S.depth, S.plane); S.shiftAuto=estimateShift(S.plane); S.autoCut=otsu(S.depth.d, S.ground);
   S.picks=[]; S.labels=[]; S.faces=[]; S.facesFound=false; S.faceMask=null;
   if (S.anon){ await findFaces(); applyAnon(); }
-  const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; viewButton();
+  const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pan=[0,0,0]; S.userMoved=false; viewButton();
   busy(null); layout(); S.dirtyBuild=true; renderTray(); queueThumbs();
 }
 $('#file').addEventListener('change', async e=>{
@@ -1467,7 +1515,7 @@ async function boot(){
       if (c0){ const Lb={u:c0.topUV[0], v:c0.topUV[1], lift:(c0.maxY-c0.minY)*0.07, text:'Standing Lincoln'}; Lb.pos=labelWorld(Lb); S.labels=[Lb]; S.dirtyDraw=true; if (S.tab==='people') renderTray(); } });
   } catch(err){ console.error(err); banner('Tap Open to choose a photo.'); }
 }
-window.__fr = {S, P, LOOKS, build, setTab, queueThumbs};   // for testing from the console
+window.__fr = {S, P, LOOKS, build, setTab, queueThumbs, draw};   // for testing from the console
 boot();
 
 })();

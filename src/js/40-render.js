@@ -123,22 +123,23 @@ function targets(w,h,key){
 // ---------------------------------------------------------------- camera
 function frameAspect(){ const pa = S.photo ? S.photo.w/S.photo.h : 1;
   return S.shape==='wide'?16/9:S.shape==='square'?1:S.shape==='tall'?9/16:pa; }
-function viewMatrix(yaw, pitch, zoom){
-  // yaw = pitch = 0 and zoom = 1 is exactly the photo's own viewpoint; turning pivots on the subject
-  const t = S.target, back = (zoom-1)*Math.abs(t[2]);
+function viewMatrix(yaw, pitch, zoom, pivot, pan){
+  // yaw = pitch = 0, zoom = 1 and no pan is exactly the photo's own viewpoint. Turning happens about
+  // the pivot; pan slides the camera in its own plane (and along its axis when the pivot is re-centred).
+  const t = pivot || S.target, pn = pan || [0,0,0], back = (zoom-1)*S.refDist;
   const R = M4.mul(M4.rx(pitch*Math.PI/180), M4.ry(yaw*Math.PI/180));
-  return M4.mul(M4.tr(0,0,-back), M4.mul(M4.tr(t[0],t[1],t[2]), M4.mul(R, M4.tr(-t[0],-t[1],-t[2]))));
+  return M4.mul(M4.tr(-pn[0],-pn[1],-back-pn[2]), M4.mul(M4.tr(t[0],t[1],t[2]), M4.mul(R, M4.tr(-t[0],-t[1],-t[2]))));
 }
+function viewTan(aspect){ const pa = S.photo ? S.photo.w/S.photo.h : 1; return aspect < pa ? S.tanV*pa/aspect : S.tanV; }
 function projMatrix(aspect){
   const pa = S.photo ? S.photo.w/S.photo.h : 1;
-  let tv = S.tanV; if (aspect < pa) tv = S.tanV*pa/aspect;       // tall frames keep the photo's width
-  return M4.persp(2*Math.atan(tv), aspect, 0.05, 400);
+  return M4.persp(2*Math.atan(viewTan(aspect)), aspect, 0.05, 400);   // tall frames keep the photo's width
 }
 
 // Render one cloud at W x H into the canvas (viewport origin bottom left).
 function renderView(W, H, o){
   const T = targets(W, H, o.targetKey||'main');
-  const aspect = W/H, V = viewMatrix(o.yaw, o.pitch, o.zoom), Pm = projMatrix(aspect);
+  const aspect = W/H, V = o.thumb ? viewMatrix(o.yaw, o.pitch, o.zoom, S.target, null) : viewMatrix(o.yaw, o.pitch, o.zoom, S.pivot, S.pan), Pm = projMatrix(aspect);
   if (!o.thumb){ S.V=V; S.P=Pm; }
   gl.bindFramebuffer(gl.FRAMEBUFFER, T.sF); gl.viewport(0,0,W,H);
   gl.clearColor(0.004,0.005,0.006,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);

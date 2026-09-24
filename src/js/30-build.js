@@ -150,6 +150,8 @@ function build(){
   if (R.live.length){ const all=R.live.reduce((a,c)=>[a[0]+c.sx, a[1]+(c.minY+c.maxY)/2*c.n, a[2]+c.sz, a[3]+c.n],[0,0,0,0]);
     S.target=[all[0]/all[3], all[1]/all[3], all[2]/all[3]]; }
   else S.target=[0,0,-zOf(0.5)];
+  S.refDist = Math.abs(S.target[2]) || 2;
+  if (!S.userMoved){ S.pivot = S.target.slice(); S.pan = [0,0,0]; }
   const ex = extents(R.out, R.n); S.rng=ex.rng; S.yr=ex.yr;
   uploadCloud(R.out, R.n);
   refreshLabelPositions(); renderPins();

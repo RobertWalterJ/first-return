@@ -10,7 +10,8 @@ Turns a photo into a lidar-style point cloud. Personal tool, not GPA. Live at ht
 - **Subject:** tap what matters. **Sharper outline** adds Magic Touch for cleaner edges.
 - **Move:** camera moves as an MP4 video.
 - **People:** hide faces (Light, Medium or Strong, or tap to cover a face) and add floating names.
-- Hold the split-square button on the picture to compare with the photo. Drag to turn the view, pinch to zoom, double tap to line it back up.
+- Hold the split-square button on the picture to compare with the photo.
+- **Moving around:** drag to turn, pinch or scroll to zoom. Drag with two fingers to slide the view; on a computer right-drag, middle-drag or Shift+drag (Shift+arrow keys too). The Pan button (four arrows) makes a one-finger drag slide instead of turn. After a slide, turning centres on whatever is in the middle of the screen. Double tap a spot to glide it to the centre and turn around it. The circular-arrow button lines everything back up with the photo.
 
 See `AUDIT.md` for the design, science and capabilities review behind this version.
 
