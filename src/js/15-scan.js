@@ -24,6 +24,9 @@ function parsePly(buf){
   const total = V.count, step = Math.max(1, Math.ceil(total/(MOBILE ? 1.5e6 : 4e6))), n = Math.ceil(total/step);
   const pos = new Float32Array(n*3), col = new Float32Array(n*3); let m = 0;
   const hasRGB = idx('red')>=0, hasDC = idx('f_dc_0')>=0, hasOp = idx('opacity')>=0;
+  // a Gaussian splat file also has sizes and rotations: keep those for the Photoreal look
+  const isSplat = hasOp && hasDC && idx('scale_0')>=0 && idx('rot_0')>=0, sp = isSplat ? newSplats(n) : null; let ms = 0;
+  const is0=idx('scale_0'), is1=idx('scale_1'), is2=idx('scale_2'), ir0=idx('rot_0'), ir1=idx('rot_1'), ir2=idx('rot_2'), ir3=idx('rot_3');
   const colScale = hasRGB ? (V.props[idx('red')].type.startsWith('u') && PLY_SIZE[V.props[idx('red')].type]===1 ? 1/255 : PLY_SIZE[V.props[idx('red')].type]===2 ? 1/65535 : 1) : 1;
   const ix=idx('x'), iy=idx('y'), iz=idx('z'), ir=idx('red'), ig=idx('green'), ib=idx('blue'), d0=idx('f_dc_0'), d1=idx('f_dc_1'), d2=idx('f_dc_2'), io=idx('opacity');
   const take = (get) => {
@@ -31,7 +34,12 @@ function parsePly(buf){
     let r=.75,g=.75,b=.75;
     if (hasRGB){ r=get(ir)*colScale; g=get(ig)*colScale; b=get(ib)*colScale; }
     else if (hasDC){ const C0=0.28209479; r=.5+C0*get(d0); g=.5+C0*get(d1); b=.5+C0*get(d2); }
-    if (hasOp && 1/(1+Math.exp(-get(io))) < 0.15) return;        // near-transparent splats are noise
+    const alpha = hasOp ? 1/(1+Math.exp(-get(io))) : 1;
+    if (sp && alpha >= 0.02){ const o=ms*3; sp.pos[o]=X; sp.pos[o+1]=Y; sp.pos[o+2]=Z;
+      sp.scl[o]=Math.exp(get(is0)); sp.scl[o+1]=Math.exp(get(is1)); sp.scl[o+2]=Math.exp(get(is2));
+      sp.rot[ms*4]=get(ir0); sp.rot[ms*4+1]=get(ir1); sp.rot[ms*4+2]=get(ir2); sp.rot[ms*4+3]=get(ir3);
+      sp.rgba[ms*4]=clamp255(Math.round(r*255)); sp.rgba[ms*4+1]=clamp255(Math.round(g*255)); sp.rgba[ms*4+2]=clamp255(Math.round(b*255)); sp.rgba[ms*4+3]=Math.round(alpha*255); ms++; }
+    if (alpha < 0.15) return;        // near-transparent splats are noise as dots
     pos[m*3]=X; pos[m*3+1]=Y; pos[m*3+2]=Z;
     col[m*3]=Math.min(1,Math.max(0,r)); col[m*3+1]=Math.min(1,Math.max(0,g)); col[m*3+2]=Math.min(1,Math.max(0,b)); m++;
   };
@@ -51,7 +59,9 @@ function parsePly(buf){
     const types = V.props.map(p=>p.type);
     for (let i=0;i<total;i+=step){ const base=off+i*stride; if (base+stride>buf.byteLength) break; take(k=>rd(base+offs[k], types[k])); }
   }
-  return {n:m, pos:pos.subarray(0,m*3), col:col.subarray(0,m*3), upHint, hasColour: hasRGB||hasDC};
+  // trained splats (3DGS, COLMAP cameras) are stored y-down unless the file says otherwise
+  if (sp && !upHint) upHint = '-y';
+  return {n:m, pos:pos.subarray(0,m*3), col:col.subarray(0,m*3), upHint, hasColour: hasRGB||hasDC, splats: sp ? trimSplats(sp, ms) : null};
 }
 
 // Find the floor with RANSAC and turn the scan so it is level, then centre it in front of the camera.
@@ -80,7 +90,7 @@ function levelScan(sc){
     const frac = side/Math.ceil((K-1)/7); if (Math.max(frac, 1-frac) < 0.9) continue;
     bestN=cnt*bonus; best={nn, d0, cnt};
   }
-  let up = sc.upHint==='z' ? [0,0,1] : [0,1,0], floorD = null;
+  let up = sc.upHint==='z' ? [0,0,1] : sc.upHint==='-y' ? [0,-1,0] : [0,1,0], floorD = null;
   if (best && best.cnt > K/2*0.12){ up = best.nn.slice(); floorD = best.d0;
     // the floor's normal should point to where most points are
     let above=0; for (let k=0;k<K;k+=3){ const p=S0[k]; if (up[0]*p[0]+up[1]*p[1]+up[2]*p[2] > floorD) above++; }
@@ -103,7 +113,7 @@ function levelScan(sc){
   for (let i=0;i<n;i++){ out[i*3]-=cx; out[i*3+1]-=cy; out[i*3+2]-=cz+D; }
   // how far off square the scan was (ignoring a plain Y-up / Z-up swap)
   const tilt = Math.acos(Math.min(1, Math.max(Math.abs(up[0]),Math.abs(up[1]),Math.abs(up[2]))))*180/Math.PI;
-  return {pos:out, floor, D, levelled: floorD!==null, tilt};
+  return {pos:out, floor, D, levelled: floorD!==null, tilt, Rm, shift:[cx, cy, cz+D]};
 }
 
 function buildScanCloud(cfg){
@@ -126,11 +136,18 @@ function buildScanCloud(cfg){
 async function openScan(file){
   const g = ++S.gen;
   busy('Reading the scan', null); await tick();
-  const sc = parsePly(await file.arrayBuffer()); if (g!==S.gen) return;
+  const name = (file.name||'').toLowerCase(), buf = await file.arrayBuffer();
+  let sc;
+  if (name.endsWith('.splat') || name.endsWith('.spz')){
+    const sp = name.endsWith('.spz') ? await parseSpz(buf) : parseSplatFile(buf), pts = pointsFromSplats(sp);
+    sc = {n:pts.n, pos:pts.pos, col:pts.col, upHint:null, hasColour:true, splats:sp};
+  } else sc = parsePly(buf);
+  if (g!==S.gen) return;
   if (sc.n < 100) throw new Error('only '+sc.n+' usable points in this file');
   busy('Levelling the scan', null); await tick();
   const L = levelScan(sc);
-  S.scan = {n:sc.n, pos:L.pos, col:sc.col, floor:L.floor};
+  if (sc.splats) levelSplats(sc.splats, L.Rm, L.shift);
+  S.scan = {n:sc.n, pos:L.pos, col:sc.col, floor:L.floor, splats:sc.splats};
   S.photo = S.photoSrc = {w:1600, h:1200, data:null}; S.photoCanvas = null; S.depth = S.depthSrc = null;
   S.tanV = S.tanVAuto = Math.tan(25*Math.PI/180); Object.assign(S.adv, {fov:null, ratio:null, roll:null, beams:null}); S.dbg='result'; showDebug(); S.planes=[]; S.plane=null; S.ground=null; S.compMap=null; S.comps=[];
   S.fovSource = 'a 3D scan'; S.credit = `3D scan: ${file.name}, ${sc.n.toLocaleString()} points${L.levelled ? `, levelled on its floor${L.tilt>=1 ? ` (it was ${L.tilt.toFixed(0)}° off)` : ''}` : ''}. It stayed on this device.`;
@@ -138,6 +155,7 @@ async function openScan(file){
   S.picks=[]; S.labels=[]; S.faces=[]; S.faceMask=null; S.rollAuto=0; S.roll=0; S.compCache=null;
   S.target=[0,0,-L.D]; S.refDist=L.D; S.pivot=S.target.slice(); S.pan=[0,0,0]; S.userMoved=false;
   if (!sc.hasColour && (P.colour==='photo'||P.colour==='muted')){ S.colourBeforeScan=P.colour; P.colour='height'; }
+  if (LOOKS[look].splat && !sc.splats){ look='void'; LOOK_KEYS.forEach(k=>{ P[k]=LOOKS.void[k]; }); }
   const Lk=LOOKS[look]; S.yaw=Lk.yaw; S.pitch=Math.max(Lk.pitch, 12); S.zoom=Lk.zoom;
   invalidateCompare(); $('#compareBtn').hidden = true;
   busy(null); banner(''); notice(`Opened a 3D scan: ${sc.n.toLocaleString()} points${L.levelled ? ', levelled on its floor' : ''}.`);

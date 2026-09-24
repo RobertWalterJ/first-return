@@ -150,7 +150,7 @@ body.scan .tab[data-tab="subject"], body.scan .tab[data-tab="people"]{opacity:.5
     <div class="brand">First <span>Return</span></div>
     <button class="tb primary" id="openBtn" aria-haspopup="true" aria-expanded="false" title="Open a photo or a 3D scan"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>Open</button>
     <input id="file" type="file" accept="image/*" hidden>
-    <input id="fileScan" type="file" accept=".ply" hidden>
+    <input id="fileScan" type="file" accept=".ply,.splat,.spz" hidden>
     <input id="fileLooks" type="file" accept=".json,application/json" hidden>
     <button class="tb" id="shapeBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M6 3v15h15"/><path d="M3 6h15v15"/></svg>Shape</button>
     <button class="tb" id="saveBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>Save</button>
@@ -256,6 +256,9 @@ const LOOKS = {
             pattern:'rings',   bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:24, pitch:14, zoom:2.2},
   survey:  {name:'Survey',  dots:2.85, size:1.2, glow:.55, bright:1.4, colour:'height', depth3d:2, backdrop:3,    floor:0,   edges:1.6, hidden:2,
             pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:18, pitch:10, zoom:1.6},
+  // the photo itself as Gaussian splats (or a splat scan as it was captured); the dot controls do not apply
+  real:    {name:'Photoreal', dots:3.05, size:1.9, glow:1, bright:2, colour:'photo', depth3d:2, backdrop:1.05, floor:0, edges:0, hidden:1,
+            pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:0, pitch:0, zoom:1, splat:1},
 };
 const LOOK_KEYS = ['dots','size','glow','bright','colour','depth3d','backdrop','floor','edges','hidden','pattern'];
 
@@ -634,6 +637,9 @@ function parsePly(buf){
   const total = V.count, step = Math.max(1, Math.ceil(total/(MOBILE ? 1.5e6 : 4e6))), n = Math.ceil(total/step);
   const pos = new Float32Array(n*3), col = new Float32Array(n*3); let m = 0;
   const hasRGB = idx('red')>=0, hasDC = idx('f_dc_0')>=0, hasOp = idx('opacity')>=0;
+  // a Gaussian splat file also has sizes and rotations: keep those for the Photoreal look
+  const isSplat = hasOp && hasDC && idx('scale_0')>=0 && idx('rot_0')>=0, sp = isSplat ? newSplats(n) : null; let ms = 0;
+  const is0=idx('scale_0'), is1=idx('scale_1'), is2=idx('scale_2'), ir0=idx('rot_0'), ir1=idx('rot_1'), ir2=idx('rot_2'), ir3=idx('rot_3');
   const colScale = hasRGB ? (V.props[idx('red')].type.startsWith('u') && PLY_SIZE[V.props[idx('red')].type]===1 ? 1/255 : PLY_SIZE[V.props[idx('red')].type]===2 ? 1/65535 : 1) : 1;
   const ix=idx('x'), iy=idx('y'), iz=idx('z'), ir=idx('red'), ig=idx('green'), ib=idx('blue'), d0=idx('f_dc_0'), d1=idx('f_dc_1'), d2=idx('f_dc_2'), io=idx('opacity');
   const take = (get) => {
@@ -641,7 +647,12 @@ function parsePly(buf){
     let r=.75,g=.75,b=.75;
     if (hasRGB){ r=get(ir)*colScale; g=get(ig)*colScale; b=get(ib)*colScale; }
     else if (hasDC){ const C0=0.28209479; r=.5+C0*get(d0); g=.5+C0*get(d1); b=.5+C0*get(d2); }
-    if (hasOp && 1/(1+Math.exp(-get(io))) < 0.15) return;        // near-transparent splats are noise
+    const alpha = hasOp ? 1/(1+Math.exp(-get(io))) : 1;
+    if (sp && alpha >= 0.02){ const o=ms*3; sp.pos[o]=X; sp.pos[o+1]=Y; sp.pos[o+2]=Z;
+      sp.scl[o]=Math.exp(get(is0)); sp.scl[o+1]=Math.exp(get(is1)); sp.scl[o+2]=Math.exp(get(is2));
+      sp.rot[ms*4]=get(ir0); sp.rot[ms*4+1]=get(ir1); sp.rot[ms*4+2]=get(ir2); sp.rot[ms*4+3]=get(ir3);
+      sp.rgba[ms*4]=clamp255(Math.round(r*255)); sp.rgba[ms*4+1]=clamp255(Math.round(g*255)); sp.rgba[ms*4+2]=clamp255(Math.round(b*255)); sp.rgba[ms*4+3]=Math.round(alpha*255); ms++; }
+    if (alpha < 0.15) return;        // near-transparent splats are noise as dots
     pos[m*3]=X; pos[m*3+1]=Y; pos[m*3+2]=Z;
     col[m*3]=Math.min(1,Math.max(0,r)); col[m*3+1]=Math.min(1,Math.max(0,g)); col[m*3+2]=Math.min(1,Math.max(0,b)); m++;
   };
@@ -661,7 +672,9 @@ function parsePly(buf){
     const types = V.props.map(p=>p.type);
     for (let i=0;i<total;i+=step){ const base=off+i*stride; if (base+stride>buf.byteLength) break; take(k=>rd(base+offs[k], types[k])); }
   }
-  return {n:m, pos:pos.subarray(0,m*3), col:col.subarray(0,m*3), upHint, hasColour: hasRGB||hasDC};
+  // trained splats (3DGS, COLMAP cameras) are stored y-down unless the file says otherwise
+  if (sp && !upHint) upHint = '-y';
+  return {n:m, pos:pos.subarray(0,m*3), col:col.subarray(0,m*3), upHint, hasColour: hasRGB||hasDC, splats: sp ? trimSplats(sp, ms) : null};
 }
 
 // Find the floor with RANSAC and turn the scan so it is level, then centre it in front of the camera.
@@ -690,7 +703,7 @@ function levelScan(sc){
     const frac = side/Math.ceil((K-1)/7); if (Math.max(frac, 1-frac) < 0.9) continue;
     bestN=cnt*bonus; best={nn, d0, cnt};
   }
-  let up = sc.upHint==='z' ? [0,0,1] : [0,1,0], floorD = null;
+  let up = sc.upHint==='z' ? [0,0,1] : sc.upHint==='-y' ? [0,-1,0] : [0,1,0], floorD = null;
   if (best && best.cnt > K/2*0.12){ up = best.nn.slice(); floorD = best.d0;
     // the floor's normal should point to where most points are
     let above=0; for (let k=0;k<K;k+=3){ const p=S0[k]; if (up[0]*p[0]+up[1]*p[1]+up[2]*p[2] > floorD) above++; }
@@ -713,7 +726,7 @@ function levelScan(sc){
   for (let i=0;i<n;i++){ out[i*3]-=cx; out[i*3+1]-=cy; out[i*3+2]-=cz+D; }
   // how far off square the scan was (ignoring a plain Y-up / Z-up swap)
   const tilt = Math.acos(Math.min(1, Math.max(Math.abs(up[0]),Math.abs(up[1]),Math.abs(up[2]))))*180/Math.PI;
-  return {pos:out, floor, D, levelled: floorD!==null, tilt};
+  return {pos:out, floor, D, levelled: floorD!==null, tilt, Rm, shift:[cx, cy, cz+D]};
 }
 
 function buildScanCloud(cfg){
@@ -736,11 +749,18 @@ function buildScanCloud(cfg){
 async function openScan(file){
   const g = ++S.gen;
   busy('Reading the scan', null); await tick();
-  const sc = parsePly(await file.arrayBuffer()); if (g!==S.gen) return;
+  const name = (file.name||'').toLowerCase(), buf = await file.arrayBuffer();
+  let sc;
+  if (name.endsWith('.splat') || name.endsWith('.spz')){
+    const sp = name.endsWith('.spz') ? await parseSpz(buf) : parseSplatFile(buf), pts = pointsFromSplats(sp);
+    sc = {n:pts.n, pos:pts.pos, col:pts.col, upHint:null, hasColour:true, splats:sp};
+  } else sc = parsePly(buf);
+  if (g!==S.gen) return;
   if (sc.n < 100) throw new Error('only '+sc.n+' usable points in this file');
   busy('Levelling the scan', null); await tick();
   const L = levelScan(sc);
-  S.scan = {n:sc.n, pos:L.pos, col:sc.col, floor:L.floor};
+  if (sc.splats) levelSplats(sc.splats, L.Rm, L.shift);
+  S.scan = {n:sc.n, pos:L.pos, col:sc.col, floor:L.floor, splats:sc.splats};
   S.photo = S.photoSrc = {w:1600, h:1200, data:null}; S.photoCanvas = null; S.depth = S.depthSrc = null;
   S.tanV = S.tanVAuto = Math.tan(25*Math.PI/180); Object.assign(S.adv, {fov:null, ratio:null, roll:null, beams:null}); S.dbg='result'; showDebug(); S.planes=[]; S.plane=null; S.ground=null; S.compMap=null; S.comps=[];
   S.fovSource = 'a 3D scan'; S.credit = `3D scan: ${file.name}, ${sc.n.toLocaleString()} points${L.levelled ? `, levelled on its floor${L.tilt>=1 ? ` (it was ${L.tilt.toFixed(0)}° off)` : ''}` : ''}. It stayed on this device.`;
@@ -748,6 +768,7 @@ async function openScan(file){
   S.picks=[]; S.labels=[]; S.faces=[]; S.faceMask=null; S.rollAuto=0; S.roll=0; S.compCache=null;
   S.target=[0,0,-L.D]; S.refDist=L.D; S.pivot=S.target.slice(); S.pan=[0,0,0]; S.userMoved=false;
   if (!sc.hasColour && (P.colour==='photo'||P.colour==='muted')){ S.colourBeforeScan=P.colour; P.colour='height'; }
+  if (LOOKS[look].splat && !sc.splats){ look='void'; LOOK_KEYS.forEach(k=>{ P[k]=LOOKS.void[k]; }); }
   const Lk=LOOKS[look]; S.yaw=Lk.yaw; S.pitch=Math.max(Lk.pitch, 12); S.zoom=Lk.zoom;
   invalidateCompare(); $('#compareBtn').hidden = true;
   busy(null); banner(''); notice(`Opened a 3D scan: ${sc.n.toLocaleString()} points${L.levelled ? ', levelled on its floor' : ''}.`);
@@ -1274,6 +1295,191 @@ function hiddenFill(map){
   return S.fillCache = {key, region, f, lo, hi, W, H};
 }
 
+// ---------------------------------------------------------------- Gaussian splats
+// A splat is a small soft ellipsoid: a centre, three sizes, a rotation, a colour and an opacity. Scans
+// from Scaniverse, Polycam, Luma, Brush or any 3DGS trainer are splats. Every photo is also turned
+// into one (a splat per depth pixel, lying flat on the surface it came from) for the Photoreal look.
+// Held as {n, pos (xyz), scl (sizes, linear), rot (w x y z), rgba (bytes, sRGB), flag (1 = hidden part)}.
+const SH_C0 = 0.28209479;
+function newSplats(n){ return {n, pos:new Float32Array(n*3), scl:new Float32Array(n*3), rot:new Float32Array(n*4), rgba:new Uint8Array(n*4), flag:new Uint8Array(n)}; }
+function trimSplats(s, m){ return {n:m, pos:s.pos.slice(0,m*3), scl:s.scl.slice(0,m*3), rot:s.rot.slice(0,m*4), rgba:s.rgba.slice(0,m*4), flag:s.flag.slice(0,m)}; }
+const clamp255 = v => v<0 ? 0 : v>255 ? 255 : v;
+// a point cloud for the dot looks, from the splats that are solid enough to have been "hit"
+function pointsFromSplats(sp){
+  const pos=new Float32Array(sp.n*3), col=new Float32Array(sp.n*3); let m=0;
+  for (let i=0;i<sp.n;i++){ if (sp.rgba[i*4+3] < 38) continue;
+    pos.set(sp.pos.subarray(i*3,i*3+3), m*3); col[m*3]=sp.rgba[i*4]/255; col[m*3+1]=sp.rgba[i*4+1]/255; col[m*3+2]=sp.rgba[i*4+2]/255; m++; }
+  return {pos:pos.subarray(0,m*3), col:col.subarray(0,m*3), n:m};
+}
+
+// .splat (antimatter15 layout, 32 bytes each): position 3 floats, sizes 3 floats, rgba bytes, rotation bytes (w x y z)
+function parseSplatFile(buf){
+  const n = Math.floor(buf.byteLength/32); if (n < 1) throw new Error('this .splat file is empty');
+  const step = Math.max(1, Math.ceil(n/(MOBILE ? 1.5e6 : 4e6))), f = new Float32Array(buf, 0, n*8), u = new Uint8Array(buf);
+  const sp = newSplats(Math.ceil(n/step)); let m=0;
+  for (let i=0;i<n;i+=step){ const o=i*8, b=i*32;
+    if (!isFinite(f[o]) || !isFinite(f[o+1]) || !isFinite(f[o+2])) continue;
+    sp.pos[m*3]=f[o]; sp.pos[m*3+1]=f[o+1]; sp.pos[m*3+2]=f[o+2];
+    sp.scl[m*3]=f[o+3]; sp.scl[m*3+1]=f[o+4]; sp.scl[m*3+2]=f[o+5];
+    sp.rgba.set(u.subarray(b+24,b+28), m*4);
+    for (let k=0;k<4;k++) sp.rot[m*4+k]=(u[b+28+k]-128)/128;
+    m++; }
+  return trimSplats(sp, m);
+}
+
+// .spz (Niantic, versions 1 to 3: gzip, a 16-byte header, then positions, alphas, colours, sizes, rotations).
+// Stored right, up, back, which is this app's own frame.
+async function parseSpz(buf){
+  let raw;
+  try { raw = new Uint8Array(await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer()); }
+  catch(e){ throw new Error('this .spz is a newer kind (version 4) that browsers cannot unpack yet. Export it as .ply instead'); }
+  const dv = new DataView(raw.buffer);
+  if (dv.getUint32(0,true)!==0x5053474e) throw new Error('this does not look like an .spz file');
+  const ver = dv.getUint32(4,true), n = dv.getUint32(8,true), shDeg = raw[12], fb = raw[13];
+  if (ver<1 || ver>3) throw new Error('unsupported .spz version '+ver);
+  const H=16, posB = ver===1 ? 6 : 9, rotB = ver>=3 ? 4 : 3;
+  const oPos=H, oA=oPos+n*posB, oC=oA+n, oS=oC+n*3, oR=oS+n*3;
+  if (oR + n*rotB > raw.length) throw new Error('this .spz file is cut short');
+  const sp = newSplats(n), scale = 1/(1<<fb), colScale = 0.15, halfF = new Float32Array(1), halfU = new Uint32Array(halfF.buffer);
+  const fromHalf = h => { const s=(h&0x8000)<<16, e=(h>>10)&31, m=h&1023; if (!e) return (s?-1:1)*m*5.960464477539063e-8;
+    if (e===31) return s?-Infinity:Infinity; halfU[0]= s | ((e-15+127)<<23) | (m<<13); return halfF[0]; };
+  for (let i=0;i<n;i++){
+    for (let k=0;k<3;k++){
+      if (ver===1) sp.pos[i*3+k] = fromHalf(raw[oPos+i*6+k*2] | raw[oPos+i*6+k*2+1]<<8);
+      else { const o=oPos+i*9+k*3; let v = raw[o] | raw[o+1]<<8 | raw[o+2]<<16; if (v & 0x800000) v |= 0xff000000; sp.pos[i*3+k] = v*scale; }
+      sp.scl[i*3+k] = Math.exp(raw[oS+i*3+k]/16 - 10);
+      sp.rgba[i*4+k] = clamp255(Math.round((0.5 + SH_C0*((raw[oC+i*3+k]/255 - 0.5)/colScale))*255));
+    }
+    sp.rgba[i*4+3] = raw[oA+i];
+    let x,y,z,w;
+    if (rotB===3){ x=raw[oR+i*3]/127.5-1; y=raw[oR+i*3+1]/127.5-1; z=raw[oR+i*3+2]/127.5-1; w=Math.sqrt(Math.max(0,1-x*x-y*y-z*z)); }
+    else { let c = (raw[oR+i*4] | raw[oR+i*4+1]<<8 | raw[oR+i*4+2]<<16 | raw[oR+i*4+3]<<24)>>>0; const big = c>>>30, q=[0,0,0,0]; let ss=0;
+      for (let k=3;k>=0;k--){ if (k===big) continue; const mag=c&511, neg=(c>>>9)&1; c>>>=10; q[k]=Math.SQRT1_2*mag/511*(neg?-1:1); ss+=q[k]*q[k]; }
+      q[big]=Math.sqrt(Math.max(0,1-ss)); [x,y,z,w]=q; }
+    sp.rot[i*4]=w; sp.rot[i*4+1]=x; sp.rot[i*4+2]=y; sp.rot[i*4+3]=z;
+  }
+  return sp;
+}
+
+// Level a splat scan with the same turn and shift as its points (levelScan), rotations included.
+function levelSplats(sp, Rm, shift){
+  // quaternion of the levelling turn
+  const tr=Rm[0]+Rm[4]+Rm[8]; let qw,qx,qy,qz;
+  if (tr>0){ const s=Math.sqrt(tr+1)*2; qw=s/4; qx=(Rm[7]-Rm[5])/s; qy=(Rm[2]-Rm[6])/s; qz=(Rm[3]-Rm[1])/s; }
+  else if (Rm[0]>Rm[4] && Rm[0]>Rm[8]){ const s=Math.sqrt(1+Rm[0]-Rm[4]-Rm[8])*2; qw=(Rm[7]-Rm[5])/s; qx=s/4; qy=(Rm[1]+Rm[3])/s; qz=(Rm[2]+Rm[6])/s; }
+  else if (Rm[4]>Rm[8]){ const s=Math.sqrt(1+Rm[4]-Rm[0]-Rm[8])*2; qw=(Rm[2]-Rm[6])/s; qx=(Rm[1]+Rm[3])/s; qy=s/4; qz=(Rm[5]+Rm[7])/s; }
+  else { const s=Math.sqrt(1+Rm[8]-Rm[0]-Rm[4])*2; qw=(Rm[3]-Rm[1])/s; qx=(Rm[2]+Rm[6])/s; qy=(Rm[5]+Rm[7])/s; qz=s/4; }
+  for (let i=0;i<sp.n;i++){ const x=sp.pos[i*3],y=sp.pos[i*3+1],z=sp.pos[i*3+2];
+    sp.pos[i*3]=Rm[0]*x+Rm[1]*y+Rm[2]*z-shift[0]; sp.pos[i*3+1]=Rm[3]*x+Rm[4]*y+Rm[5]*z-shift[1]; sp.pos[i*3+2]=Rm[6]*x+Rm[7]*y+Rm[8]*z-shift[2];
+    const w=sp.rot[i*4], a=sp.rot[i*4+1], b=sp.rot[i*4+2], c=sp.rot[i*4+3];
+    sp.rot[i*4]=qw*w-qx*a-qy*b-qz*c; sp.rot[i*4+1]=qw*a+qx*w+qy*c-qz*b; sp.rot[i*4+2]=qw*b-qx*c+qy*w+qz*a; sp.rot[i*4+3]=qw*c+qx*b-qy*a+qz*w; }
+}
+
+// ---------------------------------------------------------------- one photo as splats
+// One splat per depth pixel (every other one on a phone), lying flat on the surface it came from, as wide
+// as the gap to its neighbours so they join into a continuous skin. Across a depth cliff the splat faces
+// the camera instead of stretching into a sheet. Behind the subject, the filled-in background (hidden
+// parts) gets splats of its own, which only show once the view turns. Built from the anonymised photo
+// when faces are hidden.
+function photoSplatKey(){ return [S.depthVer, SHIFT.toFixed(5), S.tanV.toFixed(5), S.compCache ? S.compCache.key : '', val('hidden')>=0.5].join('|'); }
+function photoSplats(){
+  const D=S.depth, Ph=S.photo, W=D.w, H=D.h, cap = MOBILE ? 380000 : 1000000;
+  const step = W*H > cap ? Math.ceil(Math.sqrt(W*H/cap)) : 1, gw=Math.ceil(W/step), gh=Math.ceil(H/step);
+  // colour averaged over each splat's patch of the photo
+  const c1=document.createElement('canvas'); c1.width=Ph.w; c1.height=Ph.h; c1.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(Ph.data), Ph.w, Ph.h), 0, 0);
+  const c2=document.createElement('canvas'); c2.width=gw; c2.height=gh; const x2=c2.getContext('2d',{willReadFrequently:true}); x2.imageSmoothingQuality='high'; x2.drawImage(c1,0,0,gw,gh);
+  const px=x2.getImageData(0,0,gw,gh).data;
+  const map=S.compMap, fill = val('hidden')>=0.5 && map && map.some(v=>v>=0) ? hiddenFill(map) : null;
+  const sp = newSplats(gw*gh*(fill?2:1)); let m=0;
+  const Z = new Float32Array(W*H); for (let i=0;i<W*H;i++) Z[i]=zOf(D.d[i]);
+  const P = (x,y) => unproject((x+.5)/W, (y+.5)/H, Z[y*W+x]);
+  const K = 0.62, foot0 = 2*S.tanV/H*step;          // splat spread relative to spacing; footprint per unit depth
+  const put = (p, e1, e2, n, s1, s2, s3, r, g, b, a, flag) => {
+    const o=m*3; sp.pos[o]=p[0]; sp.pos[o+1]=p[1]; sp.pos[o+2]=p[2]; sp.scl[o]=s1; sp.scl[o+1]=s2; sp.scl[o+2]=s3;
+    // rotation from the frame (e1, e2, n) as columns
+    const m00=e1[0],m10=e1[1],m20=e1[2],m01=e2[0],m11=e2[1],m21=e2[2],m02=n[0],m12=n[1],m22=n[2], tr=m00+m11+m22; let w,x,y,z;
+    if (tr>0){ const s=Math.sqrt(tr+1)*2; w=s/4; x=(m21-m12)/s; y=(m02-m20)/s; z=(m10-m01)/s; }
+    else if (m00>m11 && m00>m22){ const s=Math.sqrt(1+m00-m11-m22)*2; w=(m21-m12)/s; x=s/4; y=(m01+m10)/s; z=(m02+m20)/s; }
+    else if (m11>m22){ const s=Math.sqrt(1+m11-m00-m22)*2; w=(m02-m20)/s; x=(m01+m10)/s; y=s/4; z=(m12+m21)/s; }
+    else { const s=Math.sqrt(1+m22-m00-m11)*2; w=(m10-m01)/s; x=(m02+m20)/s; y=(m12+m21)/s; z=s/4; }
+    sp.rot[m*4]=w; sp.rot[m*4+1]=x; sp.rot[m*4+2]=y; sp.rot[m*4+3]=z;
+    sp.rgba[m*4]=r; sp.rgba[m*4+1]=g; sp.rgba[m*4+2]=b; sp.rgba[m*4+3]=a; sp.flag[m]=flag; m++; };
+  const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]], len=a=>Math.hypot(a[0],a[1],a[2]), nrm=a=>{ const l=len(a)||1; return [a[0]/l,a[1]/l,a[2]/l]; },
+        cross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]], dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+  const facing = (p, z, r, g, b, a, flag, grow) => { const f=foot0*z*K*grow; put(p,[1,0,0],[0,1,0],[0,0,1],f,f,f*0.15,r,g,b,a,flag); };
+  for (let gy=0; gy<gh; gy++) for (let gx=0; gx<gw; gx++){
+    const x=Math.min(W-1,gx*step), y=Math.min(H-1,gy*step), i=y*W+x, z=Z[i], p=P(x,y);
+    const ci=(gy*gw+gx)*4, r=px[ci], g=px[ci+1], b=px[ci+2];
+    // one-sided differences, taking the side that stays on the same surface
+    const xr=Math.min(W-1,x+step), xl=Math.max(0,x-step), yd=Math.min(H-1,y+step), yu=Math.max(0,y-step);
+    const zr=Math.abs(Z[y*W+xr]-z), zl=Math.abs(z-Z[y*W+xl]), zd=Math.abs(Z[yd*W+x]-z), zu=Math.abs(z-Z[yu*W+x]);
+    const tx = zr<=zl ? sub(P(xr,y),p) : sub(p,P(xl,y)), ty = zd<=zu ? sub(P(x,yd),p) : sub(p,P(x,yu));
+    const cliff = Math.min(zr,zl) > 0.05*z || Math.min(zd,zu) > 0.05*z || (xr===x && xl===x);
+    if (cliff){
+      // A depth map blends a near edge into what lies behind over a few pixels, and splats left at those
+      // in-between depths float in mid-air as stripes once the view turns. Snap each one to the nearer
+      // or the farther surface around it, whichever it is closer to.
+      let zmin=z, zmax=z;
+      for (let k=1;k<=3;k++){ for (const [xx,yy] of [[x+k*step,y],[x-k*step,y],[x,y+k*step],[x,y-k*step]]){
+        if (xx<0||yy<0||xx>=W||yy>=H) continue; const zz=Z[yy*W+xx]; if (zz<zmin) zmin=zz; if (zz>zmax) zmax=zz; } }
+      const zs = z-zmin < zmax-z ? zmin : zmax;
+      facing(unproject((x+.5)/W,(y+.5)/H,zs), zs, r, g, b, 255, 0, 1); continue;
+    }
+    const e1=nrm(tx), n=nrm(cross(tx,ty)), e2=cross(n,e1), lx=len(tx), ly=Math.max(Math.abs(dot(ty,e2)), 0.35*len(ty));
+    // very steep surfaces (seen nearly edge on) are capped, so a smeared edge does not become a curtain
+    const cap2 = foot0*z*6;
+    // some thickness, so a surface seen nearly edge on still closes up instead of showing gaps
+    put(p, e1, e2, n, Math.min(lx,cap2)*K, Math.min(ly,cap2)*K, Math.min(lx,ly)*0.3, r, g, b, 255, 0);
+  }
+  if (fill){
+    for (let gy=0; gy<gh; gy++) for (let gx=0; gx<gw; gx++){
+      const x=Math.min(W-1,gx*step), y=Math.min(H-1,gy*step), i=y*W+x; if (!fill.region[i]) continue;
+      const zF=zOf(fill.f[i*4]); if (zF < Z[i]*1.03) continue;
+      const p=unproject((x+.5)/W,(y+.5)/H,zF);
+      facing(p, zF, clamp255(fill.f[i*4+1]*255), clamp255(fill.f[i*4+2]*255), clamp255(fill.f[i*4+3]*255), 255, 1, 1.25);
+    }
+  }
+  return trimSplats(sp, m);
+}
+// The splats to draw now: the scan's own, or this photo's (made again only when what they depend on changed).
+function currentSplats(){
+  if (S.scan) return S.scan.splats || null;
+  if (!S.photo || !S.depth || !S.compMap) return null;
+  const key = photoSplatKey();
+  if (!S.photoSplats || S.photoSplats.key!==key){ S.photoSplats = photoSplats(); S.photoSplats.key = key; S.photoSplats.ver = (S.splatVer = (S.splatVer||0)+1); }
+  return S.photoSplats;
+}
+function hasSplats(){ return S.scan ? !!S.scan.splats : !!(S.photo && S.depth); }
+
+// ---------------------------------------------------------------- saving splats
+// Standard 3DGS .ply (position, base colour, opacity, log sizes, rotation), turned into the usual
+// y-down, z-forward frame so SuperSplat, Polycam and other splat viewers show it the right way up.
+async function saveSplatPly(){
+  const sp = currentSplats(); if (!sp || !sp.n) return;
+  busy('Making the splat file', null); await tick();
+  const props=['x','y','z','f_dc_0','f_dc_1','f_dc_2','opacity','scale_0','scale_1','scale_2','rot_0','rot_1','rot_2','rot_3'];
+  // the floats that follow must start on a 4-byte boundary, so the comment is padded to fit
+  let pad = '', head;
+  for (;;){ head = `ply\nformat binary_little_endian 1.0\ncomment First Return splats${pad}\nelement vertex ${sp.n}\n${props.map(p=>'property float '+p).join('\n')}\nend_header\n`;
+    if (new TextEncoder().encode(head).length % 4 === 0) break; pad += ' '; }
+  const hb = new TextEncoder().encode(head), buf = new ArrayBuffer(hb.length + sp.n*props.length*4); new Uint8Array(buf).set(hb);
+  const f = new Float32Array(buf, hb.length);
+  let k=0;
+  for (let i=0;i<sp.n;i++){
+    f[k++]=sp.pos[i*3]; f[k++]=-sp.pos[i*3+1]; f[k++]=-sp.pos[i*3+2];
+    for (let c=0;c<3;c++) f[k++]=(sp.rgba[i*4+c]/255-0.5)/SH_C0;
+    const a=Math.min(0.995, Math.max(0.005, sp.rgba[i*4+3]/255)); f[k++]=Math.log(a/(1-a));
+    for (let c=0;c<3;c++) f[k++]=Math.log(Math.max(1e-7, sp.scl[i*3+c]));
+    // a half turn about x (y and z flipped) applied to the rotation too
+    const w=sp.rot[i*4], x=sp.rot[i*4+1], y=sp.rot[i*4+2], z=sp.rot[i*4+3];
+    f[k++]=-x; f[k++]=w; f[k++]=-z; f[k++]=y;
+  }
+  const blob = new Blob([buf], {type:'application/octet-stream'}), url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='first-return-splats.ply'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 30000); busy(null);
+  notice(`Saved first-return-splats.ply, ${sp.n.toLocaleString()} splats, ${(buf.byteLength/1e6).toFixed(0)} MB. It opens in SuperSplat and other splat viewers.`);
+}
+
 // ---------------------------------------------------------------- WebGL2 renderer
 // Linear-light colour into a half-float target when the GPU allows it, eye-dome lighting for
 // lidar-viewer edges, a two-width bloom, then ACES tone mapping. Survives WebGL context loss.
@@ -1282,8 +1488,9 @@ let gl = null, G = null;          // G holds every GL object so it can be rebuil
 
 const PTS_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aCol; layout(location=2) in vec4 aMeta;
-uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight, uOrbit; uniform int uMode;
+uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight, uOrbit, uFxT, uTime; uniform int uMode, uFx;
 uniform vec2 uR, uY;
+float hsh(float n){ return fract(sin(n*12.9898+4.1)*43758.5453); }
 out vec3 vCol; flat out float vRound;
 vec3 turbo(float x){ const vec4 kR=vec4(0.13572138,4.61539260,-42.66032258,132.13108234); const vec2 kR2=vec2(-152.94239396,59.28637943);
  const vec4 kG=vec4(0.09140261,2.19418839,4.84296658,-14.18503333); const vec2 kG2=vec2(4.27729857,2.82956604);
@@ -1294,10 +1501,15 @@ vec3 heat(float t){ t=clamp(t,0.,1.);
  return t<.25?mix(a,b,t/.25):t<.5?mix(b,c,(t-.25)/.25):t<.8?mix(c,d,(t-.5)/.3):mix(d,e,(t-.8)/.2); }
 vec3 lin(vec3 c){ return pow(max(c,0.),vec3(2.2)); }
 void main(){
-  vec4 vp = uView*vec4(aPos,1.); gl_Position = uProj*vp;
-  float dist = max(-vp.z, 1e-3);
   float kind=aMeta.x, rnd=aMeta.y, lum=aMeta.z, inc=aMeta.w;
   float r = clamp((length(aPos)-uR.x)/(uR.y-uR.x),0.,1.);
+  // video effects: 2 decay (dots let go and drift off), 3 glitch (bands slip sideways)
+  vec3 P0 = aPos; float fade = 1.;
+  if(uFx==2){ float st=rnd*.7, k=clamp((uFxT-st)/(1.-st),0.,1.); vec3 dir=normalize(vec3(hsh(rnd*91.)-.5, hsh(rnd*37.)-.25, hsh(rnd*53.)-.5));
+    P0 += dir*k*k*length(P0)*.3; fade = 1.-smoothstep(.3,.9,k); }
+  if(uFx==3){ float band=floor(P0.y*18.+floor(uTime*7.)*3.), on=step(.9, hsh(band+floor(uTime*11.))); P0.x += on*(hsh(band*3.1)-.5)*(uR.y-uR.x)*.08; }
+  vec4 vp = uView*vec4(P0,1.); gl_Position = uProj*vp;
+  float dist = max(-vp.z, 1e-3);
   vec3 c = lin(aCol); float g = dot(c, vec3(.2126,.7152,.0722)); float lumL = pow(lum,2.2);
   if(uLight>0. && kind<1.5){
     // squeeze the brightness range toward a mid grey, keeping each dot's own hue and some texture
@@ -1324,6 +1536,11 @@ void main(){
     c *= mix(1., .16, uFocus);
   }
   if(hiddenPart>.5){ if(uOrbit<.02){ gl_Position=vec4(2.,2.,2.,1.); } c *= uOrbit; }
+  // 1 sweep: only what the beam has reached; 4 resolve: only what it has not yet turned into the photo
+  if(uFx==1 || uFx==4){ float edge=uFxT*1.15, e=1.-smoothstep(0.,.035,abs(r-edge));
+    if((uFx==1 && r>edge) || (uFx==4 && r<edge)) gl_Position=vec4(2.,2.,2.,1.);
+    c = mix(c, lin(vec3(.55,1.,.9))*2.2*uExposure, e*.85); }
+  c *= fade;
   // points smaller than a pixel still draw one pixel, so dim them to keep brightness honest
   if(size < 1.) c *= size*size;
   vCol = c; vRound = (size >= 3. ? round_ : 0.);
@@ -1344,12 +1561,20 @@ void main(){ vec3 s=texture(uTex,vUv).rgb*.227;
  s+=(texture(uTex,vUv+uDir*1.385).rgb+texture(uTex,vUv-uDir*1.385).rgb)*.316;
  s+=(texture(uTex,vUv+uDir*3.231).rgb+texture(uTex,vUv-uDir*3.231).rgb)*.070; o=vec4(s,1.); }`;
 const COMP_FS = `#version 300 es
-precision highp float; in vec2 vUv; uniform sampler2D uScene, uGlowA, uGlowB, uDepth; uniform float uGlow, uEdl, uNear, uFar; uniform vec2 uRes; out vec4 o;
+precision highp float; in vec2 vUv; uniform sampler2D uScene, uGlowA, uGlowB, uDepth; uniform float uGlow, uEdl, uNear, uFar, uRaw, uGlitch, uTime; uniform vec2 uRes; out vec4 o;
 float h(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
 float lz(float d){ float z=(2.*uNear*uFar)/(uFar+uNear-(d*2.-1.)*(uFar-uNear)); return log2(z); }
 vec3 aces(vec3 x){ return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.); }
 void main(){
-  vec3 c=texture(uScene,vUv).rgb;
+  vec2 uv=vUv; vec3 c;
+  if(uGlitch>0.){
+    // glitch: horizontal bands tear sideways, the colour channels split, and blocks drop out now and then
+    float t=floor(uTime*10.), band=floor(vUv.y*28.), on=step(1.-.4*uGlitch, h(vec2(band,t)));
+    uv.x += on*(h(vec2(band*1.7,t))-.5)*.09*uGlitch;
+    float sp=.007*uGlitch*(.4+on);
+    c=vec3(texture(uScene,uv+vec2(sp,0.)).r, texture(uScene,uv).g, texture(uScene,uv-vec2(sp,0.)).b);
+    vec2 blk=floor(vUv*vec2(16.,9.)); if(h(blk+t*1.37) > 1.-.05*uGlitch) c*=.05;
+  } else c=texture(uScene,vUv).rgb;
   if(uEdl>0.){
     // eye-dome lighting: darken a point when its neighbours on screen are nearer than it
     float d=texture(uDepth,vUv).r;
@@ -1358,9 +1583,13 @@ void main(){
         float dn=texture(uDepth,vUv+off).r; float zn = dn<1. ? lz(dn) : zc+8.; s+=max(0.,zc-zn); }
       c*=exp(-s/8.*uEdl*110.); }
   }
-  c += uGlow*(texture(uGlowA,vUv).rgb*.9 + texture(uGlowB,vUv).rgb*1.3);
-  vec2 q=(vUv-.5)*vec2(uRes.x/uRes.y,1.); c*=1.-.4*smoothstep(.45,1.2,length(q));
-  c=pow(aces(c),vec3(1./2.2)); c+=(h(vUv*uRes)-.5)/255.; o=vec4(c,1.); }`;
+  vec3 bloom = uGlow*(texture(uGlowA,uv).rgb*.9 + texture(uGlowB,uv).rgb*1.3);
+  vec2 q=(vUv-.5)*vec2(uRes.x/uRes.y,1.);
+  // Photoreal keeps the photo's own colours; the dot looks go through a filmic curve
+  if(uRaw>.5){ c += bloom*.35; c*=1.-.25*smoothstep(.55,1.25,length(q)); c=clamp(c,0.,1.); }
+  else { c += bloom; c*=1.-.4*smoothstep(.45,1.2,length(q)); c=pow(aces(c),vec3(1./2.2)); }
+  if(uGlitch>0.) c*=1.-.1*uGlitch*step(.5,fract(vUv.y*uRes.y*.5));
+  c+=(h(vUv*uRes)-.5)/255.; o=vec4(c,1.); }`;
 
 function initGL(){
   gl = cv.getContext('webgl2', {antialias:false, alpha:false, preserveDrawingBuffer:false, powerPreference:'high-performance'});
@@ -1368,7 +1597,7 @@ function initGL(){
   const half = !!gl.getExtension('EXT_color_buffer_float');
   const sh=(type,src)=>{ const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
   const prog=(vs,fs)=>{ const p=gl.createProgram(); gl.attachShader(p,sh(gl.VERTEX_SHADER,vs)); gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs)); gl.linkProgram(p); if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)); const u={}; const n=gl.getProgramParameter(p,gl.ACTIVE_UNIFORMS); for(let i=0;i<n;i++){const a=gl.getActiveUniform(p,i); u[a.name]=gl.getUniformLocation(p,a.name);} return {p,u}; };
-  G = {half, P:prog(PTS_VS,PTS_FS), B:prog(QUAD_VS,BRIGHT_FS), Bl:prog(QUAD_VS,BLUR_FS), C:prog(QUAD_VS,COMP_FS),
+  G = {half, P:prog(PTS_VS,PTS_FS), SP:prog(SPLAT_VS,SPLAT_FS), B:prog(QUAD_VS,BRIGHT_FS), Bl:prog(QUAD_VS,BLUR_FS), C:prog(QUAD_VS,COMP_FS),
        quad:gl.createVertexArray(), clouds:{}, targets:{}};
   return true;
 }
@@ -1428,8 +1657,13 @@ function renderView(W, H, o){
   if (!o.thumb){ S.V=V; S.P=Pm; }
   gl.bindFramebuffer(gl.FRAMEBUFFER, T.sF); gl.viewport(0,0,W,H);
   gl.clearColor(0.004,0.005,0.006,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-  const L = LOOKS[o.look];
-  if (o.cloud.count){
+  // Photoreal draws the splats; the Resolve effect draws both, the dots giving way to the photo as the
+  // beam passes. Every other look draws the dots.
+  const fx = o.fx||'none', splatLook = !!LOOKS[o.look].splat, both = fx==='resolve' && hasSplats();
+  const L = splatLook ? LOOKS.void : LOOKS[o.look];
+  const ptFx = {sweep:1, decay:2, glitch:3, resolve: both?4:1}[fx]||0;
+  o.splatFx = {sweep:1, resolve:1, decay:2, glitch:3}[fx]||0;
+  if (o.cloud.count && (!splatLook || both)){
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
     gl.useProgram(G.P.p); const u=G.P.u;
     gl.uniformMatrix4fv(u.uProj,false,Pm); gl.uniformMatrix4fv(u.uView,false,V);
@@ -1444,9 +1678,11 @@ function renderView(W, H, o){
     gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8 + slid*8));
     gl.uniform1i(u.uMode, {photo:0,muted:0,range:1,height:2,grey:3,phosphor:4}[o.colour]||0);
     gl.uniform2f(u.uR, S.rng[0], S.rng[1]); gl.uniform2f(u.uY, S.yr[0], S.yr[1]);
+    gl.uniform1i(u.uFx, ptFx); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0);
     gl.bindVertexArray(o.cloud.vao); gl.drawArrays(gl.POINTS, 0, o.cloud.count); gl.bindVertexArray(null);
     gl.disable(gl.DEPTH_TEST);
   }
+  if ((splatLook || both) && hasSplats()) drawSplats(W, H, V, Pm, o, !splatLook || both);
   gl.bindVertexArray(G.quad);
   const pass = (p, f, w, h, bind) => { gl.bindFramebuffer(gl.FRAMEBUFFER,f); gl.viewport(0,0,w,h); gl.useProgram(p.p); bind(p.u); gl.drawArrays(gl.TRIANGLES,0,3); };
   const tx = (unit, t) => { gl.activeTexture(gl.TEXTURE0+unit); gl.bindTexture(gl.TEXTURE_2D,t); };
@@ -1458,17 +1694,167 @@ function renderView(W, H, o){
   pass(G.Bl, T.cF, T.qw, T.qh, u=>{ tx(0,T.d); gl.uniform1i(u.uTex,0); gl.uniform2f(u.uDir,0,2.2*k/T.qh); });
   pass(G.C, null, W, H, u=>{ tx(0,T.sT); tx(1,T.a); tx(2,T.c); tx(3,T.dT);
     gl.uniform1i(u.uScene,0); gl.uniform1i(u.uGlowA,1); gl.uniform1i(u.uGlowB,2); gl.uniform1i(u.uDepth,3);
-    gl.uniform1f(u.uGlow,o.glow); gl.uniform1f(u.uEdl,o.edges); gl.uniform1f(u.uNear,0.05); gl.uniform1f(u.uFar,400.); gl.uniform2f(u.uRes,W,H); });
+    const raw = splatLook && !both, glitch = fx==='glitch' ? .45 + .55*Math.max(0, Math.sin((o.fxTime||0)*2.3)*Math.sin((o.fxTime||0)*5.1)) : fx==='decay' ? .25*Math.max(0,(o.fxT||0)-.6)/.4 : 0;
+    gl.uniform1f(u.uRaw, raw?1:0); gl.uniform1f(u.uGlitch, glitch); gl.uniform1f(u.uTime, o.fxTime||0);
+    gl.uniform1f(u.uGlow,o.glow); gl.uniform1f(u.uEdl, raw ? 0 : o.edges); gl.uniform1f(u.uNear,0.05); gl.uniform1f(u.uFar,400.); gl.uniform2f(u.uRes,W,H); });
   gl.bindVertexArray(null);
 }
 function viewOpts(extra){
   return Object.assign({cloud:G.clouds.main||{count:0}, look, colour:P.colour, size:val('size'), bright:val('bright'), glow:val('glow'), light:val('light'),
-    edges:val('edges'), yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, focus:S.tab==='subject' && !S.recording}, extra||{});
+    edges:val('edges'), yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, focus:S.tab==='subject' && !S.recording, sync:!!S.exporting, fx:S.fxNow||'none', fxT:S.fxT||0, fxTime:S.fxTime||0}, extra||{});
 }
 function draw(W, H){ if (!gl || gl.isContextLost()) return; renderView(W||cv.width, H||cv.height, viewOpts()); }
 
 cv.addEventListener('webglcontextlost', e=>{ e.preventDefault(); G=null; });
 cv.addEventListener('webglcontextrestored', ()=>{ if (initGL()){ if (S.cpu) uploadCloud(S.cpu, S.count); S.dirtyDraw=true; queueThumbs(); } });
+
+// ---------------------------------------------------------------- drawing splats
+// Each splat becomes a screen-facing quad shaped by its 3D size and rotation seen from the camera (the
+// standard 3DGS projection: the 3D covariance through the view and the perspective Jacobian), drawn
+// back to front with premultiplied blending. Splats live in one integer texture, two texels each:
+// position and colour, then the covariance as six halves plus a flag. A worker sorts them by depth
+// while you move, so turning stays smooth; exports sort in place so every frame is exact.
+const SPLAT_VS = `#version 300 es
+precision highp float; precision highp int;
+uniform highp usampler2D uData; uniform mat4 uProj, uView; uniform vec2 uFocal, uVp, uR;
+uniform float uCovK, uExposure, uOrbit, uFxT, uTime, uLin; uniform int uFx;
+layout(location=0) in vec2 aCorner; layout(location=1) in uint aIndex;
+out vec4 vCol; out vec2 vPos;
+float hsh(float n){ return fract(sin(n*12.9898+4.1)*43758.5453); }
+// an integer hash: sin() hashes lose precision at large inputs, so neighbouring splats (one row of the
+// photo) got nearly the same number and moved together in streaks
+uint hu(uint x){ x^=x>>16; x*=0x7feb352du; x^=x>>15; x*=0x846ca68bu; x^=x>>16; return x; }
+float hf(uint x){ return float(hu(x)>>8)/16777216.; }
+void main(){
+  ivec2 tc = ivec2(int(aIndex & 1023u)*2, int(aIndex >> 10));
+  uvec4 t0 = texelFetch(uData, tc, 0), t1 = texelFetch(uData, tc+ivec2(1,0), 0);
+  vec3 p = uintBitsToFloat(t0.xyz);
+  vec4 col = vec4(float(t0.w & 255u), float((t0.w>>8)&255u), float((t0.w>>16)&255u), float(t0.w>>24))/255.;
+  float rnd = hf(aIndex), grow = 1.;
+  float r = clamp((length(p)-uR.x)/(uR.y-uR.x), 0., 1.);
+  if((t1.w & 1u) == 1u) col.a *= uOrbit;                       // hidden parts show as the view turns
+  if(uFx==1){ if(r > uFxT*1.15) col.a = 0.; }                   // sweep and resolve: only what the beam has reached
+  if(uFx==2){ float st=rnd*.7, k=clamp((uFxT-st)/(1.-st), 0., 1.);   // decay: each splat lets go in turn and drifts off
+    vec3 dir = normalize(vec3(hf(aIndex*3u+1u)-.5, hf(aIndex*3u+2u)-.25, hf(aIndex*3u+3u)-.5));
+    p += dir*k*k*length(p)*.3; col.a *= 1.-smoothstep(.3,.9,k); grow = 1.-.75*k; }
+  if(uFx==3){ float band=floor(p.y*18.+floor(uTime*7.)*3.), on=step(.9, hsh(band+floor(uTime*11.)));   // glitch: bands slip sideways
+    p.x += on*(hsh(band*3.1)-.5)*(uR.y-uR.x)*.08; }
+  vec4 cam = uView*vec4(p,1.), clip = uProj*cam; float cb = 1.2*clip.w;
+  if(cam.z > -.02 || col.a < .004 || abs(clip.x) > cb || abs(clip.y) > cb){ gl_Position = vec4(0.,0.,2.,1.); return; }
+  vec2 u1=unpackHalf2x16(t1.x), u2=unpackHalf2x16(t1.y), u3=unpackHalf2x16(t1.z);
+  mat3 Vrk = mat3(u1.x,u1.y,u2.x, u1.y,u2.y,u3.x, u2.x,u3.x,u3.y) * (uCovK*grow*grow);
+  float iz = 1./cam.z;
+  mat3 J = mat3(-uFocal.x*iz, 0., 0.,  0., -uFocal.y*iz, 0.,  uFocal.x*cam.x*iz*iz, uFocal.y*cam.y*iz*iz, 0.);
+  mat3 T = J*mat3(uView);
+  mat3 c2 = T*Vrk*transpose(T);
+  float a = c2[0][0]+.3, b = c2[0][1], c = c2[1][1]+.3;
+  float mid = .5*(a+c), rad = length(vec2(.5*(a-c), b)), l1 = mid+rad, l2 = max(mid-rad, .1);
+  vec2 d1 = abs(b) < 1e-7 ? (a >= c ? vec2(1.,0.) : vec2(0.,1.)) : normalize(vec2(b, l1-a));
+  vec2 e1 = min(3.*sqrt(l1), 1024.)*d1, e2 = min(3.*sqrt(l2), 1024.)*vec2(d1.y,-d1.x);
+  gl_Position = vec4(clip.xy/clip.w + (aCorner.x*e1 + aCorner.y*e2)*2./uVp, 0., 1.);
+  vPos = aCorner*3.;
+  vec3 rgb = col.rgb*uExposure;
+  if(uFx==1){ float e = 1.-smoothstep(0., .035, abs(r-uFxT*1.15)); rgb = mix(rgb, vec3(.55,1.,.9), e*.8); }   // the beam's edge
+  if(uLin > .5) rgb = pow(max(rgb,0.), vec3(2.2));
+  vCol = vec4(rgb, col.a);
+}`;
+const SPLAT_FS = `#version 300 es
+precision highp float; in vec4 vCol; in vec2 vPos; out vec4 o;
+void main(){ float A = dot(vPos,vPos); if(A > 9.) discard; float a = vCol.a*exp(-.5*A); if(a < 1./255.) discard; o = vec4(vCol.rgb*a, a); }`;
+
+// Sorting: back to front along the view direction, by a 16-bit counting sort (one pass, no comparisons).
+function sortSplatIndex(pos, n, v){
+  const z = new Float32Array(n); let mn = Infinity, mx = -Infinity;
+  for (let i=0;i<n;i++){ const d = v[2]*pos[i*3] + v[6]*pos[i*3+1] + v[10]*pos[i*3+2]; z[i]=d; if (d<mn) mn=d; if (d>mx) mx=d; }
+  const sc = 65535/((mx-mn)||1), keys = new Uint16Array(n), counts = new Uint32Array(65536);
+  for (let i=0;i<n;i++){ const k = ((z[i]-mn)*sc)|0; keys[i]=k; counts[k]++; }
+  for (let k=1;k<65536;k++) counts[k]+=counts[k-1];
+  const idx = new Uint32Array(n);
+  for (let i=n-1;i>=0;i--) idx[--counts[keys[i]]] = i;
+  return idx;
+}
+const SORT_WORKER = `let pos=null, n=0; ${sortSplatIndex.toString()}
+onmessage = e => { const d=e.data; if (d.pos){ pos=d.pos; n=d.n; return; }
+  const idx = sortSplatIndex(pos, n, d.view); postMessage({idx, id:d.id, set:d.set}, [idx.buffer]); };`;
+
+const _hf = new Float32Array(1), _hu = new Uint32Array(_hf.buffer);
+function toHalf(v){ _hf[0]=v; const x=_hu[0], s=(x>>>16)&0x8000, e=((x>>>23)&255)-112, m=x&0x7fffff;
+  if (e<=0){ if (e<-10) return s; return s + (((m|0x800000)>>>(1-e)) + 0x1000 >>> 13); }
+  if (e>=31) return s|0x7c00; return s + (e<<10) + ((m+0x1000)>>>13); }
+
+function splatGL(){
+  if (G.splat) return G.splat;
+  const vao = gl.createVertexArray(), quad = gl.createBuffer(), idx = gl.createBuffer(), tex = gl.createTexture();
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, idx); gl.enableVertexAttribArray(1); gl.vertexAttribIPointer(1, 1, gl.UNSIGNED_INT, 0, 0); gl.vertexAttribDivisor(1, 1);
+  gl.bindVertexArray(null);
+  let worker = null;
+  try { worker = new Worker(URL.createObjectURL(new Blob([SORT_WORKER], {type:'text/javascript'}))); } catch(e){}
+  const Sg = G.splat = {vao, idx, tex, n:0, set:null, worker, busy:false, pending:null, sortedFor:null, covK:1};
+  if (worker) worker.onmessage = e => { if (!G || G.splat!==Sg) return; Sg.busy=false;
+    if (e.data.set===Sg.setId){ gl.bindBuffer(gl.ARRAY_BUFFER, Sg.idx); gl.bufferData(gl.ARRAY_BUFFER, e.data.idx, gl.DYNAMIC_DRAW); Sg.sortedFor = e.data.id; S.dirtyDraw = true; }
+    if (Sg.pending){ const p=Sg.pending; Sg.pending=null; askSort(p); } };
+  return Sg;
+}
+// Pack the splats into the texture. Covariances are stored as halves, scaled so typical ones sit near 1
+// (a splat a few millimetres across would otherwise fall below what a half can hold).
+function uploadSplats(sp){
+  const Sg = splatGL(); if (Sg.set===sp) return;
+  const n = sp.n, rows = Math.max(1, Math.ceil(n/1024)), data = new Uint32Array(2048*rows*4), f = new Float32Array(data.buffer);
+  const sample=[]; for (let i=0;i<n;i+=Math.max(1,(n/4000)|0)) sample.push(Math.max(sp.scl[i*3],sp.scl[i*3+1],sp.scl[i*3+2])**2); sample.sort((a,b)=>a-b);
+  const K = 1/(sample[sample.length>>1] || 1);
+  for (let i=0;i<n;i++){ const o=i*8;
+    f[o]=sp.pos[i*3]; f[o+1]=sp.pos[i*3+1]; f[o+2]=sp.pos[i*3+2];
+    data[o+3] = (sp.rgba[i*4] | sp.rgba[i*4+1]<<8 | sp.rgba[i*4+2]<<16 | sp.rgba[i*4+3]<<24)>>>0;
+    let w=sp.rot[i*4], x=sp.rot[i*4+1], y=sp.rot[i*4+2], z=sp.rot[i*4+3]; const l=Math.hypot(w,x,y,z)||1; w/=l; x/=l; y/=l; z/=l;
+    const sx=sp.scl[i*3], sy=sp.scl[i*3+1], sz=sp.scl[i*3+2];
+    // M = R * S; covariance = M M^T
+    const m00=(1-2*(y*y+z*z))*sx, m01=(2*(x*y-w*z))*sy, m02=(2*(x*z+w*y))*sz;
+    const m10=(2*(x*y+w*z))*sx, m11=(1-2*(x*x+z*z))*sy, m12=(2*(y*z-w*x))*sz;
+    const m20=(2*(x*z-w*y))*sx, m21=(2*(y*z+w*x))*sy, m22=(1-2*(x*x+y*y))*sz;
+    const cxx=(m00*m00+m01*m01+m02*m02)*K, cxy=(m00*m10+m01*m11+m02*m12)*K, cxz=(m00*m20+m01*m21+m02*m22)*K;
+    const cyy=(m10*m10+m11*m11+m12*m12)*K, cyz=(m10*m20+m11*m21+m12*m22)*K, czz=(m20*m20+m21*m21+m22*m22)*K;
+    data[o+4] = (toHalf(cxx) | toHalf(cxy)<<16)>>>0; data[o+5] = (toHalf(cxz) | toHalf(cyy)<<16)>>>0; data[o+6] = (toHalf(cyz) | toHalf(czz)<<16)>>>0;
+    data[o+7] = sp.flag[i];
+  }
+  gl.bindTexture(gl.TEXTURE_2D, Sg.tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32UI, 2048, rows, 0, gl.RGBA_INTEGER, gl.UNSIGNED_INT, data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  Sg.n = n; Sg.set = sp; Sg.setId = (Sg.setId||0)+1; Sg.covK = 1/K; Sg.sortedFor = null;
+  if (Sg.worker) Sg.worker.postMessage({pos: sp.pos.slice(), n});
+}
+const viewKey = V => [V[2],V[6],V[10],V[14]].map(x=>x.toFixed(3)).join(',');
+function askSort(V){
+  const Sg = G.splat; if (!Sg || !Sg.worker){ sortNow(V); return; }
+  const id = viewKey(V); if (Sg.sortedFor===id) return;
+  if (Sg.busy){ Sg.pending = V; return; }
+  Sg.busy = true; Sg.worker.postMessage({view:Array.from(V), id, set:Sg.setId});   // an id, not the splats: they were sent once
+}
+function sortNow(V){
+  const Sg = G.splat, id = viewKey(V); if (Sg.sortedFor===id) return;
+  const idx = sortSplatIndex(Sg.set.pos, Sg.n, V);
+  gl.bindBuffer(gl.ARRAY_BUFFER, Sg.idx); gl.bufferData(gl.ARRAY_BUFFER, idx, gl.DYNAMIC_DRAW); Sg.sortedFor = id;
+}
+// Draw into the current scene target. sync: sort right now (exports, thumbnails); otherwise the worker
+// catches up a frame or two behind while the view moves.
+function drawSplats(W, H, V, Pm, o, lin){
+  const sp = currentSplats(); if (!sp || !sp.n) return;
+  uploadSplats(sp); const Sg = G.splat;
+  if (o.sync || Sg.sortedFor===null) sortNow(V); else askSort(V);
+  const u = G.SP.u; gl.useProgram(G.SP.p);
+  gl.uniformMatrix4fv(u.uProj,false,Pm); gl.uniformMatrix4fv(u.uView,false,V);
+  gl.uniform2f(u.uFocal, Pm[0]*W/2, Pm[5]*H/2); gl.uniform2f(u.uVp, W, H); gl.uniform2f(u.uR, S.rng[0], S.rng[1]);
+  gl.uniform1f(u.uCovK, Sg.covK); gl.uniform1f(u.uExposure, o.bright/1.25); gl.uniform1f(u.uLin, lin?1:0);
+  const slid = o.thumb ? 0 : Math.hypot(S.pan[0], S.pan[1])/(S.refDist||2);
+  gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8 + slid*8));
+  gl.uniform1i(u.uFx, o.splatFx||0); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, Sg.tex); gl.uniform1i(u.uData, 0);
+  gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  gl.bindVertexArray(Sg.vao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, Sg.n); gl.bindVertexArray(null);
+  gl.disable(gl.BLEND);
+}
 
 // ---------------------------------------------------------------- faces: find and anonymise
 let faceSession = null;
@@ -1613,7 +1999,7 @@ async function savePicture(){
   busy('Making the picture', null); await tick();
   const [W,H] = exportSize(MOBILE ? 2048 : 2880);
   const c2 = document.createElement('canvas'); c2.width=W; c2.height=H; const x=c2.getContext('2d');
-  withCanvasSize(W, H, ()=>{ draw(W,H); x.drawImage(cv,0,0); });
+  S.exporting=true; try { withCanvasSize(W, H, ()=>{ draw(W,H); x.drawImage(cv,0,0); }); } finally { S.exporting=false; }
   drawLabels2D(x, W, H);
   c2.toBlob(b=>{ busy(null); showSheet(URL.createObjectURL(b), 'image', 'first-return.png', b); }, 'image/png');
 }
@@ -1647,10 +2033,11 @@ async function previewMove(move, secs){
   if (S.recording || !S.count) return;
   const base={yaw:S.yaw,pitch:S.pitch,zoom:S.zoom}, dur=secs*1000;
   S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked'); banner('Playing the move');
+  S.fxNow = S.fx||'none';
   await new Promise(res=>{ const t0=performance.now(); const step=()=>{ const el=performance.now()-t0;
-    Object.assign(S, poseAt(base, move, el/dur)); draw(); renderLabels(); renderPins();
+    Object.assign(S, poseAt(base, move, el/dur)); S.fxT=Math.min(1,el/dur); S.fxTime=el/1000; draw(); renderLabels(); renderPins();
     $('#recfill').style.width=(Math.min(1,el/dur)*100)+'%'; if (el<dur) requestAnimationFrame(step); else res(); }; requestAnimationFrame(step); });
-  S.recording=false; $('#recbar').hidden=true; document.body.classList.remove('locked'); Object.assign(S, base); S.dirtyDraw=true; banner(modeText());
+  S.recording=false; S.fxNow='none'; $('#recbar').hidden=true; document.body.classList.remove('locked'); Object.assign(S, base); S.dirtyDraw=true; banner(modeText());
 }
 
 // Frame by frame with WebCodecs: every frame is rendered at its exact time, so a slow phone makes a
@@ -1660,8 +2047,8 @@ async function recordMove(move, secs){
   const base={yaw:S.yaw,pitch:S.pitch,zoom:S.zoom}, fps=30, hold=Math.round(fps*0.4), frames=Math.round(secs*fps)+2*hold;
   const [W,H] = exportSize(MOBILE ? 1280 : 1920, 1920);
   const rc=document.createElement('canvas'); rc.width=W; rc.height=H; const rx=rc.getContext('2d');
-  const frameAt = i => { const t=(i-hold)/(frames-2*hold-1); Object.assign(S, poseAt(base, move, t)); draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
-  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked'); stayAwake(true);
+  const frameAt = i => { const t=(i-hold)/(frames-2*hold-1); Object.assign(S, poseAt(base, move, t)); S.fxT=Math.min(1,Math.max(0,t)); S.fxTime=i/fps; draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
+  S.recording=true; S.exporting=true; S.fxNow=S.fx||'none'; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked'); stayAwake(true);
   let blob=null, ext='mp4';
   try {
     let config=null;
@@ -1705,7 +2092,7 @@ async function recordMove(move, secs){
       blob = new Blob(chunks, {type:mime.split(';')[0]});
     }
   } catch(err){ console.error(err); banner(String(err.message||err)); }
-  S.recording=false; $('#recbar').hidden=true; document.body.classList.remove('locked'); stayAwake(false); Object.assign(S, base); S.dirtyDraw=true;
+  S.recording=false; S.exporting=false; S.fxNow='none'; $('#recbar').hidden=true; document.body.classList.remove('locked'); stayAwake(false); Object.assign(S, base); S.dirtyDraw=true;
   if (blob){ banner(modeText()); showSheet(URL.createObjectURL(blob), 'video', 'first-return.'+ext, blob); }
 }
 
@@ -1814,7 +2201,7 @@ function undo(){
   if (s.level!==S.level){ S.level=s.level; S.roll = S.level ? S.rollAuto : 0; }
   S.dirtyBuild=true; undoArmed=true; persist(); renderTray(); banner(modeText());
 }
-function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine, move:S.move, moveLen:S.moveLen, exportLong:S.adv.exportLong}); queueSessionSave(); }
+function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine, move:S.move, moveLen:S.moveLen, fx:S.fx, exportLong:S.adv.exportLong}); queueSessionSave(); }
 // ---------------------------------------------------------------- my looks: save, apply, share
 function myLooks(){ const v=recall('myLooks'); return Array.isArray(v) ? v : []; }
 function saveMyLooks(list){ store('myLooks', list); }
@@ -1893,9 +2280,9 @@ function renderTray(){
   if (S.tab==='look'){
     const mine = myLooks(), custom = isCustom();
     tr.innerHTML = `<h3>Look ${custom?'<span class="chip" style="padding:3px 8px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent);border-color:var(--accent)">Changed</span>':''}<span class="sp"></span></h3>
-      <div class="looks">${Object.entries(LOOKS).map(([k,L])=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${L.name}</b></button>`).join('')}</div>
-      <h3 style="margin-top:12px">Dot pattern</h3>
-      <div class="scroller pats">${CTRL.pattern.chips.map(([v,n])=>`<button class="chip pat" data-pat="${v}" aria-pressed="${P.pattern===v}" ${S.scan?'disabled':''}>${PAT_ICON[v]}${n}</button>`).join('')}</div>${S.scan?'<p class="hint" style="margin:4px 0 0">A 3D scan keeps the points it measured, so the pattern applies to photos only.</p>':''}
+      <div class="looks">${Object.entries(LOOKS).filter(([k])=>k!=='real'||hasSplats()).map(([k,L])=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${L.name}</b></button>`).join('')}</div>
+      ${LOOKS[look].splat ? '' : `<h3 style="margin-top:12px">Dot pattern</h3>
+      <div class="scroller pats">${CTRL.pattern.chips.map(([v,n])=>`<button class="chip pat" data-pat="${v}" aria-pressed="${P.pattern===v}" ${S.scan?'disabled':''}>${PAT_ICON[v]}${n}</button>`).join('')}</div>${S.scan?'<p class="hint" style="margin:4px 0 0">A 3D scan keeps the points it measured, so the pattern applies to photos only.</p>':''}`}
       <div class="sect row"><button class="chip" id="resetLook" ${custom?'':'disabled'}>Reset look</button>${undoBtn}</div>
       <div class="sect"><h3>My looks</h3>
         ${mine.length ? `<div class="looks">${mine.map(m=>`<div class="look mine" aria-pressed="${S.activeMine===m.id}"><button class="lookpick" data-mine="${m.id}" aria-label="Use ${esc(m.name)}"><canvas id="thumb-${m.id}" width="208" height="156"></canvas><b>${esc(m.name)}</b></button><button class="lookdel" data-delmine="${m.id}" aria-label="Remove ${esc(m.name)}">&#x2715;</button></div>`).join('')}</div>` : '<p class="hint" style="margin:0 0 8px">Change anything, then save it here to use again on other photos.</p>'}
@@ -1923,6 +2310,7 @@ function renderTray(){
     renderAdvanced(tr);
   }
   else if (S.tab==='adjust'){
+    if (!groupKeys(S.group).length) S.group = GROUPS.find(g=>groupKeys(g.id).length).id;
     const keys = groupKeys(S.group);
     if (!keys.includes(S.ctrl)) S.ctrl = keys[0];
     const c = CTRL[S.ctrl];
@@ -1981,10 +2369,14 @@ function renderTray(){
     const mv = S.move||'push', len = S.moveLen||6;
     tr.innerHTML = `<div class="scroller">${[['push','Push in'],['orbit','Orbit'],['drift','Drift'],['rise','Rise']].map(([v,n])=>`<button class="chip" data-move="${v}" aria-pressed="${mv===v}">${n}</button>`).join('')}</div>
       <div class="scroller" style="margin-top:8px">${[4,6,10].map(s=>`<button class="chip" data-len="${s}" aria-pressed="${len===s}">${s} seconds</button>`).join('')}</div>
+      <h3 style="margin-top:12px">Effect</h3>
+      <div class="scroller">${FX.filter(([v])=>v!=='resolve'||hasSplats()).map(([v,n])=>`<button class="chip" data-fx="${v}" aria-pressed="${(S.fx||'none')===v}">${n}</button>`).join('')}</div>
+      <p class="hint">${sayBtn(FX.find(f=>f[0]===(S.fx||'none'))[2])}<span>${FX.find(f=>f[0]===(S.fx||'none'))[2]}</span></p>
       <div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button></div>
       <p class="hint">${sayBtn('The move starts from the view on screen, so line it up first.')}<span>Starts from the view on screen, so line it up first.</span></p>`;
     tr.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>{ S.move=b.dataset.move; persist(); renderTray(); previewMove(S.move, Math.min(4,S.moveLen||6)); }));
     tr.querySelectorAll('[data-len]').forEach(b=>b.addEventListener('click',()=>{ S.moveLen=+b.dataset.len; persist(); renderTray(); }));
+    tr.querySelectorAll('[data-fx]').forEach(b=>b.addEventListener('click',()=>{ S.fx=b.dataset.fx; persist(); renderTray(); if (S.fx!=='none') previewMove(S.move||'push', Math.min(4,S.moveLen||6)); }));
     $('#playMove').addEventListener('click',()=>previewMove(S.move||'push', S.moveLen||6));
     $('#recMove').addEventListener('click',()=>recordMove(S.move||'push', S.moveLen||6));
   }
@@ -2016,8 +2408,9 @@ function renderTray(){
 function afterPlacing(){ if (S.tab!=='people') setTab('people'); else { $('#stage').classList.remove('picking'); renderTray(); banner(modeText()); } }
 function setPlacing(kind){ S.placing = S.placing===kind ? false : kind; $('#stage').classList.toggle('picking', !!S.placing || S.tab==='subject');
   renderTray(); banner(modeText()); renderPins(); }
-function groupKeys(g){ const G=GROUPS.find(x=>x.id===g)||GROUPS[0]; return G.keys.filter(k=>!(S.scan && (k==='depth3d'||k==='light'||k==='hidden'||k==='floor'))); }
-function groupRow(){ return `<div class="seg" role="tablist">${GROUPS.map(g=>`<button class="segb" data-group="${g.id}" aria-selected="${S.group===g.id}">${g.name}</button>`).join('')}</div>`; }
+const SPLAT_KEYS = ['bright','glow','depth3d','hidden'];
+function groupKeys(g){ const G=GROUPS.find(x=>x.id===g)||GROUPS[0]; return G.keys.filter(k=>!(S.scan && (k==='depth3d'||k==='light'||k==='hidden'||k==='floor')) && (!LOOKS[look].splat || SPLAT_KEYS.includes(k))); }
+function groupRow(){ return `<div class="seg" role="tablist">${GROUPS.filter(g=>g.id==='advanced'||groupKeys(g.id).length).map(g=>`<button class="segb" data-group="${g.id}" aria-selected="${S.group===g.id}">${g.name}</button>`).join('')}</div>`; }
 function wireGroupRow(tr){ tr.querySelectorAll('[data-group]').forEach(b=>b.addEventListener('click',()=>{ S.group=b.dataset.group; if (S.group!=='advanced') S.ctrl=groupKeys(S.group)[0]; store('group', S.group); renderTray(); showDebug(); })); }
 // ---------------------------------------------------------------- Advanced: diagnostic views and direct settings
 function autoRatio(){ return (1+S.shiftAuto)/S.shiftAuto; }
@@ -2079,7 +2472,7 @@ function queueThumbs(){ thumbsFor = null; const job=++thumbJob; setTimeout(()=>m
 function makeThumbs(job){
   if (job!==thumbJob) return;
   if (!gl || !G || !S.photo || (!S.compMap && !S.scan) || S.dirtyBuild){ setTimeout(()=>makeThumbs(job), 300); return; }
-  const mine = myLooks(), keys = Object.keys(LOOKS).concat(mine.map(m=>m.id)); const out = {};
+  const mine = myLooks(), keys = Object.keys(LOOKS).filter(k=>k!=='real'||hasSplats()).concat(mine.map(m=>m.id)); const out = {};
   const next = i => {
     if (job!==thumbJob) return;
     if (i>=keys.length){ thumbsFor = out; paintThumbs(); return; }
@@ -2090,7 +2483,8 @@ function makeThumbs(job){
     const tw=208, th=156;
     if (cv.width>=tw && cv.height>=th){
       renderView(tw, th, {cloud:G.clouds.thumb, look:lk, colour:L.colour, size:val2('size',L.size)*1.3, bright:val2('bright',L.bright)*1.5,
-        glow:val2('glow',L.glow), edges:val2('edges',L.edges), light:val('light'), yaw:L.yaw, pitch:L.pitch, zoom:Math.max(1, L.zoom*0.78), thumb:true, targetKey:'thumb'});
+        glow:val2('glow',L.glow), edges:val2('edges',L.edges), light:val('light'), yaw:L.yaw, pitch:L.pitch, zoom:Math.max(1, L.zoom*0.78), thumb:true, sync:true, targetKey:'thumb'});
+      if (G.splat) G.splat.sortedFor = null;       // the main view needs its own order again
       const c=document.createElement('canvas'); c.width=tw; c.height=th; c.getContext('2d').drawImage(cv, 0, cv.height-th, tw, th, 0, 0, tw, th);
       out[k]=c; S.dirtyDraw=true;
     }
@@ -2324,22 +2718,28 @@ $('#shapeBtn').addEventListener('click', e=>{ e.stopPropagation();
     if (b.dataset.v==='level'){ pushUndo(); S.level=!S.level; S.roll = S.level ? S.rollAuto : 0; S.dirtyDraw=true; commit(); return; }
     pushUndo(); S.shape=b.dataset.v; commit(); layout(); })); });
 const PIC_SIZES = [null, 1080, 2048, 2880, 4096];
+// Effects play over a camera move, in preview and in the video.
+const FX = [['none','None','The view just moves.'],
+  ['sweep','Sweep','A scanning beam sweeps outward from the camera and the picture appears behind it.'],
+  ['resolve','Resolve','The beam sweeps outward and turns the dots into the real photo as it passes.'],
+  ['decay','Decay','The picture comes apart: pieces let go one after another and drift away.'],
+  ['glitch','Glitch','Bands tear sideways, colours split and blocks drop out, in bursts.']];
 $('#saveBtn').addEventListener('click', e=>{ e.stopPropagation();
   const px = S.adv.exportLong || (MOBILE ? 2048 : 2880);
   const m=menu($('#saveBtn'), '#saveMenu', [['png','Picture',`PNG, ${px} pixels on the long side`],
     ['size', `Picture size: ${S.adv.exportLong || 'Auto'}`, 'Tap to change. Videos stop at 1920.'],
-    ['video','Video','Opens camera moves'],['ply','3D points','PLY file for Blender, MeshLab']]);
+    ['video','Video','Opens camera moves and effects'],['ply','3D points','PLY file for Blender, MeshLab'], ...(hasSplats() ? [['splat','Splat file','PLY for SuperSplat and other splat viewers']] : [])]);
   if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',ev=>{
     if (b.dataset.v==='size'){ ev.stopPropagation(); const i=PIC_SIZES.indexOf(S.adv.exportLong); S.adv.exportLong=PIC_SIZES[(i+1)%PIC_SIZES.length]; persist();
       m.hidden=true; $('#saveBtn').click(); return; }       // reopen with the new size showing
     m.hidden=true; $('#saveBtn').setAttribute('aria-expanded','false');
-    if (b.dataset.v==='png') savePicture(); else if (b.dataset.v==='ply') savePly(); else if (S.tab!=='move') setTab('move'); })); });
+    if (b.dataset.v==='png') savePicture(); else if (b.dataset.v==='ply') savePly(); else if (b.dataset.v==='splat') saveSplatPly(); else if (S.tab!=='move') setTab('move'); })); });
 document.addEventListener('click', ()=>{ document.querySelectorAll('.menu').forEach(x=>x.hidden=true); document.querySelectorAll('.tb[aria-haspopup]').forEach(b=>b.setAttribute('aria-expanded','false')); });
 $('#infoBtn').addEventListener('click', e=>{ e.stopPropagation(); const i=$('#info'); i.hidden=!i.hidden; $('#infoBtn').setAttribute('aria-expanded', !i.hidden);
   if (!i.hidden){ const text='First Return turns a photo into a lidar style point cloud. Depth is worked out on your device, and the photo never leaves it.';
     i.innerHTML = `<p style="display:flex;gap:8px;align-items:center">${sayBtn(text)}<b>${text}</b></p>
       <p>${S.count.toLocaleString()} dots. ${S.nComp} subject${S.nComp===1?'':'s'}. Camera view: ${esc(S.fovSource)}. ${self.crossOriginIsolated ? `Using up to ${Math.min(4, navigator.hardwareConcurrency||2)} processor cores.` : 'Using one processor core.'}${S.planes.length?` ${S.planes.length===1?'A floor':S.planes.length+' floor surfaces'} found in the photo.`:''}${P.light?' Light evened out.':''}</p>
-      <p>${esc(S.credit||'')}</p><p>Depth: Depth Anything V2 Small (Apache 2.0). Finder: MediaPipe EfficientDet Lite0 (Apache 2.0). Outlines: MediaPipe Magic Touch (Apache 2.0). Faces: YuNet, OpenCV Zoo (MIT). Runtime: ONNX Runtime Web (MIT).</p>
+      <p>${esc(S.credit||'')}</p><p>Depth: Depth Anything V2 Small (Apache 2.0). Finder: MediaPipe EfficientDet Lite0 (Apache 2.0). Outlines: MediaPipe Magic Touch (Apache 2.0). Faces: YuNet, OpenCV Zoo (MIT). Runtime: ONNX Runtime Web (MIT). Photoreal: Gaussian splatting (Kerbl and others, 2023), drawn by this app; .spz is Niantic's format (MIT).</p>
       <button class="btn" id="infoClose">Close</button>`;
     $('#infoClose').addEventListener('click',()=>{ i.hidden=true; });
     i.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say))); } });
@@ -2454,6 +2854,7 @@ async function boot(){
   if (saved && saved.activeMine && myLooks().some(m=>m.id===saved.activeMine)) S.activeMine = saved.activeMine;
   if (saved && MOVES[saved.move]) S.move = saved.move;
   if (saved && [4,6,10].includes(saved.moveLen)) S.moveLen = saved.moveLen;
+  if (saved && FX.some(f=>f[0]===saved.fx)) S.fx = saved.fx;
   if (saved && PIC_SIZES.includes(saved.exportLong)) S.adv.exportLong = saved.exportLong;
   { const g = recall('group'); if (GROUPS.some(x=>x.id===g)) S.group = g; }
   $('#fileLooks').addEventListener('change', e=>{ const f=e.target.files[0]; e.target.value=''; if (f) importLooks(f); });
@@ -2481,7 +2882,7 @@ async function boot(){
       if (c0){ const Lb={u:c0.topUV[0], v:c0.topUV[1], lift:(c0.maxY-c0.minY)*0.07, text:'Standing Lincoln'}; Lb.pos=labelWorld(Lb); S.labels=[Lb]; S.dirtyDraw=true; if (S.tab==='people') renderTray(); } });
   } catch(err){ console.error(err); banner('Tap Open to choose a photo.'); }
 }
-window.__fr = {S, P, LOOKS, build, setTab, queueThumbs, draw, findThings, tiltFromVerticals, outline:outlineFor};   // for testing from the console
+window.__fr = {S, P, LOOKS, build, currentSplats, photoSplats, hasSplats, previewMove, recordMove, applyLook, setTab, queueThumbs, draw, findThings, tiltFromVerticals, outline:outlineFor};   // for testing from the console
 boot();
 
 })();

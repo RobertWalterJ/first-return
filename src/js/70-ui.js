@@ -21,7 +21,7 @@ function undo(){
   if (s.level!==S.level){ S.level=s.level; S.roll = S.level ? S.rollAuto : 0; }
   S.dirtyBuild=true; undoArmed=true; persist(); renderTray(); banner(modeText());
 }
-function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine, move:S.move, moveLen:S.moveLen, exportLong:S.adv.exportLong}); queueSessionSave(); }
+function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine, move:S.move, moveLen:S.moveLen, fx:S.fx, exportLong:S.adv.exportLong}); queueSessionSave(); }
 // ---------------------------------------------------------------- my looks: save, apply, share
 function myLooks(){ const v=recall('myLooks'); return Array.isArray(v) ? v : []; }
 function saveMyLooks(list){ store('myLooks', list); }
@@ -100,9 +100,9 @@ function renderTray(){
   if (S.tab==='look'){
     const mine = myLooks(), custom = isCustom();
     tr.innerHTML = `<h3>Look ${custom?'<span class="chip" style="padding:3px 8px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent);border-color:var(--accent)">Changed</span>':''}<span class="sp"></span></h3>
-      <div class="looks">${Object.entries(LOOKS).map(([k,L])=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${L.name}</b></button>`).join('')}</div>
-      <h3 style="margin-top:12px">Dot pattern</h3>
-      <div class="scroller pats">${CTRL.pattern.chips.map(([v,n])=>`<button class="chip pat" data-pat="${v}" aria-pressed="${P.pattern===v}" ${S.scan?'disabled':''}>${PAT_ICON[v]}${n}</button>`).join('')}</div>${S.scan?'<p class="hint" style="margin:4px 0 0">A 3D scan keeps the points it measured, so the pattern applies to photos only.</p>':''}
+      <div class="looks">${Object.entries(LOOKS).filter(([k])=>k!=='real'||hasSplats()).map(([k,L])=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${L.name}</b></button>`).join('')}</div>
+      ${LOOKS[look].splat ? '' : `<h3 style="margin-top:12px">Dot pattern</h3>
+      <div class="scroller pats">${CTRL.pattern.chips.map(([v,n])=>`<button class="chip pat" data-pat="${v}" aria-pressed="${P.pattern===v}" ${S.scan?'disabled':''}>${PAT_ICON[v]}${n}</button>`).join('')}</div>${S.scan?'<p class="hint" style="margin:4px 0 0">A 3D scan keeps the points it measured, so the pattern applies to photos only.</p>':''}`}
       <div class="sect row"><button class="chip" id="resetLook" ${custom?'':'disabled'}>Reset look</button>${undoBtn}</div>
       <div class="sect"><h3>My looks</h3>
         ${mine.length ? `<div class="looks">${mine.map(m=>`<div class="look mine" aria-pressed="${S.activeMine===m.id}"><button class="lookpick" data-mine="${m.id}" aria-label="Use ${esc(m.name)}"><canvas id="thumb-${m.id}" width="208" height="156"></canvas><b>${esc(m.name)}</b></button><button class="lookdel" data-delmine="${m.id}" aria-label="Remove ${esc(m.name)}">&#x2715;</button></div>`).join('')}</div>` : '<p class="hint" style="margin:0 0 8px">Change anything, then save it here to use again on other photos.</p>'}
@@ -130,6 +130,7 @@ function renderTray(){
     renderAdvanced(tr);
   }
   else if (S.tab==='adjust'){
+    if (!groupKeys(S.group).length) S.group = GROUPS.find(g=>groupKeys(g.id).length).id;
     const keys = groupKeys(S.group);
     if (!keys.includes(S.ctrl)) S.ctrl = keys[0];
     const c = CTRL[S.ctrl];
@@ -188,10 +189,14 @@ function renderTray(){
     const mv = S.move||'push', len = S.moveLen||6;
     tr.innerHTML = `<div class="scroller">${[['push','Push in'],['orbit','Orbit'],['drift','Drift'],['rise','Rise']].map(([v,n])=>`<button class="chip" data-move="${v}" aria-pressed="${mv===v}">${n}</button>`).join('')}</div>
       <div class="scroller" style="margin-top:8px">${[4,6,10].map(s=>`<button class="chip" data-len="${s}" aria-pressed="${len===s}">${s} seconds</button>`).join('')}</div>
+      <h3 style="margin-top:12px">Effect</h3>
+      <div class="scroller">${FX.filter(([v])=>v!=='resolve'||hasSplats()).map(([v,n])=>`<button class="chip" data-fx="${v}" aria-pressed="${(S.fx||'none')===v}">${n}</button>`).join('')}</div>
+      <p class="hint">${sayBtn(FX.find(f=>f[0]===(S.fx||'none'))[2])}<span>${FX.find(f=>f[0]===(S.fx||'none'))[2]}</span></p>
       <div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button></div>
       <p class="hint">${sayBtn('The move starts from the view on screen, so line it up first.')}<span>Starts from the view on screen, so line it up first.</span></p>`;
     tr.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>{ S.move=b.dataset.move; persist(); renderTray(); previewMove(S.move, Math.min(4,S.moveLen||6)); }));
     tr.querySelectorAll('[data-len]').forEach(b=>b.addEventListener('click',()=>{ S.moveLen=+b.dataset.len; persist(); renderTray(); }));
+    tr.querySelectorAll('[data-fx]').forEach(b=>b.addEventListener('click',()=>{ S.fx=b.dataset.fx; persist(); renderTray(); if (S.fx!=='none') previewMove(S.move||'push', Math.min(4,S.moveLen||6)); }));
     $('#playMove').addEventListener('click',()=>previewMove(S.move||'push', S.moveLen||6));
     $('#recMove').addEventListener('click',()=>recordMove(S.move||'push', S.moveLen||6));
   }
@@ -223,8 +228,9 @@ function renderTray(){
 function afterPlacing(){ if (S.tab!=='people') setTab('people'); else { $('#stage').classList.remove('picking'); renderTray(); banner(modeText()); } }
 function setPlacing(kind){ S.placing = S.placing===kind ? false : kind; $('#stage').classList.toggle('picking', !!S.placing || S.tab==='subject');
   renderTray(); banner(modeText()); renderPins(); }
-function groupKeys(g){ const G=GROUPS.find(x=>x.id===g)||GROUPS[0]; return G.keys.filter(k=>!(S.scan && (k==='depth3d'||k==='light'||k==='hidden'||k==='floor'))); }
-function groupRow(){ return `<div class="seg" role="tablist">${GROUPS.map(g=>`<button class="segb" data-group="${g.id}" aria-selected="${S.group===g.id}">${g.name}</button>`).join('')}</div>`; }
+const SPLAT_KEYS = ['bright','glow','depth3d','hidden'];
+function groupKeys(g){ const G=GROUPS.find(x=>x.id===g)||GROUPS[0]; return G.keys.filter(k=>!(S.scan && (k==='depth3d'||k==='light'||k==='hidden'||k==='floor')) && (!LOOKS[look].splat || SPLAT_KEYS.includes(k))); }
+function groupRow(){ return `<div class="seg" role="tablist">${GROUPS.filter(g=>g.id==='advanced'||groupKeys(g.id).length).map(g=>`<button class="segb" data-group="${g.id}" aria-selected="${S.group===g.id}">${g.name}</button>`).join('')}</div>`; }
 function wireGroupRow(tr){ tr.querySelectorAll('[data-group]').forEach(b=>b.addEventListener('click',()=>{ S.group=b.dataset.group; if (S.group!=='advanced') S.ctrl=groupKeys(S.group)[0]; store('group', S.group); renderTray(); showDebug(); })); }
 // ---------------------------------------------------------------- Advanced: diagnostic views and direct settings
 function autoRatio(){ return (1+S.shiftAuto)/S.shiftAuto; }
@@ -286,7 +292,7 @@ function queueThumbs(){ thumbsFor = null; const job=++thumbJob; setTimeout(()=>m
 function makeThumbs(job){
   if (job!==thumbJob) return;
   if (!gl || !G || !S.photo || (!S.compMap && !S.scan) || S.dirtyBuild){ setTimeout(()=>makeThumbs(job), 300); return; }
-  const mine = myLooks(), keys = Object.keys(LOOKS).concat(mine.map(m=>m.id)); const out = {};
+  const mine = myLooks(), keys = Object.keys(LOOKS).filter(k=>k!=='real'||hasSplats()).concat(mine.map(m=>m.id)); const out = {};
   const next = i => {
     if (job!==thumbJob) return;
     if (i>=keys.length){ thumbsFor = out; paintThumbs(); return; }
@@ -297,7 +303,8 @@ function makeThumbs(job){
     const tw=208, th=156;
     if (cv.width>=tw && cv.height>=th){
       renderView(tw, th, {cloud:G.clouds.thumb, look:lk, colour:L.colour, size:val2('size',L.size)*1.3, bright:val2('bright',L.bright)*1.5,
-        glow:val2('glow',L.glow), edges:val2('edges',L.edges), light:val('light'), yaw:L.yaw, pitch:L.pitch, zoom:Math.max(1, L.zoom*0.78), thumb:true, targetKey:'thumb'});
+        glow:val2('glow',L.glow), edges:val2('edges',L.edges), light:val('light'), yaw:L.yaw, pitch:L.pitch, zoom:Math.max(1, L.zoom*0.78), thumb:true, sync:true, targetKey:'thumb'});
+      if (G.splat) G.splat.sortedFor = null;       // the main view needs its own order again
       const c=document.createElement('canvas'); c.width=tw; c.height=th; c.getContext('2d').drawImage(cv, 0, cv.height-th, tw, th, 0, 0, tw, th);
       out[k]=c; S.dirtyDraw=true;
     }
@@ -531,22 +538,28 @@ $('#shapeBtn').addEventListener('click', e=>{ e.stopPropagation();
     if (b.dataset.v==='level'){ pushUndo(); S.level=!S.level; S.roll = S.level ? S.rollAuto : 0; S.dirtyDraw=true; commit(); return; }
     pushUndo(); S.shape=b.dataset.v; commit(); layout(); })); });
 const PIC_SIZES = [null, 1080, 2048, 2880, 4096];
+// Effects play over a camera move, in preview and in the video.
+const FX = [['none','None','The view just moves.'],
+  ['sweep','Sweep','A scanning beam sweeps outward from the camera and the picture appears behind it.'],
+  ['resolve','Resolve','The beam sweeps outward and turns the dots into the real photo as it passes.'],
+  ['decay','Decay','The picture comes apart: pieces let go one after another and drift away.'],
+  ['glitch','Glitch','Bands tear sideways, colours split and blocks drop out, in bursts.']];
 $('#saveBtn').addEventListener('click', e=>{ e.stopPropagation();
   const px = S.adv.exportLong || (MOBILE ? 2048 : 2880);
   const m=menu($('#saveBtn'), '#saveMenu', [['png','Picture',`PNG, ${px} pixels on the long side`],
     ['size', `Picture size: ${S.adv.exportLong || 'Auto'}`, 'Tap to change. Videos stop at 1920.'],
-    ['video','Video','Opens camera moves'],['ply','3D points','PLY file for Blender, MeshLab']]);
+    ['video','Video','Opens camera moves and effects'],['ply','3D points','PLY file for Blender, MeshLab'], ...(hasSplats() ? [['splat','Splat file','PLY for SuperSplat and other splat viewers']] : [])]);
   if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',ev=>{
     if (b.dataset.v==='size'){ ev.stopPropagation(); const i=PIC_SIZES.indexOf(S.adv.exportLong); S.adv.exportLong=PIC_SIZES[(i+1)%PIC_SIZES.length]; persist();
       m.hidden=true; $('#saveBtn').click(); return; }       // reopen with the new size showing
     m.hidden=true; $('#saveBtn').setAttribute('aria-expanded','false');
-    if (b.dataset.v==='png') savePicture(); else if (b.dataset.v==='ply') savePly(); else if (S.tab!=='move') setTab('move'); })); });
+    if (b.dataset.v==='png') savePicture(); else if (b.dataset.v==='ply') savePly(); else if (b.dataset.v==='splat') saveSplatPly(); else if (S.tab!=='move') setTab('move'); })); });
 document.addEventListener('click', ()=>{ document.querySelectorAll('.menu').forEach(x=>x.hidden=true); document.querySelectorAll('.tb[aria-haspopup]').forEach(b=>b.setAttribute('aria-expanded','false')); });
 $('#infoBtn').addEventListener('click', e=>{ e.stopPropagation(); const i=$('#info'); i.hidden=!i.hidden; $('#infoBtn').setAttribute('aria-expanded', !i.hidden);
   if (!i.hidden){ const text='First Return turns a photo into a lidar style point cloud. Depth is worked out on your device, and the photo never leaves it.';
     i.innerHTML = `<p style="display:flex;gap:8px;align-items:center">${sayBtn(text)}<b>${text}</b></p>
       <p>${S.count.toLocaleString()} dots. ${S.nComp} subject${S.nComp===1?'':'s'}. Camera view: ${esc(S.fovSource)}. ${self.crossOriginIsolated ? `Using up to ${Math.min(4, navigator.hardwareConcurrency||2)} processor cores.` : 'Using one processor core.'}${S.planes.length?` ${S.planes.length===1?'A floor':S.planes.length+' floor surfaces'} found in the photo.`:''}${P.light?' Light evened out.':''}</p>
-      <p>${esc(S.credit||'')}</p><p>Depth: Depth Anything V2 Small (Apache 2.0). Finder: MediaPipe EfficientDet Lite0 (Apache 2.0). Outlines: MediaPipe Magic Touch (Apache 2.0). Faces: YuNet, OpenCV Zoo (MIT). Runtime: ONNX Runtime Web (MIT).</p>
+      <p>${esc(S.credit||'')}</p><p>Depth: Depth Anything V2 Small (Apache 2.0). Finder: MediaPipe EfficientDet Lite0 (Apache 2.0). Outlines: MediaPipe Magic Touch (Apache 2.0). Faces: YuNet, OpenCV Zoo (MIT). Runtime: ONNX Runtime Web (MIT). Photoreal: Gaussian splatting (Kerbl and others, 2023), drawn by this app; .spz is Niantic's format (MIT).</p>
       <button class="btn" id="infoClose">Close</button>`;
     $('#infoClose').addEventListener('click',()=>{ i.hidden=true; });
     i.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say))); } });

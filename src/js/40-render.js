@@ -6,8 +6,9 @@ let gl = null, G = null;          // G holds every GL object so it can be rebuil
 
 const PTS_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aCol; layout(location=2) in vec4 aMeta;
-uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight, uOrbit; uniform int uMode;
+uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight, uOrbit, uFxT, uTime; uniform int uMode, uFx;
 uniform vec2 uR, uY;
+float hsh(float n){ return fract(sin(n*12.9898+4.1)*43758.5453); }
 out vec3 vCol; flat out float vRound;
 vec3 turbo(float x){ const vec4 kR=vec4(0.13572138,4.61539260,-42.66032258,132.13108234); const vec2 kR2=vec2(-152.94239396,59.28637943);
  const vec4 kG=vec4(0.09140261,2.19418839,4.84296658,-14.18503333); const vec2 kG2=vec2(4.27729857,2.82956604);
@@ -18,10 +19,15 @@ vec3 heat(float t){ t=clamp(t,0.,1.);
  return t<.25?mix(a,b,t/.25):t<.5?mix(b,c,(t-.25)/.25):t<.8?mix(c,d,(t-.5)/.3):mix(d,e,(t-.8)/.2); }
 vec3 lin(vec3 c){ return pow(max(c,0.),vec3(2.2)); }
 void main(){
-  vec4 vp = uView*vec4(aPos,1.); gl_Position = uProj*vp;
-  float dist = max(-vp.z, 1e-3);
   float kind=aMeta.x, rnd=aMeta.y, lum=aMeta.z, inc=aMeta.w;
   float r = clamp((length(aPos)-uR.x)/(uR.y-uR.x),0.,1.);
+  // video effects: 2 decay (dots let go and drift off), 3 glitch (bands slip sideways)
+  vec3 P0 = aPos; float fade = 1.;
+  if(uFx==2){ float st=rnd*.7, k=clamp((uFxT-st)/(1.-st),0.,1.); vec3 dir=normalize(vec3(hsh(rnd*91.)-.5, hsh(rnd*37.)-.25, hsh(rnd*53.)-.5));
+    P0 += dir*k*k*length(P0)*.3; fade = 1.-smoothstep(.3,.9,k); }
+  if(uFx==3){ float band=floor(P0.y*18.+floor(uTime*7.)*3.), on=step(.9, hsh(band+floor(uTime*11.))); P0.x += on*(hsh(band*3.1)-.5)*(uR.y-uR.x)*.08; }
+  vec4 vp = uView*vec4(P0,1.); gl_Position = uProj*vp;
+  float dist = max(-vp.z, 1e-3);
   vec3 c = lin(aCol); float g = dot(c, vec3(.2126,.7152,.0722)); float lumL = pow(lum,2.2);
   if(uLight>0. && kind<1.5){
     // squeeze the brightness range toward a mid grey, keeping each dot's own hue and some texture
@@ -48,6 +54,11 @@ void main(){
     c *= mix(1., .16, uFocus);
   }
   if(hiddenPart>.5){ if(uOrbit<.02){ gl_Position=vec4(2.,2.,2.,1.); } c *= uOrbit; }
+  // 1 sweep: only what the beam has reached; 4 resolve: only what it has not yet turned into the photo
+  if(uFx==1 || uFx==4){ float edge=uFxT*1.15, e=1.-smoothstep(0.,.035,abs(r-edge));
+    if((uFx==1 && r>edge) || (uFx==4 && r<edge)) gl_Position=vec4(2.,2.,2.,1.);
+    c = mix(c, lin(vec3(.55,1.,.9))*2.2*uExposure, e*.85); }
+  c *= fade;
   // points smaller than a pixel still draw one pixel, so dim them to keep brightness honest
   if(size < 1.) c *= size*size;
   vCol = c; vRound = (size >= 3. ? round_ : 0.);
@@ -68,12 +79,20 @@ void main(){ vec3 s=texture(uTex,vUv).rgb*.227;
  s+=(texture(uTex,vUv+uDir*1.385).rgb+texture(uTex,vUv-uDir*1.385).rgb)*.316;
  s+=(texture(uTex,vUv+uDir*3.231).rgb+texture(uTex,vUv-uDir*3.231).rgb)*.070; o=vec4(s,1.); }`;
 const COMP_FS = `#version 300 es
-precision highp float; in vec2 vUv; uniform sampler2D uScene, uGlowA, uGlowB, uDepth; uniform float uGlow, uEdl, uNear, uFar; uniform vec2 uRes; out vec4 o;
+precision highp float; in vec2 vUv; uniform sampler2D uScene, uGlowA, uGlowB, uDepth; uniform float uGlow, uEdl, uNear, uFar, uRaw, uGlitch, uTime; uniform vec2 uRes; out vec4 o;
 float h(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
 float lz(float d){ float z=(2.*uNear*uFar)/(uFar+uNear-(d*2.-1.)*(uFar-uNear)); return log2(z); }
 vec3 aces(vec3 x){ return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.); }
 void main(){
-  vec3 c=texture(uScene,vUv).rgb;
+  vec2 uv=vUv; vec3 c;
+  if(uGlitch>0.){
+    // glitch: horizontal bands tear sideways, the colour channels split, and blocks drop out now and then
+    float t=floor(uTime*10.), band=floor(vUv.y*28.), on=step(1.-.4*uGlitch, h(vec2(band,t)));
+    uv.x += on*(h(vec2(band*1.7,t))-.5)*.09*uGlitch;
+    float sp=.007*uGlitch*(.4+on);
+    c=vec3(texture(uScene,uv+vec2(sp,0.)).r, texture(uScene,uv).g, texture(uScene,uv-vec2(sp,0.)).b);
+    vec2 blk=floor(vUv*vec2(16.,9.)); if(h(blk+t*1.37) > 1.-.05*uGlitch) c*=.05;
+  } else c=texture(uScene,vUv).rgb;
   if(uEdl>0.){
     // eye-dome lighting: darken a point when its neighbours on screen are nearer than it
     float d=texture(uDepth,vUv).r;
@@ -82,9 +101,13 @@ void main(){
         float dn=texture(uDepth,vUv+off).r; float zn = dn<1. ? lz(dn) : zc+8.; s+=max(0.,zc-zn); }
       c*=exp(-s/8.*uEdl*110.); }
   }
-  c += uGlow*(texture(uGlowA,vUv).rgb*.9 + texture(uGlowB,vUv).rgb*1.3);
-  vec2 q=(vUv-.5)*vec2(uRes.x/uRes.y,1.); c*=1.-.4*smoothstep(.45,1.2,length(q));
-  c=pow(aces(c),vec3(1./2.2)); c+=(h(vUv*uRes)-.5)/255.; o=vec4(c,1.); }`;
+  vec3 bloom = uGlow*(texture(uGlowA,uv).rgb*.9 + texture(uGlowB,uv).rgb*1.3);
+  vec2 q=(vUv-.5)*vec2(uRes.x/uRes.y,1.);
+  // Photoreal keeps the photo's own colours; the dot looks go through a filmic curve
+  if(uRaw>.5){ c += bloom*.35; c*=1.-.25*smoothstep(.55,1.25,length(q)); c=clamp(c,0.,1.); }
+  else { c += bloom; c*=1.-.4*smoothstep(.45,1.2,length(q)); c=pow(aces(c),vec3(1./2.2)); }
+  if(uGlitch>0.) c*=1.-.1*uGlitch*step(.5,fract(vUv.y*uRes.y*.5));
+  c+=(h(vUv*uRes)-.5)/255.; o=vec4(c,1.); }`;
 
 function initGL(){
   gl = cv.getContext('webgl2', {antialias:false, alpha:false, preserveDrawingBuffer:false, powerPreference:'high-performance'});
@@ -92,7 +115,7 @@ function initGL(){
   const half = !!gl.getExtension('EXT_color_buffer_float');
   const sh=(type,src)=>{ const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
   const prog=(vs,fs)=>{ const p=gl.createProgram(); gl.attachShader(p,sh(gl.VERTEX_SHADER,vs)); gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs)); gl.linkProgram(p); if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)); const u={}; const n=gl.getProgramParameter(p,gl.ACTIVE_UNIFORMS); for(let i=0;i<n;i++){const a=gl.getActiveUniform(p,i); u[a.name]=gl.getUniformLocation(p,a.name);} return {p,u}; };
-  G = {half, P:prog(PTS_VS,PTS_FS), B:prog(QUAD_VS,BRIGHT_FS), Bl:prog(QUAD_VS,BLUR_FS), C:prog(QUAD_VS,COMP_FS),
+  G = {half, P:prog(PTS_VS,PTS_FS), SP:prog(SPLAT_VS,SPLAT_FS), B:prog(QUAD_VS,BRIGHT_FS), Bl:prog(QUAD_VS,BLUR_FS), C:prog(QUAD_VS,COMP_FS),
        quad:gl.createVertexArray(), clouds:{}, targets:{}};
   return true;
 }
@@ -152,8 +175,13 @@ function renderView(W, H, o){
   if (!o.thumb){ S.V=V; S.P=Pm; }
   gl.bindFramebuffer(gl.FRAMEBUFFER, T.sF); gl.viewport(0,0,W,H);
   gl.clearColor(0.004,0.005,0.006,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-  const L = LOOKS[o.look];
-  if (o.cloud.count){
+  // Photoreal draws the splats; the Resolve effect draws both, the dots giving way to the photo as the
+  // beam passes. Every other look draws the dots.
+  const fx = o.fx||'none', splatLook = !!LOOKS[o.look].splat, both = fx==='resolve' && hasSplats();
+  const L = splatLook ? LOOKS.void : LOOKS[o.look];
+  const ptFx = {sweep:1, decay:2, glitch:3, resolve: both?4:1}[fx]||0;
+  o.splatFx = {sweep:1, resolve:1, decay:2, glitch:3}[fx]||0;
+  if (o.cloud.count && (!splatLook || both)){
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
     gl.useProgram(G.P.p); const u=G.P.u;
     gl.uniformMatrix4fv(u.uProj,false,Pm); gl.uniformMatrix4fv(u.uView,false,V);
@@ -168,9 +196,11 @@ function renderView(W, H, o){
     gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8 + slid*8));
     gl.uniform1i(u.uMode, {photo:0,muted:0,range:1,height:2,grey:3,phosphor:4}[o.colour]||0);
     gl.uniform2f(u.uR, S.rng[0], S.rng[1]); gl.uniform2f(u.uY, S.yr[0], S.yr[1]);
+    gl.uniform1i(u.uFx, ptFx); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0);
     gl.bindVertexArray(o.cloud.vao); gl.drawArrays(gl.POINTS, 0, o.cloud.count); gl.bindVertexArray(null);
     gl.disable(gl.DEPTH_TEST);
   }
+  if ((splatLook || both) && hasSplats()) drawSplats(W, H, V, Pm, o, !splatLook || both);
   gl.bindVertexArray(G.quad);
   const pass = (p, f, w, h, bind) => { gl.bindFramebuffer(gl.FRAMEBUFFER,f); gl.viewport(0,0,w,h); gl.useProgram(p.p); bind(p.u); gl.drawArrays(gl.TRIANGLES,0,3); };
   const tx = (unit, t) => { gl.activeTexture(gl.TEXTURE0+unit); gl.bindTexture(gl.TEXTURE_2D,t); };
@@ -182,12 +212,14 @@ function renderView(W, H, o){
   pass(G.Bl, T.cF, T.qw, T.qh, u=>{ tx(0,T.d); gl.uniform1i(u.uTex,0); gl.uniform2f(u.uDir,0,2.2*k/T.qh); });
   pass(G.C, null, W, H, u=>{ tx(0,T.sT); tx(1,T.a); tx(2,T.c); tx(3,T.dT);
     gl.uniform1i(u.uScene,0); gl.uniform1i(u.uGlowA,1); gl.uniform1i(u.uGlowB,2); gl.uniform1i(u.uDepth,3);
-    gl.uniform1f(u.uGlow,o.glow); gl.uniform1f(u.uEdl,o.edges); gl.uniform1f(u.uNear,0.05); gl.uniform1f(u.uFar,400.); gl.uniform2f(u.uRes,W,H); });
+    const raw = splatLook && !both, glitch = fx==='glitch' ? .45 + .55*Math.max(0, Math.sin((o.fxTime||0)*2.3)*Math.sin((o.fxTime||0)*5.1)) : fx==='decay' ? .25*Math.max(0,(o.fxT||0)-.6)/.4 : 0;
+    gl.uniform1f(u.uRaw, raw?1:0); gl.uniform1f(u.uGlitch, glitch); gl.uniform1f(u.uTime, o.fxTime||0);
+    gl.uniform1f(u.uGlow,o.glow); gl.uniform1f(u.uEdl, raw ? 0 : o.edges); gl.uniform1f(u.uNear,0.05); gl.uniform1f(u.uFar,400.); gl.uniform2f(u.uRes,W,H); });
   gl.bindVertexArray(null);
 }
 function viewOpts(extra){
   return Object.assign({cloud:G.clouds.main||{count:0}, look, colour:P.colour, size:val('size'), bright:val('bright'), glow:val('glow'), light:val('light'),
-    edges:val('edges'), yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, focus:S.tab==='subject' && !S.recording}, extra||{});
+    edges:val('edges'), yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, focus:S.tab==='subject' && !S.recording, sync:!!S.exporting, fx:S.fxNow||'none', fxT:S.fxT||0, fxTime:S.fxTime||0}, extra||{});
 }
 function draw(W, H){ if (!gl || gl.isContextLost()) return; renderView(W||cv.width, H||cv.height, viewOpts()); }
 

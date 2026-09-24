@@ -183,3 +183,28 @@ Three reviews ran at the same time:
 ## Suggested order
 Fixes → Share → Scan sweep with Loop → Focus blur, Haze and colour ramps → Sky mask → Tilt to look → Start and end views → RF-DETR → the rest.
 Everything before RF-DETR adds about 8 KB and no models.
+
+---
+
+# Round four, 24 September 2026: splats, Photoreal and effects
+
+## Built
+- **A splat renderer inside the app.** About 11 KB of code and no libraries. It uses the standard 3DGS projection (3D covariance, view, then perspective Jacobian). Splats are sorted back to front by a 16-bit counting sort in a worker, blended premultiplied, and stored in one integer texture. The covariance is stored as halves, scaled toward 1 so millimetre splats survive.
+- **Photo to splats.** One splat per depth pixel, lying on its surface. Edge pixels are snapped to the nearer or farther surface, so they no longer float as stripes. The inpainted background behind subjects gets its own splats. Measured: 1.29 M splats in 0.36 s on the PC, and 323 k at phone limits. Frames take 20 to 35 ms after the first.
+- **Splat files in.** `.ply` (3DGS), `.splat` and `.spz` v1 to v3. v4 uses Zstandard, which browsers cannot unpack yet. Splats are levelled with their points, rotations included.
+- **Splat file out.** Standard 3DGS `.ply`, y-down. Round trip verified: save, reopen, same count and upright.
+- **Effects** in both renderers: Sweep, Resolve, Decay and Glitch. The Glitch look (band tearing, channel split, block dropout, scanlines) runs in the compositing pass. A 4 s Resolve orbit recorded to MP4 in 3.3 s.
+
+## Found while building
+- The GPU `sin()` hash gives neighbouring indices nearly the same number, which made the Decay streaks. Use an integer hash for anything indexed.
+- Sending the splat set with every sort request would have copied tens of MB each time. The worker now gets the positions once, then an id.
+
+## Opportunities this opens (all within the one-page, on-device constraint)
+1. **Layered edges everywhere.** The dark tears behind heads when turned come from depth edges that aren't subjects. Running the existing push-pull fill along every depth edge, not only behind picked subjects, would close them. This is the idea behind 3D Photo Inpainting, done cheaply.
+2. **Sky as a far dome.** The sky mask (0.2 MB, planned) would put sky splats on a distant sphere, so turning never shows sky as a flat wall.
+3. **Relighting.** Splats from a photo carry a surface normal, so a movable light (or a "scan beam" light) can shade them. That is lidar-intensity shading and a new kind of video move.
+4. **Depth of field in Photoreal.** Grow splats by their distance from the focus plane. This is nearly free, because splat size is already in the shader.
+5. **Mixed looks.** Subject photoreal with dotted surroundings, or the reverse. Both passes exist; it is a per-splat mask.
+6. **Lighter splat files.** Export `.spz` (gzip, 8 to 10 times smaller) or a thinned `.ply`. The 72 MB desktop file is heavy to share.
+7. **Loops.** The Resolve then Decay pair makes a natural seamless loop for social video.
+8. **Several photos, one scene.** Out of reach in the browser without camera-pose solving. The offline route is Brush. Deliberately not pursued, since the aim is to avoid clunky off-app processing.
