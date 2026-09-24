@@ -167,13 +167,19 @@ function cfgFromP(extra){
 }
 function build(){
   S.dirtyBuild = false;
+  if (S.scan){
+    const R = buildScanCloud(cfgFromP({low:S.lowDetail}));
+    S.cpu = R.out; S.cpuComp = R.comp; S.count = R.n; S.nComp = 0; S.comps = []; S.floor3d = null;
+    const ex = extents(R.out, R.n); S.rng=ex.rng; S.yr=ex.yr;
+    uploadCloud(R.out, R.n); refreshLabelPositions(); renderPins(); S.dirtyDraw = true; return;
+  }
   if (!S.photo || !S.depth) return;
   SHIFT = curShift();
   S.compMap = subjectMap();
   const R = buildCloud(cfgFromP({low:S.lowDetail}));
   S.cpu = R.out; S.cpuComp = R.comp; S.count = R.n; S.nComp = R.live.length; S.floor3d = R.floorPlane;
   S.comps = R.live;
-  if (S.autoLight){
+  if (S.autoLight && !S.scan){
     S.autoLight = false; const ls=[];
     for (let i=0;i<R.n;i+=7) if (R.out[i*10+6]===0) ls.push(R.out[i*10+8]);
     ls.sort((a,b)=>a-b); const med = ls.length ? ls[ls.length>>1] : 0.5;

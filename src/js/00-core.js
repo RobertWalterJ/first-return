@@ -59,7 +59,8 @@ const S = {
   labels:[], placing:false,
   faces:[], anon:false, anonLevel:1, faceMask:null, facesFound:false,
   yaw:0, pitch:0, zoom:1, target:[0,0,-2], spin:false,
-  planes:[], floorTouched:false, autoLight:false, autoFind:true,
+  planes:[], floorTouched:false, autoLight:false, autoFind:true, scan:null,
+  roll:0, rollAuto:0, level:true,      // tilt correction, from the floor
   pivot:[0,0,-2], pan:[0,0,0], refDist:2, userMoved:false, panMode:false,   // where turning is centred, and how far the view has slid
   count:0, cpu:null, rng:[1,2], yr:[0,1], floor3d:null,
   dirtyBuild:true, dirtyDraw:true, lowDetail:false, recording:false,
@@ -79,7 +80,9 @@ function banner(text){ const b=$('#banner'); b.hidden=!text; if (text) b.textCon
 function store(k,v){ try{ localStorage.setItem('firstreturn.'+k, JSON.stringify(v)); }catch(e){} }
 function recall(k){ try{ const v=localStorage.getItem('firstreturn.'+k); return v==null?null:JSON.parse(v); }catch(e){ return null; } }
 function say(text){ try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); u.rate=0.95; speechSynthesis.speak(u); }catch(e){} }
-function loadScript(src){ return new Promise((res,rej)=>{ if (document.querySelector(`script[data-src="${src}"]`)) return res(); const s=document.createElement('script'); s.src=src; s.dataset.src=src; s.onload=res; s.onerror=()=>rej(new Error('could not load '+src)); document.head.appendChild(s); }); }
+// one promise per script, so a second caller waits for the same load instead of racing ahead of it
+const scriptLoads = {};
+function loadScript(src){ return scriptLoads[src] || (scriptLoads[src] = new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=()=>{ delete scriptLoads[src]; rej(new Error('could not load '+src)); }; document.head.appendChild(s); })); }
 
 const M4 = {
   persp(fy, a, n, f){ const t=1/Math.tan(fy/2), nf=1/(n-f); return [t/a,0,0,0, 0,t,0,0, 0,0,(f+n)*nf,-1, 0,0,2*f*n*nf,0]; },
@@ -87,5 +90,6 @@ const M4 = {
   tr(x,y,z){ return [1,0,0,0, 0,1,0,0, 0,0,1,0, x,y,z,1]; },
   ry(a){ const c=Math.cos(a), s=Math.sin(a); return [c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]; },
   rx(a){ const c=Math.cos(a), s=Math.sin(a); return [1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]; },
+  rz(a){ const c=Math.cos(a), s=Math.sin(a); return [c,s,0,0, -s,c,0,0, 0,0,1,0, 0,0,0,1]; },
   xf(m,p){ const x=p[0],y=p[1],z=p[2]; const w=m[3]*x+m[7]*y+m[11]*z+m[15]; return [(m[0]*x+m[4]*y+m[8]*z+m[12])/w,(m[1]*x+m[5]*y+m[9]*z+m[13])/w,(m[2]*x+m[6]*y+m[10]*z+m[14])/w,w]; }
 };

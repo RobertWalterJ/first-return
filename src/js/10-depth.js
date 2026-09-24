@@ -212,6 +212,31 @@ function upFacingGround(D, g){
   }
   return g;
 }
+// How far the camera was rolled, from how far the photo's vertical edges lean (walls, poles, door
+// frames, easels, people standing). Depth models learn from upright photos and tend to straighten
+// floors in their output, so the floor under-reads a tilt; vertical edges do not.
+function rollFromVerticals(canvas){
+  const L=640, s=Math.min(1, L/Math.max(canvas.width,canvas.height)), w=Math.round(canvas.width*s), h=Math.round(canvas.height*s);
+  const c=document.createElement('canvas'); c.width=w; c.height=h; const x=c.getContext('2d',{willReadFrequently:true}); x.drawImage(canvas,0,0,w,h);
+  const px=x.getImageData(0,0,w,h).data, g=new Float32Array(w*h); for (let i=0;i<w*h;i++) g[i]=0.299*px[i*4]+0.587*px[i*4+1]+0.114*px[i*4+2];
+  const gx=new Float32Array(w*h), gy=new Float32Array(w*h);
+  for (let y=1;y<h-1;y++) for (let xx=1;xx<w-1;xx++){ const i=y*w+xx;
+    gx[i]=(g[i-w+1]+2*g[i+1]+g[i+w+1])-(g[i-w-1]+2*g[i-1]+g[i+w-1]); gy[i]=(g[i+w-1]+2*g[i+w]+g[i+w+1])-(g[i-w-1]+2*g[i-w]+g[i-w+1]); }
+  // Structure tensor over 7x7 windows: the edge direction is averaged, so pixel-grid and JPEG block
+  // edges stop pulling the answer toward zero, and coherence keeps long straight lines over foliage.
+  const r=3, bins=new Float64Array(97);                 // -12..+12 degrees in quarter-degree bins
+  for (let y=r+1;y<h-r-1;y+=2) for (let xx=r+1;xx<w-r-1;xx+=2){
+    let a=0,b=0,cc=0; for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){ const j=(y+dy)*w+xx+dx; a+=gx[j]*gx[j]; b+=gy[j]*gy[j]; cc+=gx[j]*gy[j]; }
+    const tr=a+b; if (tr < 60*60*49) continue;
+    const coh=Math.sqrt((a-b)**2+4*cc*cc)/tr; if (coh<0.75) continue;
+    const d=0.5*Math.atan2(2*cc, a-b)*180/Math.PI; if (Math.abs(d)>12) continue;   // how far a vertical edge leans
+    bins[Math.round((d+12)*4)] += Math.sqrt(tr)*coh*coh; }
+  let total=0; for (const q of bins) total+=q; if (!total) return 0;
+  let best=-1, bi=48; for (let k=2;k<95;k++){ const v=bins[k-2]+2*bins[k-1]+3*bins[k]+2*bins[k+1]+bins[k+2]; if (v>best){ best=v; bi=k; } }
+  if (best/9 < total/97*4) return 0;                   // no clear shared lean: leave the photo alone
+  let sw=0, sd=0; for (let k=bi-3;k<=bi+3;k++){ sw+=bins[k]; sd+=bins[k]*((k/4)-12); }
+  return (sd/sw)*Math.PI/180;
+}
 function estimateShift(pl){
   // level camera: the horizon is the middle row, where the floor's true disparity is zero
   if (pl){ const t = -(pl.al*0.5 + pl.be*0.5 + pl.ga); if (t > 0.04 && t < 3) return t; }

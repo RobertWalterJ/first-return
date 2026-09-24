@@ -79,6 +79,9 @@ function renderTray(){
       tr.querySelectorAll('[data-stop]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); P[c.key]=+b.dataset.stop; if (c.key==='floor') S.floorTouched=true; if (c.rebuild){ S.lowDetail=false; S.dirtyBuild=true; } S.dirtyDraw=true; commit(); }));
     }
   }
+  else if (S.tab==='subject' && S.scan){
+    tr.innerHTML = `<p class="hint" style="margin:0">${sayBtn('A scan keeps every point it measured, so there is no subject to pick. Use Backdrop under Adjust to thin out its floor.')}<span>A scan keeps every point it measured, so there is no subject to pick. Use Backdrop under Adjust to thin out its floor.</span></p>`;
+  }
   else if (S.tab==='subject'){
     tr.innerHTML = `<p class="hint" style="margin:0 0 10px">${sayBtn('Tap the thing that matters in the picture. It becomes the subject, even if something else is nearer. Tap more things to add them.')}<span>Tap the thing that matters. It becomes the subject, even if something else is nearer.</span></p>
       <div class="row" style="margin-bottom:10px"><button class="btn primary" id="findThings">Find people and things</button></div>
@@ -115,16 +118,17 @@ function renderTray(){
   else if (S.tab==='people'){
     const auto=S.faces.filter(f=>f.auto).length, hand=S.faces.length-auto;
     const status = !S.anon ? 'Faces are shown as they are.' : `${auto?`Found ${auto} face${auto===1?'':'s'}.`:'No faces found by itself.'}${hand?` ${hand} covered by hand.`:''}`;
-    tr.innerHTML = `<h3>Faces</h3>
+    tr.innerHTML = S.scan ? `<p class="hint" style="margin:0 0 10px"><span>Faces can only be found in photos.</span></p><div class="sect"><h3>Names</h3><div class="row"><button class="chip" id="addLabel" aria-pressed="${S.placing==='label'}">+ Name</button></div>
+      <div class="lablist">${S.labels.map((L,i)=>`<div><input id="label-${i}" value="${esc(L.text)}" placeholder="Name" aria-label="Name"><button class="chip" data-del="${i}">Remove</button></div>`).join('')}</div></div>` : `<h3>Faces</h3>
       <div class="scroller"><button class="chip" id="anon" aria-pressed="${S.anon}">Hide faces</button>
       ${['Light','Medium','Strong'].map((n,i)=>`<button class="chip" data-level="${i}" aria-pressed="${S.anon&&S.anonLevel===i}">${n}</button>`).join('')}
       <button class="chip" id="addFace" aria-pressed="${S.placing==='face'}">+ Face</button>${S.faces.length?'<button class="chip" id="clearFaces">Clear</button>':''}</div>
       <p class="hint">${sayBtn(status+' Hair, clothes and the setting can still identify someone.')}<span>${status}</span></p>
       <div class="sect"><h3>Names</h3><div class="row"><button class="chip" id="addLabel" aria-pressed="${S.placing==='label'}">+ Name</button></div>
       <div class="lablist">${S.labels.map((L,i)=>`<div><input id="label-${i}" value="${esc(L.text)}" placeholder="Name" aria-label="Name"><button class="chip" data-del="${i}">Remove</button></div>`).join('')}</div></div>`;
-    $('#anon').addEventListener('click', async ()=>{ S.anon=!S.anon; if (S.anon && !S.facesFound) await findFaces(); applyAnon(); invalidateCompare(); renderTray(); });
+    if ($('#anon')) $('#anon').addEventListener('click', async ()=>{ S.anon=!S.anon; if (S.anon && !S.facesFound) await findFaces(); applyAnon(); invalidateCompare(); renderTray(); });
     tr.querySelectorAll('[data-level]').forEach(b=>b.addEventListener('click', async ()=>{ S.anonLevel=+b.dataset.level; if (!S.anon){ S.anon=true; if (!S.facesFound) await findFaces(); } applyAnon(); invalidateCompare(); renderTray(); }));
-    $('#addFace').addEventListener('click',()=>{ S.placing = S.placing==='face' ? false : 'face'; setTab('people'); });
+    if ($('#addFace')) $('#addFace').addEventListener('click',()=>{ S.placing = S.placing==='face' ? false : 'face'; setTab('people'); });
     const cf=$('#clearFaces'); if (cf) cf.addEventListener('click',()=>{ S.faces=[]; S.facesFound=false; S.anon=false; applyAnon(); invalidateCompare(); renderTray(); });
     $('#addLabel').addEventListener('click',()=>{ S.placing = S.placing==='label' ? false : 'label'; setTab('people'); });
     S.labels.forEach((L,i)=>{ $('#label-'+i).addEventListener('input',e=>{ L.text=e.target.value; S.dirtyDraw=true; }); });
@@ -141,13 +145,13 @@ let thumbsFor = null, thumbJob = 0;
 function queueThumbs(){ thumbsFor = null; const job=++thumbJob; setTimeout(()=>makeThumbs(job), 400); }
 function makeThumbs(job){
   if (job!==thumbJob) return;
-  if (!gl || !G || !S.photo || !S.compMap || S.dirtyBuild){ setTimeout(()=>makeThumbs(job), 300); return; }
+  if (!gl || !G || !S.photo || (!S.compMap && !S.scan) || S.dirtyBuild){ setTimeout(()=>makeThumbs(job), 300); return; }
   const keys = Object.keys(LOOKS); const out = {};
   const next = i => {
     if (job!==thumbJob) return;
     if (i>=keys.length){ thumbsFor = out; paintThumbs(); return; }
     const k=keys[i], L=LOOKS[k];
-    const R = buildCloud({dots:CTRL.dots.stops[Math.round(Math.min(2,L.dots))][1], backdrop:CTRL.backdrop.stops[Math.round(L.backdrop)][1],
+    const R = (S.scan ? buildScanCloud : buildCloud)({dots:CTRL.dots.stops[Math.round(Math.min(2,L.dots))][1], backdrop:CTRL.backdrop.stops[Math.round(L.backdrop)][1],
       floor:CTRL.floor.stops[Math.round(L.floor)][1], pattern:L.pattern, bgTint:L.bgTint, cap:60000});
     uploadCloud(R.out, R.n, 'thumb');
     const tw=208, th=156;
@@ -176,7 +180,16 @@ function layout(){
 }
 new ResizeObserver(()=>layout()).observe($('#stage'));
 function project(p, W, H){ const c=M4.xf(M4.mul(S.P, S.V), p); if (c[3]<=0) return null; return [(c[0]*.5+.5)*W, (1-(c[1]*.5+.5))*H]; }
-function labelWorld(L){ const p=unproject(L.u, L.v, zOf(depthAt(L.u,L.v))); return [p[0], p[1]+L.lift, p[2]]; }
+function labelWorld(L){ if (L.fixed) return L.fixed; const p=unproject(L.u, L.v, zOf(depthAt(L.u,L.v))); return [p[0], p[1]+L.lift, p[2]]; }
+function pickDrawn(cx, cy){
+  if (!S.count || !S.P) return null;
+  const MV=M4.mul(S.P,S.V), out=S.cpu; let best=1e9, bi=-1;
+  const step=Math.max(1, Math.floor(S.count/250000));
+  for (let i=0;i<S.count;i+=step){ const o=i*10; const c=M4.xf(MV,[out[o],out[o+1],out[o+2]]); if (c[3]<=0) continue;
+    const sx=(c[0]*.5+.5)*S.cssW, sy=(1-(c[1]*.5+.5))*S.cssH, dd=(sx-cx)**2+(sy-cy)**2; if (dd<best){best=dd; bi=i;} }
+  if (bi<0 || best > 44*44) return null;
+  const o=bi*10; return {u:0, v:0, comp:-1, p:[out[o],out[o+1],out[o+2]]};
+}
 function refreshLabelPositions(){ S.labels.forEach(L=>{ L.pos=labelWorld(L); }); }
 function renderLabels(){
   const box=$('#labels'), fs=Math.max(11, S.cssH*0.03);
@@ -199,6 +212,7 @@ function renderPins(){
 // Within a small radius the nearest surface to the camera wins, so a tap on a person in front of a
 // wall picks the person.
 function pickPoint(cx, cy){
+  if (S.scan) return pickDrawn(cx, cy);
   if (!S.depth || !S.P) return null;
   const D=S.depth, MV=M4.mul(S.P,S.V), step=Math.max(1, Math.round(Math.sqrt(D.w*D.h/160000)));
   let best=1e9, bi=-1, bp=null, near=-1, nearW=1e9, nearP=null;
@@ -211,6 +225,7 @@ function pickPoint(cx, cy){
   return {u:((bi%D.w)+.5)/D.w, v:(((bi/D.w)|0)+.5)/D.h, comp:S.compMap ? S.compMap[bi] : -1, p:bp};
 }
 async function onTap(cx, cy){
+  if (S.tab==='subject' && S.scan) return;
   if (S.tab==='subject'){
     const hit = S.picks.findIndex(p=>p.sx!=null && Math.hypot(p.sx-cx,p.sy-cy)<22);
     pushUndo();
@@ -226,6 +241,8 @@ async function onTap(cx, cy){
   }
   if (S.placing==='face'){ const p=pickPoint(cx,cy); if (!p) return; addFaceAt(p.u, p.v, p.comp); invalidateCompare(); S.placing=false; setTab('people'); return; }
   if (S.placing==='label'){ const p=pickPoint(cx,cy); if (!p) return;
+    if (S.scan){ const L={fixed:[p.p[0], p.p[1]+0.06*S.refDist, p.p[2]], text:''}; L.pos=L.fixed; S.labels.push(L); S.placing=false; setTab('people');
+      const inp=$('#label-'+(S.labels.length-1)); if (inp) inp.focus(); S.dirtyDraw=true; return; }
     const c=S.comps.find(k=>k.id===p.comp);
     const L = c ? {u:c.topUV[0], v:c.topUV[1], lift:(c.maxY-c.minY)*0.07, text:''} : {u:p.u, v:p.v, lift:0.06, text:''};
     L.pos=labelWorld(L); S.labels.push(L); S.placing=false; setTab('people');
@@ -234,7 +251,7 @@ async function onTap(cx, cy){
 
 // ---------------------------------------------------------------- gestures
 // ---------------------------------------------------------------- panning and the centre of turning
-function rotOnly(){ return M4.mul(M4.rx(S.pitch*Math.PI/180), M4.ry(S.yaw*Math.PI/180)); }
+function rotOnly(){ return M4.mul(M4.rz(S.roll), M4.mul(M4.rx(S.pitch*Math.PI/180), M4.ry(S.yaw*Math.PI/180))); }
 // Move the pivot to t without changing what is on screen, by folding the difference into the pan.
 function setPivotKeepingView(t){
   const V = viewMatrix(S.yaw,S.pitch,S.zoom,S.pivot,S.pan), T=[V[12],V[13],V[14]], Rt = M4.xf(rotOnly(), t), back=(S.zoom-1)*S.refDist;
@@ -243,7 +260,7 @@ function setPivotKeepingView(t){
 // After a slide, turn about whatever is now in the middle of the screen, at the old pivot's depth.
 function recentrePivot(){
   const V = viewMatrix(S.yaw,S.pitch,S.zoom,S.pivot,S.pan), pv = M4.xf(V, S.pivot), T=[V[12],V[13],V[14]];
-  const c = [0-T[0], 0-T[1], pv[2]-T[2]], Rinv = M4.mul(M4.ry(-S.yaw*Math.PI/180), M4.rx(-S.pitch*Math.PI/180));
+  const c = [0-T[0], 0-T[1], pv[2]-T[2]], Rinv = M4.mul(M4.ry(-S.yaw*Math.PI/180), M4.mul(M4.rx(-S.pitch*Math.PI/180), M4.rz(-S.roll)));
   setPivotKeepingView(M4.xf(Rinv, c));
 }
 function panBy(dx, dy){
@@ -318,7 +335,7 @@ let compareURL=null;
 function invalidateCompare(){ if (compareURL){ URL.revokeObjectURL(compareURL); compareURL=null; } }
 async function showCompare(on){
   const im=$('#compare');
-  if (!on || !S.photo){ im.hidden=true; return; }
+  if (!on || !S.photo || !S.photo.data){ im.hidden=true; return; }
   if (!compareURL){ const c=document.createElement('canvas'); c.width=S.photo.w; c.height=S.photo.h; c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(S.photo.data),S.photo.w,S.photo.h),0,0);
     compareURL = URL.createObjectURL(await new Promise(r=>c.toBlob(r,'image/jpeg',0.9))); }
   const pa=S.photo.w/S.photo.h, fa=frameAspect(); let w=S.cssW, h=S.cssH;
@@ -342,8 +359,12 @@ function menu(btn, id, items){
   return m;
 }
 $('#shapeBtn').addEventListener('click', e=>{ e.stopPropagation();
-  const m=menu($('#shapeBtn'), '#shapeMenu', [['photo','Same as the photo','',S.shape==='photo'],['wide','Wide','16 by 9',S.shape==='wide'],['square','Square','',S.shape==='square'],['tall','Tall','9 by 16, for stories',S.shape==='tall']]);
-  if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); S.shape=b.dataset.v; commit(); layout(); m.hidden=true; $('#shapeBtn').setAttribute('aria-expanded','false'); })); });
+  const items=[['photo','Same as the photo','',S.shape==='photo'],['wide','Wide','16 by 9',S.shape==='wide'],['square','Square','',S.shape==='square'],['tall','Tall','9 by 16, for stories',S.shape==='tall']];
+  if (S.rollAuto) items.push(['level', S.level ? 'Straightened' : 'Straighten', S.level ? `Tilted ${(Math.abs(S.rollAuto)*180/Math.PI).toFixed(1)}°, levelled from the floor. Tap to undo.` : `Tilted ${(Math.abs(S.rollAuto)*180/Math.PI).toFixed(1)}°. Tap to level it.`, S.level]);
+  const m=menu($('#shapeBtn'), '#shapeMenu', items);
+  if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ m.hidden=true; $('#shapeBtn').setAttribute('aria-expanded','false');
+    if (b.dataset.v==='level'){ S.level=!S.level; S.roll = S.level ? S.rollAuto : 0; S.dirtyDraw=true; return; }
+    pushUndo(); S.shape=b.dataset.v; commit(); layout(); })); });
 $('#saveBtn').addEventListener('click', e=>{ e.stopPropagation();
   const m=menu($('#saveBtn'), '#saveMenu', [['png','Picture','PNG, full size'],['video','Video','Opens camera moves'],['ply','3D points','PLY file for Blender, MeshLab']]);
   if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ m.hidden=true; $('#saveBtn').setAttribute('aria-expanded','false');
@@ -361,12 +382,16 @@ $('#info').addEventListener('click', e=>e.stopPropagation());
 
 // ---------------------------------------------------------------- opening a photo
 async function setPhoto(ph, D, credit){
+  S.scan=null; $('#compareBtn').hidden=false; S.roll=0; S.rollAuto=0;
   S.photoCanvas=ph.canvas; S.photoSrc=S.photo={w:ph.w,h:ph.h,data:ph.data}; S.tanV=ph.fov.tanV; S.fovSource=ph.fov.src; S.credit=credit||'';
   invalidateCompare();
   busy('Sharpening the depth edges', null); await tick();
   S.depthSrc=S.depth=refineDepth(D, ph.canvas);
   S.planes=fitFloors(S.depth); S.plane=S.planes[0]||null; S.ground=groundMask(S.depth, S.planes); S.shiftAuto=estimateShift(S.plane);
   SHIFT=curShift(); upFacingGround(S.depth, S.ground); S.autoCut=otsu(S.depth.d, S.ground);
+  // How far the camera was rolled (see rollFromVerticals).
+  { const ang = rollFromVerticals(ph.canvas); if (Math.abs(ang) > 0.4*Math.PI/180 && Math.abs(ang) < 12*Math.PI/180) S.rollAuto = ang; }
+  S.roll = S.level ? S.rollAuto : 0;
   S.floorTouched=false; S.autoLight=true;
   S.picks=[]; S.labels=[]; S.faces=[]; S.facesFound=false; S.faceMask=null; banner('');
   if (S.anon){ await findFaces(); applyAnon(); }
@@ -378,6 +403,7 @@ async function setPhoto(ph, D, credit){
 }
 $('#file').addEventListener('change', async e=>{
   const f=e.target.files[0]; if (!f) return; e.target.value='';
+  if (/\.ply$/i.test(f.name)){ try { await openScan(f); } catch(err){ console.error(err); busy(null); banner('Could not read that scan: '+(err.message||err)); } return; }
   try { busy('Opening the photo', null); await tick();
     const ph = await decodePhoto(f);
     const raw = await estimateDepth(ph.canvas);
