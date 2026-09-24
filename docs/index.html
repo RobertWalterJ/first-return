@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#040506">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#0b0d0f">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg">
 </head>
@@ -15,294 +15,240 @@
 <style>
 :root{
   color-scheme:dark;
-  --void:#040506; --panel:#0b0d0f; --raise:#12161a; --line:#1e2429; --line2:#2b333a;
-  --text:#dce3e6; --dim:#83909a; --faint:#56616a;
-  --accent:#72e8cb; --accent-ink:#03140f; --warm:#f2d6a2;
+  --void:#040506; --panel:#0b0d0f; --raise:#141a1e; --line:#1e2429; --line2:#2d363d;
+  --text:#e2e8eb; --dim:#8b98a1; --faint:#5a6770;
+  --accent:#72e8cb; --accent-ink:#03140f; --rec:#ff5a4e;
   --ui:Archivo,"Helvetica Neue",Arial,sans-serif; --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  --safe-b:env(safe-area-inset-bottom,0px);
 }
-html,body{height:100%}
-body{margin:0;background:var(--void);color:var(--text);font:14px/1.45 var(--ui)}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
+html,body{height:100%;margin:0;overflow:hidden}
+body{background:var(--void);color:var(--text);font:15px/1.4 var(--ui)}
 button,select,input{font:inherit;color:inherit}
-.app{display:grid;grid-template-columns:minmax(0,1fr) 330px;height:100%;gap:0}
-.stage{position:relative;overflow:hidden;background:var(--void);touch-action:none;user-select:none;-webkit-user-select:none;min-height:0}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- frame: top bar, picture, tools ---------- */
+.app{display:grid;height:100vh;height:100dvh;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;grid-template-areas:"top" "stage" "side"}
+.top{grid-area:top;display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-weight:780;font-stretch:125%;letter-spacing:.07em;text-transform:uppercase;font-size:15px;margin-right:auto;white-space:nowrap}
+.brand span{color:var(--accent)}
+.tb{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:52px;padding:4px 6px;border:0;background:none;border-radius:6px;font-size:11.5px;color:var(--dim)}
+.tb svg{width:22px;height:22px;stroke:var(--text);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.tb:hover,.tb[aria-expanded="true"]{background:var(--raise);color:var(--text)}
+.tb.primary svg{stroke:var(--accent)} .tb.primary{color:var(--accent)}
+
+.stage{grid-area:stage;position:relative;overflow:hidden;background:var(--void);touch-action:none;user-select:none;-webkit-user-select:none}
 .stage canvas{position:absolute;display:block;outline:none;cursor:grab}
-.stage canvas:active{cursor:grabbing}
-.stage.placing canvas{cursor:crosshair}
-.labels{position:absolute;inset:0;pointer-events:none}
-.lbl{position:absolute;transform:translate(-50%,-100%);white-space:nowrap;color:#fff;font-weight:560;letter-spacing:.01em;
-  text-shadow:0 0 6px rgba(255,255,255,.55),0 0 16px rgba(255,255,255,.28)}
-.hud{position:absolute;left:12px;bottom:12px;right:12px;display:flex;gap:8px;align-items:flex-end;justify-content:space-between;pointer-events:none}
-.readout{font:11px/1.4 var(--mono);color:var(--dim);letter-spacing:.02em;background:rgba(4,5,6,.6);padding:6px 9px;border:1px solid var(--line);border-radius:3px;max-width:70%}
-.readout b{color:var(--accent);font-weight:500}
-.hud .btn{pointer-events:auto}
-.busy{position:absolute;inset:0;display:grid;place-items:center;background:rgba(4,5,6,.72);font:13px/1.5 var(--mono);color:var(--text);text-align:center;padding:24px}
-.busy .bar{width:min(260px,70vw);height:2px;background:var(--line2);margin:12px auto 0;position:relative;overflow:hidden}
+.stage.picking canvas{cursor:crosshair}
+.compare{position:absolute;pointer-events:none;object-fit:fill}
+.overlay{position:absolute;inset:0;pointer-events:none}
+.lbl{position:absolute;transform:translate(-50%,-100%);white-space:nowrap;color:#fff;font-weight:560;text-shadow:0 0 6px rgba(255,255,255,.55),0 0 16px rgba(255,255,255,.28)}
+.pin{position:absolute;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:2px solid var(--accent);background:rgba(114,232,203,.25);pointer-events:none}
+.banner{position:absolute;left:50%;top:10px;transform:translateX(-50%);max-width:calc(100% - 24px);background:rgba(8,10,12,.86);border:1px solid var(--line2);border-radius:18px;padding:7px 14px;font-size:14px;text-align:center;pointer-events:none}
+.float{position:absolute;right:10px;bottom:10px;display:flex;gap:8px}
+.fb{width:44px;height:44px;border-radius:50%;border:1px solid var(--line2);background:rgba(10,12,14,.8);display:grid;place-items:center;padding:0}
+.fb svg{width:22px;height:22px;stroke:var(--text);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.fb[aria-pressed="true"]{border-color:var(--accent)} .fb[aria-pressed="true"] svg{stroke:var(--accent)}
+.recbar{position:absolute;left:0;right:0;top:0;height:3px;background:var(--line)}
+.recbar i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--rec)}
+.busy{position:absolute;inset:0;display:grid;place-items:center;background:rgba(4,5,6,.74);text-align:center;padding:24px;font-size:15px}
+.busy .bar{width:min(260px,70vw);height:3px;background:var(--line2);margin:12px auto 0;position:relative;overflow:hidden;border-radius:2px}
 .busy .bar i{position:absolute;left:0;top:0;bottom:0;background:var(--accent);width:0}
 
-.panel{background:var(--panel);border-left:1px solid var(--line);overflow-y:auto;padding:18px 16px 28px;display:flex;flex-direction:column;gap:20px}
-.brand{display:flex;flex-direction:column;gap:2px}
-.brand h1{margin:0;font-size:22px;line-height:1;font-weight:760;font-stretch:125%;letter-spacing:.06em;text-transform:uppercase}
-.brand h1 span{color:var(--accent)}
-.brand p{margin:0;color:var(--dim);font-size:13px}
-.row{display:flex;gap:8px;flex-wrap:wrap}
-.btn{border:1px solid var(--line2);background:var(--raise);border-radius:4px;padding:9px 12px;cursor:pointer;font-weight:560;line-height:1.1}
-.btn:hover{border-color:var(--faint)}
+/* ---------- tools: tabs + one tray ---------- */
+.side{grid-area:side;display:flex;flex-direction:column-reverse;background:var(--panel);border-top:1px solid var(--line);min-height:0}
+.tabs{display:grid;grid-template-columns:repeat(5,1fr);padding-bottom:var(--safe-b)}
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 2px 7px;border:0;background:none;color:var(--dim);font-size:12px;border-top:2px solid transparent}
+.tab svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.tab[aria-selected="true"]{color:var(--accent);border-top-color:var(--accent)}
+.tray{padding:12px 14px 10px;border-bottom:1px solid var(--line);overflow-y:auto;max-height:44vh}
+.tray h3{margin:0 0 8px;font-size:11.5px;font-weight:620;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);font-stretch:112%;display:flex;align-items:center;gap:8px}
+.tray h3 .sp{margin-left:auto}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.scroller{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
+.chip{flex:none;border:1px solid var(--line2);background:var(--raise);border-radius:18px;padding:8px 13px;font-size:14px;line-height:1.1;white-space:nowrap;position:relative}
+.chip[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:#0f2621}
+.chip.def::after{content:"";position:absolute;right:5px;top:5px;width:5px;height:5px;border-radius:50%;background:var(--dim)}
+.chip:disabled{opacity:.4;cursor:default}
+.btn{border:1px solid var(--line2);background:var(--raise);border-radius:8px;padding:10px 14px;font-weight:560;line-height:1.1}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
-.btn.small{padding:6px 9px;font-size:12.5px}
+.btn.rec{background:var(--rec);border-color:var(--rec);color:#1a0302}
 .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
-.btn:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-h2{margin:0 0 10px;font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--dim);font-stretch:112%}
-.looks{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.look{text-align:left;border:1px solid var(--line2);background:var(--raise);border-radius:4px;padding:9px 10px;cursor:pointer;display:flex;flex-direction:column;gap:3px}
-.look b{font-weight:640;font-size:14px}
-.look small{color:var(--dim);font-size:12px;line-height:1.3}
+.hint{color:var(--dim);font-size:13.5px;margin:8px 0 0;display:flex;gap:8px;align-items:center}
+.say{flex:none;width:30px;height:30px;border-radius:50%;border:1px solid var(--line2);background:var(--raise);display:grid;place-items:center;padding:0}
+.say svg{width:16px;height:16px;stroke:var(--text);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.looks{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px}
+.look{flex:none;width:104px;border:1px solid var(--line2);background:var(--raise);border-radius:8px;padding:5px;display:flex;flex-direction:column;gap:5px;text-align:left}
+.look canvas{width:100%;height:78px;border-radius:5px;background:#000;display:block;object-fit:cover}
+.look b{font-size:13.5px;font-weight:620;padding:0 3px}
 .look[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 .look[aria-pressed="true"] b{color:var(--accent)}
-.ctl{display:grid;grid-template-columns:104px minmax(0,1fr) 40px;align-items:center;gap:8px;margin:0 0 9px}
-.ctl label{color:var(--text);font-size:13px}
-.ctl output{font:11px var(--mono);color:var(--dim);text-align:right}
-.ctl select{grid-column:2 / 4;background:var(--raise);border:1px solid var(--line2);border-radius:4px;padding:6px 8px}
-input[type=range]{width:100%;accent-color:var(--accent);margin:0}
-.note{color:var(--dim);font-size:12.5px;margin:6px 0 0}
+.stepper{margin-top:12px}
+.stepper input{width:100%;height:36px;accent-color:var(--accent);margin:0}
+.stops{display:flex;justify-content:space-between;margin-top:2px}
+.stops button{border:0;background:none;color:var(--dim);font-size:12.5px;padding:4px 2px;min-width:44px}
+.stops button:first-child{text-align:left} .stops button:last-child{text-align:right}
+.stops button[aria-current="true"]{color:var(--accent);font-weight:640}
+.sect{margin-top:14px}
 .lablist{display:flex;flex-direction:column;gap:6px;margin-top:8px}
 .lablist div{display:flex;gap:6px}
-.lablist input{flex:1;min-width:0;background:var(--raise);border:1px solid var(--line2);border-radius:4px;padding:6px 8px}
-.credit{color:var(--faint);font-size:11.5px;line-height:1.45;border-top:1px solid var(--line);padding-top:12px}
-.credit a{color:var(--dim)}
-.sheet{position:fixed;inset:0;background:rgba(2,3,4,.9);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:20px 16px;z-index:10}
-.sheet img,.sheet video{max-width:100%;max-height:72vh;border:1px solid var(--line2);-webkit-touch-callout:default;background:#000}
-.recbar{position:absolute;left:0;right:0;top:0;height:3px;background:var(--line)}
-.recbar i{position:absolute;left:0;top:0;bottom:0;width:0;background:#ff5a4e}
-.ctl.wide{grid-template-columns:104px minmax(0,1fr)}
-.ctl.wide select{grid-column:2}
+.lablist input{flex:1;min-width:0;background:var(--raise);border:1px solid var(--line2);border-radius:8px;padding:9px 10px}
+.menu{position:absolute;z-index:20;background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:4px;min-width:190px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.menu button{text-align:left;border:0;background:none;padding:10px 12px;border-radius:6px;font-size:14.5px}
+.menu button:hover,.menu button[aria-pressed="true"]{background:var(--raise)}
+.menu button[aria-pressed="true"]{color:var(--accent)}
+.menu small{display:block;color:var(--dim);font-size:12px}
+.sheet{position:fixed;inset:0;background:rgba(2,3,4,.93);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:20px 16px;z-index:30}
+.sheet img,.sheet video{max-width:100%;max-height:70vh;border:1px solid var(--line2);background:#000;-webkit-touch-callout:default}
 .sheet p{margin:0;color:var(--dim);text-align:center;max-width:52ch}
-@media (max-width:820px){
-  .app{grid-template-columns:1fr;grid-template-rows:auto auto;height:auto}
-  .stage{height:62vh;min-height:320px}
-  .panel{border-left:0;border-top:1px solid var(--line)}
+.info{position:fixed;z-index:25;inset:auto 12px 12px 12px;max-width:420px;margin-left:auto;background:var(--panel);border:1px solid var(--line2);border-radius:12px;padding:14px 16px;font-size:14px;color:var(--dim)}
+.info b{color:var(--text)}
+.info p{margin:0 0 8px}
+
+@media (max-width:420px){ .brand{font-size:12.5px;letter-spacing:.04em} .tb{min-width:44px;padding:4px 3px} .top{gap:2px;padding:6px 8px} }
+@media (min-width:900px){
+  .app{grid-template-columns:minmax(0,1fr) 370px;grid-template-rows:auto minmax(0,1fr);grid-template-areas:"top top" "stage side"}
+  .side{flex-direction:column;border-top:0;border-left:1px solid var(--line)}
+  .tabs{border-bottom:1px solid var(--line);padding-bottom:0}
+  .tab{border-top:0;border-bottom:2px solid transparent}
+  .tab[aria-selected="true"]{border-bottom-color:var(--accent)}
+  .tray{max-height:none;flex:1;border-bottom:0;padding:16px 18px}
+  .looks{display:grid;grid-template-columns:1fr 1fr;overflow:visible} .look{width:auto} .look canvas{height:auto;aspect-ratio:4/3}
 }
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 
 <div class="app">
+  <header class="top">
+    <div class="brand">First <span>Return</span></div>
+    <label class="tb primary" for="file" role="button" tabindex="0"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>Open</label>
+    <input id="file" type="file" accept="image/*" hidden>
+    <button class="tb" id="shapeBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M6 3v15h15"/><path d="M3 6h15v15"/></svg>Shape</button>
+    <button class="tb" id="saveBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>Save</button>
+    <button class="tb" id="infoBtn" aria-expanded="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.5v.5"/></svg>About</button>
+  </header>
+
   <div class="stage" id="stage">
-    <canvas id="gl" tabindex="0" aria-label="Point cloud view. Drag to turn it, pinch or scroll to zoom, double-click to return to the photo view."></canvas>
-    <div class="labels" id="labels"></div>
+    <canvas id="gl" tabindex="0" aria-label="The point cloud. Drag to turn it, pinch or scroll to zoom, double tap to line it up with the photo again."></canvas>
+    <img class="compare" id="compare" alt="" hidden>
+    <div class="overlay" id="pins"></div>
+    <div class="overlay" id="labels"></div>
+    <div class="banner" id="banner" hidden></div>
     <div class="recbar" id="recbar" hidden><i id="recfill"></i></div>
-    <div class="hud">
-      <div class="readout" id="readout">Loading</div>
-      <button class="btn small" id="photoView" hidden>Photo view</button>
+    <div class="float">
+      <button class="fb" id="photoView" aria-label="Line up with the photo" title="Line up with the photo" hidden><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4"/></svg></button>
+      <button class="fb" id="spin" aria-pressed="false" aria-label="Turntable" title="Turntable"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="15" rx="8" ry="3"/><path d="M12 12V4"/><path d="M16 7l-4-3-4 3"/></svg></button>
+      <button class="fb" id="compareBtn" aria-label="Hold to see the original photo" title="Hold to see the original photo"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 5v14"/><path d="M12 9l9 6"/></svg></button>
     </div>
     <div class="busy" id="busy" hidden><div><div id="busyText">Working</div><div class="bar"><i id="busyBar"></i></div></div></div>
   </div>
 
-  <aside class="panel">
-    <div class="brand">
-      <h1>First <span>Return</span></h1>
-      <p>Turns a photo into a lidar-style point cloud. Depth is estimated on your device; the photo never leaves it.</p>
-    </div>
-    <div class="row">
-      <label class="btn primary" for="file">Open photo</label>
-      <input id="file" type="file" accept="image/*" hidden>
-      <button class="btn" id="save">Save image</button>
-      <button class="btn" id="ply">Save 3D points</button>
-    </div>
-
-    <section>
-      <h2>Look</h2>
-      <div class="looks" id="looks">
-        <button class="look" data-look="void"><b>Void</b><small>Dense, true colour, glowing, on a black stage</small></button>
-        <button class="look" data-look="sparse"><b>Sparse</b><small>Scattered returns, soft glow, name labels</small></button>
-        <button class="look" data-look="scanner"><b>Scanner</b><small>Spinning-sensor rings, coloured by range</small></button>
-        <button class="look" data-look="survey"><b>Survey</b><small>Whole scene, coloured by height</small></button>
-      </div>
-    </section>
-
-    <section>
-      <h2>Fine tune</h2>
-      <div class="ctl"><label for="density">Points</label><input id="density" type="range" min="0" max="100" step="1"><output for="density"></output></div>
-      <div class="ctl"><label for="size">Point size</label><input id="size" type="range" min="0.4" max="3" step="0.05"><output for="size"></output></div>
-      <div class="ctl"><label for="glow">Glow</label><input id="glow" type="range" min="0" max="2" step="0.05"><output for="glow"></output></div>
-      <div class="ctl"><label for="exposure">Brightness</label><input id="exposure" type="range" min="0.4" max="3.5" step="0.05"><output for="exposure"></output></div>
-      <div class="ctl"><label for="sat">Colour</label><input id="sat" type="range" min="0" max="1.5" step="0.05"><output for="sat"></output></div>
-      <div class="ctl"><label for="relief">Depth</label><input id="relief" type="range" min="0" max="2.5" step="0.05"><output for="relief"></output></div>
-      <div class="ctl"><label for="cut">Subject edge</label><input id="cut" type="range" min="-0.4" max="0.4" step="0.01"><output for="cut"></output></div>
-      <div class="ctl"><label for="bg">Background</label><input id="bg" type="range" min="0" max="1" step="0.01"><output for="bg"></output></div>
-      <div class="ctl"><label for="floor">Floor</label><input id="floor" type="range" min="0" max="1.5" step="0.05"><output for="floor"></output></div>
-      <div class="ctl"><label for="colour">Colour by</label><select id="colour">
-        <option value="photo">Photo colour</option><option value="range">Distance</option><option value="height">Height</option><option value="intensity">Intensity (grey)</option><option value="phosphor">Phosphor</option></select></div>
-      <div class="ctl"><label for="pattern">Pattern</label><select id="pattern">
-        <option value="scatter">Scatter</option><option value="rings">Scan rings</option><option value="grid">Grid</option></select></div>
-      <div class="ctl"><label for="frame">Frame</label><select id="frame">
-        <option value="photo">Same as photo</option><option value="wide">Wide 16:9</option><option value="square">Square</option><option value="tall">Tall 9:16</option></select></div>
-    </section>
-
-    <section>
-      <h2>View</h2>
-      <div class="row">
-        <button class="btn small" id="reset">Photo view</button>
-        <button class="btn small" id="spin" aria-pressed="false">Turntable</button>
-      </div>
-      <p class="note">It is a real 3D cloud. Drag the picture to walk around it, pinch or scroll to zoom. Double-click or tap Photo view to line it back up with the original.</p>
-    </section>
-
-    <section>
-      <h2>Animate</h2>
-      <div class="ctl wide"><label for="animMove">Camera move</label><select id="animMove">
-        <option value="push">Slow push in</option><option value="orbit">Gentle orbit</option><option value="drift">Push in and drift</option><option value="rise">Rise and turn</option></select></div>
-      <div class="ctl wide"><label for="animLen">Length</label><select id="animLen">
-        <option value="4">4 seconds</option><option value="6" selected>6 seconds</option><option value="10">10 seconds</option></select></div>
-      <div class="row"><button class="btn small" id="animPreview">Preview</button><button class="btn small primary" id="animRecord">Record video</button></div>
-      <p class="note">The move starts from whatever view is on screen, so frame it first.</p>
-    </section>
-
-    <section>
-      <h2>Faces</h2>
-      <div class="row"><button class="btn small" id="anon" aria-pressed="false">Anonymise faces</button><button class="btn small" id="addFace" aria-pressed="false">Cover a face</button><button class="btn small" id="clearFaces" hidden>Clear</button></div>
-      <div class="ctl" style="margin-top:10px"><label for="anonStr">Strength</label><input id="anonStr" type="range" min="0.2" max="1" step="0.05" value="0.7"><output for="anonStr">0.70</output></div>
-      <p class="note" id="faceNote"></p>
-    </section>
-
-    <section>
-      <h2>Labels</h2>
-      <button class="btn small" id="addLabel" aria-pressed="false">Add a label</button>
-      <p class="note" id="labelHint">Tap Add a label, then tap a person or object. The name floats above it and turns with the cloud.</p>
-      <div class="lablist" id="lablist"></div>
-    </section>
-
-    <p class="credit" id="credit">Sample: <i>Abraham Lincoln: The Man (Standing Lincoln)</i>, Augustus Saint-Gaudens, The Metropolitan Museum of Art, public domain (CC0).<br>Depth: Depth Anything V2 Small (Apache 2.0) via ONNX Runtime Web (MIT).</p>
+  <aside class="side">
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" data-tab="look"><svg viewBox="0 0 24 24"><circle cx="7" cy="8" r="1.4"/><circle cx="12" cy="6" r="1.4"/><circle cx="17" cy="8" r="1.4"/><circle cx="9" cy="13" r="1.4"/><circle cx="15" cy="13" r="1.4"/><circle cx="12" cy="18" r="1.4"/></svg>Look</button>
+      <button class="tab" role="tab" data-tab="adjust"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Adjust</button>
+      <button class="tab" role="tab" data-tab="subject"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>Subject</button>
+      <button class="tab" role="tab" data-tab="move"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg>Move</button>
+      <button class="tab" role="tab" data-tab="people"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4.5-6.5 8-6.5s7 2 8 6.5"/></svg>People</button>
+    </nav>
+    <section class="tray" id="tray"></section>
   </aside>
 </div>
 
+<div class="menu" id="shapeMenu" hidden></div>
+<div class="menu" id="saveMenu" hidden></div>
+<div class="info" id="info" hidden></div>
 <div class="sheet" id="sheet" hidden>
-  <img id="sheetImg" alt="Your rendered point cloud image">
+  <img id="sheetImg" alt="Your picture">
   <video id="sheetVid" controls loop muted playsinline hidden></video>
   <p id="sheetNote"></p>
-  <div class="row"><a class="btn primary" id="sheetDl" download="first-return.png" href="#">Download</a><button class="btn" id="sheetClose">Close</button></div>
+  <div class="row"><a class="btn primary" id="sheetDl" href="#">Download</a><button class="btn" id="sheetClose">Close</button></div>
 </div>
 
-<script src="ort/ort.wasm.min.js"></script>
 <script>
 (() => {
 'use strict';
+// ---------------------------------------------------------------- core: constants, state, settings
 const $ = s => document.querySelector(s);
-const FOV = 50 * Math.PI / 180, TANH = Math.tan(FOV / 2);
 const MOBILE = matchMedia('(pointer:coarse)').matches;
-const MAXPTS = MOBILE ? 500000 : 1100000;
+const MAXPTS = MOBILE ? 520000 : 1150000;
+const WIDE = () => matchMedia('(min-width:900px)').matches;
 
+// Every adjustable setting has named stops. The slider moves smoothly between them and snaps
+// to a stop when you tap its name, so there is always a sensible preset one tap away.
+const CONTROLS = [
+  {key:'dots',     name:'Dots',       hint:'How many dots make up the picture.', rebuild:true,
+   stops:[['Few',6],['Some',28],['Many',55],['Lots',75],['Max',92]]},
+  {key:'size',     name:'Dot size',   hint:'How big each dot is.',
+   stops:[['Fine',.55],['Small',.8],['Medium',1.05],['Big',1.5],['Huge',2.3]]},
+  {key:'glow',     name:'Glow',       hint:'Light that spills around the bright dots.',
+   stops:[['Off',0],['Soft',.45],['Medium',.9],['Strong',1.4],['Bloom',2.1]]},
+  {key:'bright',   name:'Brightness', hint:'How bright the dots are.',
+   stops:[['Dim',.6],['Soft',.9],['Normal',1.25],['Bright',1.8],['Blazing',2.7]]},
+  {key:'colour',   name:'Colour',     hint:'What decides the colour of each dot.', chips:[
+     ['photo','Photo'],['muted','Muted'],['grey','Grey'],['range','Distance'],['height','Height'],['phosphor','Green']]},
+  {key:'depth3d',  name:'3D',         hint:'How far near things stand out from far things. Easiest to see when you turn the view.', rebuild:true,
+   stops:[['Flat',.08],['Low',.5],['Normal',1],['Deep',1.6],['Extra',2.4]]},
+  {key:'backdrop', name:'Backdrop',   hint:'Dots behind and around the subject.', rebuild:true,
+   stops:[['None',0],['Faint',.12],['Some',.4],['Full',1]]},
+  {key:'floor',    name:'Floor',      hint:'A scatter of dots on the ground under the subject.', rebuild:true,
+   stops:[['Off',0],['Light',.55],['Full',1.1]]},
+  {key:'edges',    name:'Edges',      hint:'Dark outlines where near meets far, the way lidar viewers shade a scan.',
+   stops:[['Off',0],['Soft',.9],['Strong',2.2]]},
+];
+const CTRL = Object.fromEntries(CONTROLS.map(c=>[c.key,c]));
+
+// Looks set every control plus a few things that are part of the style itself.
+// Control values are positions on the stops (0 = first stop, 1 = second, fractions in between).
 const LOOKS = {
-  void:    {density:76,size:1.0, glow:0.85,exposure:1.55,sat:0.9, relief:1,  cut:0, bg:0.14,floor:0.7, colour:'photo',    pattern:'scatter',frame:'wide', bgTint:1,bgGain:0.45,bgSize:2.4,yaw:0, pitch:0, zoom:1.3},
-  sparse:  {density:38,size:1.35,glow:1.1, exposure:2.1, sat:0.55,relief:1,  cut:0, bg:0,   floor:0.85,colour:'photo',    pattern:'scatter',frame:'wide', bgTint:1,bgGain:0.4, bgSize:2,  yaw:0, pitch:0, zoom:1.3, sparse:1},
-  scanner: {density:50,size:0.9, glow:0.45,exposure:1.2, sat:1,   relief:1,  cut:0, bg:1,   floor:0,   colour:'range',    pattern:'rings',  frame:'photo',bgTint:0,bgGain:1,   bgSize:1,  yaw:24,pitch:14,zoom:2.2},
-  survey:  {density:72,size:0.85,glow:0.25,exposure:1.1, sat:1,   relief:1,  cut:0, bg:1,   floor:0,   colour:'height',   pattern:'scatter',frame:'photo',bgTint:0,bgGain:1,   bgSize:1,  yaw:18,pitch:10,zoom:1.6}
+  void:    {name:'Void',    dots:3.05, size:1.9, glow:1.9, bright:2.3, colour:'photo',  depth3d:2, backdrop:1.05, floor:1.3, edges:0,
+            pattern:'scatter', bgTint:1, bgGain:.45, bgSize:2.4, sparkle:0, yaw:0, pitch:0, zoom:1.3},
+  sparse:  {name:'Sparse',  dots:1.45, size:2.7, glow:2.4, bright:3.1, colour:'muted',  depth3d:2, backdrop:0,    floor:1.55, edges:0,
+            pattern:'scatter', bgTint:1, bgGain:.4, bgSize:2, sparkle:1, yaw:0, pitch:0, zoom:1.3},
+  scanner: {name:'Scanner', dots:1.8,  size:1.4, glow:1.0, bright:1.7, colour:'range',  depth3d:2, backdrop:3,    floor:0,   edges:1,
+            pattern:'rings',   bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:24, pitch:14, zoom:2.2},
+  survey:  {name:'Survey',  dots:2.85, size:1.2, glow:.55, bright:1.4, colour:'height', depth3d:2, backdrop:3,    floor:0,   edges:1.6,
+            pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:18, pitch:10, zoom:1.6},
 };
-const SLIDERS = ['density','size','glow','exposure','sat','relief','cut','bg','floor'];
-const SELECTS = ['colour','pattern','frame'];
-const P = {};
+const LOOK_KEYS = ['dots','size','glow','bright','colour','depth3d','backdrop','floor','edges','pattern'];
+
+const P = {};            // the live settings
 let look = 'void';
 
-// ---------------------------------------------------------------- state
 const S = {
-  photo:null,          // {w,h,data}
-  depth:null,          // {w,h,d Float32 0..1 near=1}
-  autoCut:0.5, comps:[], compMap:null,
-  labels:[], placing:false, faces:[], anon:false, anonStr:0.7, recording:false,
+  photoSrc:null, photo:null,       // {w,h,data} untouched, and the copy the cloud is built from (anonymised when asked)
+  depthSrc:null, depth:null,       // {w,h,d} 0..1, 1 = near
+  photoURL:null,                   // for the hold-to-compare view
+  tanV:Math.tan(25*Math.PI/180),   // half of the vertical field of view, as a tangent
+  fovSource:'assumed',
+  shiftAuto:0.25, plane:null, ground:null, autoCut:0.5,
+  picks:[], band:1, pickMask:null, segMask:null, // chosen subject
+  comps:[], compMap:null, nComp:0,
+  labels:[], placing:false,
+  faces:[], anon:false, anonLevel:1, faceMask:null, facesFound:false,
   yaw:0, pitch:0, zoom:1, target:[0,0,-2], spin:false,
-  count:0, cpu:null,  // interleaved floats for picking/ply
-  dirtyBuild:true, dirtyDraw:true, sampleName:'sample'
+  count:0, cpu:null, rng:[1,2], yr:[0,1], floor3d:null,
+  dirtyBuild:true, dirtyDraw:true, lowDetail:false, recording:false,
+  tab:null, ctrl:'dots', undo:[], shape:'photo'
 };
 
-// ---------------------------------------------------------------- WebGL
-const cv = $('#gl');
-const gl = cv.getContext('webgl2', {antialias:false, alpha:false, preserveDrawingBuffer:false, powerPreference:'high-performance'});
-if (!gl) { $('#readout').textContent = 'This browser has no WebGL2, which the point renderer needs.'; return; }
+// ---------------------------------------------------------------- small helpers
+function val(key){ const c=CTRL[key], p=Math.max(0,Math.min(c.stops.length-1,P[key])), i=Math.min(c.stops.length-2,Math.floor(p)), f=p-i;
+  return c.stops[i][1]*(1-f)+c.stops[i+1][1]*f; }
+function hash2(x, y, s){ let h = Math.imul(x|0, 374761393) ^ Math.imul(y|0, 668265263) ^ Math.imul(s|0, 2246822519);
+  h = Math.imul(h ^ (h>>>13), 1274126177); return ((h ^ (h>>>16))>>>0)/4294967296; }
+function seeded(seed){ let a=seed>>>0; return () => { a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function gauss(r){ return Math.sqrt(-2*Math.log(r()+1e-9))*Math.cos(6.283185*r()); }
+const tick = () => new Promise(r=>setTimeout(r,30));
+function busy(text, frac){ const b=$('#busy'); if (text==null){ b.hidden=true; return; } b.hidden=false; $('#busyText').textContent=text; $('#busyBar').style.width = frac==null ? '100%' : (Math.min(1,frac)*100).toFixed(1)+'%'; }
+function banner(text){ const b=$('#banner'); b.hidden=!text; if (text) b.textContent=text; }
+function store(k,v){ try{ localStorage.setItem('firstreturn.'+k, JSON.stringify(v)); }catch(e){} }
+function recall(k){ try{ const v=localStorage.getItem('firstreturn.'+k); return v==null?null:JSON.parse(v); }catch(e){ return null; } }
+function say(text){ try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); u.rate=0.95; speechSynthesis.speak(u); }catch(e){} }
+function loadScript(src){ return new Promise((res,rej)=>{ if (document.querySelector(`script[data-src="${src}"]`)) return res(); const s=document.createElement('script'); s.src=src; s.dataset.src=src; s.onload=res; s.onerror=()=>rej(new Error('could not load '+src)); document.head.appendChild(s); }); }
 
-function sh(type, src){ const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
-function prog(vs, fs){ const p=gl.createProgram(); gl.attachShader(p,sh(gl.VERTEX_SHADER,vs)); gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs)); gl.linkProgram(p); if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)); const u={}; const n=gl.getProgramParameter(p,gl.ACTIVE_UNIFORMS); for(let i=0;i<n;i++){const a=gl.getActiveUniform(p,i); u[a.name]=gl.getUniformLocation(p,a.name);} return {p,u}; }
-
-const PTS_VS = `#version 300 es
-layout(location=0) in vec3 aPos; layout(location=1) in vec3 aCol; layout(location=2) in vec4 aMeta;
-uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparse; uniform int uMode;
-uniform vec2 uR, uY;
-out vec3 vCol; flat out float vSq;
-vec3 turbo(float x){ const vec4 kR=vec4(0.13572138,4.61539260,-42.66032258,132.13108234); const vec2 kR2=vec2(-152.94239396,59.28637943);
- const vec4 kG=vec4(0.09140261,2.19418839,4.84296658,-14.18503333); const vec2 kG2=vec2(4.27729857,2.82956604);
- const vec4 kB=vec4(0.10667330,12.64194608,-60.58204836,110.36276771); const vec2 kB2=vec2(-89.90310912,27.34824973);
- x=clamp(x,0.,1.); vec4 v4=vec4(1.,x,x*x,x*x*x); vec2 v2=v4.zw*v4.z; return vec3(dot(v4,kR)+dot(v2,kR2),dot(v4,kG)+dot(v2,kG2),dot(v4,kB)+dot(v2,kB2)); }
-vec3 heat(float t){ t=clamp(t,0.,1.);
- vec3 a=vec3(.10,.05,.26), b=vec3(.48,.11,.43), c=vec3(.89,.35,.20), d=vec3(.98,.83,.36), e=vec3(1.,.98,.86);
- return t<.25?mix(a,b,t/.25):t<.5?mix(b,c,(t-.25)/.25):t<.8?mix(c,d,(t-.5)/.3):mix(d,e,(t-.8)/.2); }
-void main(){
-  vec4 vp = uView*vec4(aPos,1.); gl_Position = uProj*vp;
-  float dist = max(-vp.z, 1e-3);
-  float kind=aMeta.x, rnd=aMeta.y, lum=aMeta.z;
-  float r = clamp((length(aPos)-uR.x)/(uR.y-uR.x),0.,1.);
-  vec3 c = aCol; float g = dot(c, vec3(.299,.587,.114));
-  if(uMode==0) c = mix(vec3(g), c, uSat);
-  else if(uMode==1) c = mix(vec3(g), turbo(1.-r), clamp(uSat,0.,1.)) * (.55+.6*lum);
-  else if(uMode==2) c = mix(vec3(g), heat((aPos.y-uY.x)/(uY.y-uY.x)), clamp(uSat,0.,1.)) * (.6+.5*lum);
-  else if(uMode==3) c = vec3(lum)*vec3(.93,.97,1.);
-  else c = vec3(.45,.95,.8)*(.12+lum*1.05);
-  c *= uExposure * (1. - .35*r);
-  float size = uPx / dist; float sq = 0.;
-  if(uSparse>0.5){ c *= .75 + 1.1*rnd*rnd; }
-  if(kind>.5 && kind<1.5){
-    vec3 t = vec3(.30,.78,.70)*(.10+lum*.9);
-    c = mix(c, t*uExposure*.8, uBgTint) * uBgGain; size *= uBgSize; sq = uBgTint;
-  } else if(kind>1.5){
-    c = vec3(.62,.72,.76)*(.06 + 1.25*pow(rnd,4.)) * min(uExposure,1.8) * .6;
-    size *= .75 + fract(rnd*17.3)*1.1; sq = 1.;
-  }
-  vCol = c; vSq = sq;
-  gl_PointSize = clamp(size, 1., 48.);
-}`;
-const PTS_FS = `#version 300 es
-precision mediump float; in vec3 vCol; flat in float vSq; out vec4 o;
-void main(){ vec2 p=gl_PointCoord*2.-1.; if(vSq<.5 && dot(p,p)>1.) discard; o=vec4(vCol,1.); }`;
-const QUAD_VS = `#version 300 es
-out vec2 vUv; void main(){ vec2 p=vec2((gl_VertexID<<1)&2, gl_VertexID&2); vUv=p; gl_Position=vec4(p*2.-1.,0.,1.); }`;
-const BRIGHT_FS = `#version 300 es
-precision mediump float; in vec2 vUv; uniform sampler2D uTex; out vec4 o;
-void main(){ vec3 c=texture(uTex,vUv).rgb; float m=max(c.r,max(c.g,c.b)); o=vec4(c*smoothstep(.28,.9,m),1.); }`;
-const BLUR_FS = `#version 300 es
-precision mediump float; in vec2 vUv; uniform sampler2D uTex; uniform vec2 uDir; out vec4 o;
-void main(){ vec3 s=texture(uTex,vUv).rgb*.227;
- s+=(texture(uTex,vUv+uDir*1.385).rgb+texture(uTex,vUv-uDir*1.385).rgb)*.316;
- s+=(texture(uTex,vUv+uDir*3.231).rgb+texture(uTex,vUv-uDir*3.231).rgb)*.070; o=vec4(s,1.); }`;
-const COMP_FS = `#version 300 es
-precision mediump float; in vec2 vUv; uniform sampler2D uScene, uGlowA, uGlowB; uniform float uGlow; uniform vec2 uRes; out vec4 o;
-float h(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
-void main(){ vec3 c=texture(uScene,vUv).rgb + uGlow*(texture(uGlowA,vUv).rgb*.9 + texture(uGlowB,vUv).rgb*1.3);
- vec2 q=(vUv-.5)*vec2(uRes.x/uRes.y,1.); c*=1.-.4*smoothstep(.45,1.2,length(q));
- c=c/(1.+max(c-1.,0.)*.5); c+= (h(vUv*uRes)-.5)/255.; o=vec4(c,1.); }`;
-
-const gP = prog(PTS_VS, PTS_FS), gB = prog(QUAD_VS, BRIGHT_FS), gBl = prog(QUAD_VS, BLUR_FS), gC = prog(QUAD_VS, COMP_FS);
-const vao = gl.createVertexArray(), vbo = gl.createBuffer(), quadVao = gl.createVertexArray();
-gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,40,0);
-gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,40,12);
-gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,40,24);
-gl.bindVertexArray(null);
-
-function tex(w,h){ const t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,t); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); return t; }
-function fbo(t, depth){ const f=gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER,f); gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);
-  if(depth){ gl.bindRenderbuffer(gl.RENDERBUFFER,depth); gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,depth); } return f; }
-let T = null;
-function targets(w,h){
-  if (T && T.w===w && T.h===h) return;
-  if (T) { [T.sT,T.a,T.b,T.c,T.d].forEach(x=>gl.deleteTexture(x)); [T.sF,T.aF,T.bF,T.cF,T.dF].forEach(x=>gl.deleteFramebuffer(x)); gl.deleteRenderbuffer(T.rb); }
-  const rb=gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER,rb); gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT24,w,h);
-  const hw=Math.max(1,w>>1), hh=Math.max(1,h>>1), qw=Math.max(1,w>>2), qh=Math.max(1,h>>2);
-  const sT=tex(w,h), a=tex(hw,hh), b=tex(hw,hh), c=tex(qw,qh), d=tex(qw,qh);
-  T={w,h,hw,hh,qw,qh,rb,sT,a,b,c,d,sF:fbo(sT,rb),aF:fbo(a),bF:fbo(b),cF:fbo(c),dF:fbo(d)};
-  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
-}
-
-// ---------------------------------------------------------------- matrices
 const M4 = {
   persp(fy, a, n, f){ const t=1/Math.tan(fy/2), nf=1/(n-f); return [t/a,0,0,0, 0,t,0,0, 0,0,(f+n)*nf,-1, 0,0,2*f*n*nf,0]; },
   mul(a,b){ const o=new Array(16); for(let c=0;c<4;c++) for(let r=0;r<4;r++){ let s=0; for(let k=0;k<4;k++) s+=a[k*4+r]*b[c*4+k]; o[c*4+r]=s; } return o; },
@@ -311,496 +257,682 @@ const M4 = {
   rx(a){ const c=Math.cos(a), s=Math.sin(a); return [1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]; },
   xf(m,p){ const x=p[0],y=p[1],z=p[2]; const w=m[3]*x+m[7]*y+m[11]*z+m[15]; return [(m[0]*x+m[4]*y+m[8]*z+m[12])/w,(m[1]*x+m[5]*y+m[9]*z+m[13])/w,(m[2]*x+m[6]*y+m[10]*z+m[14])/w,w]; }
 };
-function frameAspect(){ const pa = S.photo ? S.photo.w/S.photo.h : 1;
-  return P.frame==='wide'?16/9:P.frame==='square'?1:P.frame==='tall'?9/16:pa; }
-function viewMatrix(){
-  // camera sits at the photo's own viewpoint when yaw = pitch = 0 and zoom = 1; orbit pivots on the subject
-  const t = S.target, back = (S.zoom-1)*Math.abs(t[2]);
-  const R = M4.mul(M4.rx(S.pitch*Math.PI/180), M4.ry(S.yaw*Math.PI/180));
-  return M4.mul(M4.tr(0,0,-back), M4.mul(M4.tr(t[0],t[1],t[2]), M4.mul(R, M4.tr(-t[0],-t[1],-t[2]))));
-}
-function projMatrix(aspect){
-  // wide frames keep the photo's vertical field; tall frames keep its horizontal field
-  const pa = S.photo ? S.photo.w/S.photo.h : 1;
-  let fy = FOV; if (aspect < pa) fy = 2*Math.atan(TANH*pa/aspect);
-  return M4.persp(fy, aspect, 0.05, 400);
-}
 
-// ---------------------------------------------------------------- depth + photo helpers
-function seeded(seed){ let a=seed>>>0; return () => { a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
-function normaliseDepth(raw, w, h){
-  const s = Float32Array.from(raw).sort(); const lo = s[Math.floor(s.length*0.005)], hi = s[Math.floor(s.length*0.995)];
-  const d = new Float32Array(w*h); for (let i=0;i<d.length;i++) d[i] = Math.min(1, Math.max(0, (raw[i]-lo)/(hi-lo||1)));
-  return {w,h,d};
-}
-function otsu(d){
-  const bins=64, hist=new Float64Array(bins); for (const v of d) hist[Math.min(bins-1, (v*bins)|0)]++;
-  let sum=0, total=d.length; for (let i=0;i<bins;i++) sum+=i*hist[i];
-  let sB=0,wB=0,best=0,th=bins/2;
-  for (let i=0;i<bins;i++){ wB+=hist[i]; if(!wB) continue; const wF=total-wB; if(!wF) break; sB+=i*hist[i];
-    const mB=sB/wB, mF=(sum-sB)/wF, v=wB*wF*(mB-mF)*(mB-mF); if(v>best){best=v; th=i+1;} }
-  return th/bins;
-}
-function depthAt(u,v){ const D=S.depth; const x=Math.min(D.w-1.001,Math.max(0,u*D.w-.5)), y=Math.min(D.h-1.001,Math.max(0,v*D.h-.5));
-  const x0=x|0,y0=y|0,ax=x-x0,ay=y-y0,i=y0*D.w+x0, d=D.d;
-  return (d[i]*(1-ax)+d[i+1]*ax)*(1-ay)+(d[i+D.w]*(1-ax)+d[i+D.w+1]*ax)*ay; }
-function zOf(d){ const zb = 1/(0.14+0.86*d); return 1.2*(1 + P.relief*(zb-1)); }
-function unproject(u,v,z){ const a=S.photo.w/S.photo.h; return [(2*u-1)*TANH*a*z, (1-2*v)*TANH*z, -z]; }
-
-// A visible floor in the photo is near the camera, so depth alone would call it "subject".
-// A level floor has depth that changes steadily down the frame; fit that line from the outer
-// columns of the lower frame (where people rarely stand) and flag every pixel that sits on it.
-function findGround(){
-  const D=S.depth, W=D.w, H=D.h, g=new Uint8Array(W*H);
-  const med = new Float32Array(H);
-  for (let y=0; y<H; y++){ const row=[];
-    for (let x=0;x<W;x++) if (x<W*0.18 || x>W*0.82) row.push(D.d[y*W+x]);
-    row.sort((a,b)=>a-b); med[y]=row[row.length>>1]; }
-  // walk up from the bottom while depth keeps falling away steadily; that stretch is floor
-  const k = Math.max(2, Math.round(H*0.01)); let top = H-1-k;
-  while (top-k > H*0.3){ const s=(med[top+k]-med[top-k])/(2*k/H); if (s < 0.8) break; top--; }
-  const vs=[], ms=[]; for (let y=top; y<H; y++){ vs.push((y+.5)/H); ms.push(med[y]); }
-  const n=vs.length; if (n < H*0.06){ S.groundFit={rows:n}; return g; }
-  const mv=vs.reduce((a,b)=>a+b,0)/n, mm=ms.reduce((a,b)=>a+b,0)/n;
-  let sxy=0,sxx=0; for (let i=0;i<n;i++){ sxy+=(vs[i]-mv)*(ms[i]-mm); sxx+=(vs[i]-mv)**2; }
-  const a=sxy/sxx, b=mm-a*mv; let rms=0; for (let i=0;i<n;i++) rms+=(ms[i]-(a*vs[i]+b))**2; rms=Math.sqrt(rms/n);
-  S.groundFit = {a, b, rms, top: top/H};
-  if (!(a > 0.8 && rms < 0.05)) return g;            // no convincing floor: leave everything alone
-  for (let y=Math.max(0,top-2*k); y<H; y++){ const v=(y+.5)/H, e=a*v+b;
-    for (let x=0;x<W;x++){ const i=y*W+x; if (Math.abs(D.d[i]-e) < 0.035 + rms) g[i]=1; } }
-  return g;
-}
-function components(cut){
-  const D=S.depth, n=D.w*D.h, map=new Int32Array(n).fill(-1), comps=[]; const q=new Int32Array(n);
-  const G = S.ground || new Uint8Array(n);
-  for (let s=0;s<n;s++){
-    if (map[s]!==-1 || D.d[s]<cut || G[s]) continue;
-    let head=0, tail=0; q[tail++]=s; const id=comps.length; map[s]=id; let area=0, minY=1e9, maxY=-1;
-    while(head<tail){ const i=q[head++]; area++; const x=i%D.w, y=(i/D.w)|0; if(y<minY)minY=y; if(y>maxY)maxY=y;
-      const nb=[x>0?i-1:-1, x<D.w-1?i+1:-1, y>0?i-D.w:-1, y<D.h-1?i+D.w:-1];
-      for (const j of nb) if (j>=0 && map[j]===-1 && D.d[j]>=cut && !G[j]){ map[j]=id; q[tail++]=j; } }
-    comps.push({area, minY, maxY});
-  }
-  const keep = comps.map(c => c.area >= n*0.004);
-  const remap = []; let k=0; comps.forEach((c,i)=>{ remap[i] = keep[i] ? k++ : -1; });
-  for (let i=0;i<n;i++) if (map[i]>=0) map[i]=remap[map[i]];
-  return {map, comps: comps.filter((c,i)=>keep[i])};
-}
-
-// ---------------------------------------------------------------- build the cloud
-function build(){
-  S.dirtyBuild = false;
-  if (!S.photo || !S.depth) return;
-  const Ph=S.photo, D=S.depth, aspect=Ph.w/Ph.h, rand=seeded(7);
-  const cut = Math.min(0.97, Math.max(0.03, S.autoCut + P.cut));
-  const {map, comps} = components(cut); S.compMap = map;
-  const nComp = comps.length;
-  const cinfo = comps.map(()=>({n:0,sx:0,sz:0,minY:1e9,maxY:-1e9,top:null,topUV:null,foot:null}));
-
-  let target = Math.round(2000*Math.pow(10, P.density/100*2.75));
-  target = Math.min(target, MAXPTS);
-  const out = new Float32Array(Math.min(MAXPTS, target*1.05 + 250000)*10);
-  let n = 0;
-  const pix = Ph.data, pw = Ph.w, ph = Ph.h;
-  const du = 1/D.w, dv = 1/D.h;
-  const push = (x,y,z,r,g,b,kind,rnd,lum,comp) => { if ((n+1)*10 > out.length) return false; const o=n*10;
-    out[o]=x;out[o+1]=y;out[o+2]=z;out[o+3]=r;out[o+4]=g;out[o+5]=b;out[o+6]=kind;out[o+7]=rnd;out[o+8]=lum;out[o+9]=comp; n++; return true; };
-
-  // centre of the subject in image space, for fading the background curtain out around it
-  let fx=0.5, fy0=0.5; { let sx=0,sy=0,c=0; for (let i=0;i<map.length;i+=3) if (map[i]>=0){ sx+=i%D.w; sy+=(i/D.w)|0; c++; } if (c){ fx=sx/c/D.w; fy0=sy/c/D.h; } }
-  const sample = (u,v) => {
-    const d = depthAt(u,v);
-    const mi = Math.min(D.h-1,(v*D.h)|0)*D.w + Math.min(D.w-1,(u*D.w)|0);
-    const comp = map[mi]; const kind = comp>=0 ? 0 : 1;
-    const rnd = rand();
-    const inFace = S.faceMask ? S.faceMask[mi]/255 : 0;
-    if (inFace && rand() < 0.5*S.anonStr*inFace) return;
-    if (kind===1){
-      let keep = P.bg;
-      if (LOOKS[look].bgTint > 0){ const dx=(u-fx)*aspect/Math.max(aspect,1), dy=(v-fy0); keep *= Math.exp(-(dx*dx+dy*dy)/0.07); }
-      if (rnd >= keep) return;
+// ---------------------------------------------------------------- photo decoding, camera, depth
+// Camera field of view. Phones write the lens as a 35 mm equivalent focal length into EXIF;
+// that fixes how wide the view is, which matters as soon as you turn the cloud.
+function readExifFocal35(buf){
+  try {
+    const v = new DataView(buf); if (v.getUint16(0) !== 0xFFD8) return null;
+    let o = 2;
+    while (o < v.byteLength - 4){
+      const m = v.getUint16(o), len = v.getUint16(o+2);
+      if (m === 0xFFE1 && v.getUint32(o+4) === 0x45786966){          // "Exif"
+        const t = o + 10, le = v.getUint16(t) === 0x4949;
+        const u16 = p => v.getUint16(p, le), u32 = p => v.getUint32(p, le);
+        const ifd = (start, want) => { const n = u16(start); for (let i=0;i<n;i++){ const e=start+2+i*12; if (u16(e)===want) return e; } return -1; };
+        const ex = ifd(t + u32(t+4), 0x8769); if (ex < 0) return null;
+        const exStart = t + u32(ex+8);
+        const f35 = ifd(exStart, 0xA405); if (f35 >= 0){ const val = u16(f35+8); if (val > 5 && val < 1200) return val; }
+        return null;
+      }
+      if ((m & 0xFF00) !== 0xFF00) break;
+      o += 2 + len;
     }
-    // drop "flying pixels" that sit on a depth cliff: a real sensor sees one surface or the other, never the slope between
-    const z = zOf(d);
-    if (P.relief > 0.02){
-      const gx = Math.abs(zOf(depthAt(u+du,v))-zOf(depthAt(u-du,v))), gy = Math.abs(zOf(depthAt(u,v+dv))-zOf(depthAt(u,v-dv)));
-      if (Math.max(gx,gy) > z*0.045) return;
-    }
-    const zz = z*(1+(rand()-.5)*(0.004 + 0.03*S.anonStr*inFace));
-    const p = unproject(u,v,zz);
-    const ci = (Math.min(ph-1,(v*ph)|0)*pw + Math.min(pw-1,(u*pw)|0))*4;
-    const r=pix[ci]/255, g=pix[ci+1]/255, b=pix[ci+2]/255, lum=0.299*r+0.587*g+0.114*b;
-    push(p[0],p[1],p[2],r,g,b,kind,rnd,lum,comp);
-    if (kind===0){ const c=cinfo[comp]; c.n++; c.sx+=p[0]; c.sz+=p[2];
-      if (p[1]>c.maxY){c.maxY=p[1]; c.top=p; c.topUV=[u,v];} if (p[1]<c.minY){c.minY=p[1]; c.foot=p;} }
-  };
-
-  if (P.pattern==='rings'){
-    const beams = Math.round(16 + P.density/100*220);
-    const per = Math.max(200, Math.min(3000, Math.round(target/beams)));
-    for (let k=0;k<beams;k++){ const v=(k+.5)/beams;
-      for (let j=0;j<per;j++) sample((j+rand()*.35)/per, v + (rand()-.5)*0.0006); }
-  } else {
-    const cells = target; const cw = Math.sqrt(aspect/cells), chh = cw/aspect;
-    const nx = Math.ceil(1/cw), ny = Math.ceil(1/chh);
-    const jit = P.pattern==='grid' ? 0 : 1;
-    for (let y=0;y<ny;y++) for (let x=0;x<nx;x++)
-      sample(Math.min(.9999,(x+.5+(rand()-.5)*jit)/nx), Math.min(.9999,(y+.5+(rand()-.5)*jit)/ny));
-  }
-
-  // synthetic floor: a sparse field of returns spreading out from under each subject's feet
-  const live = cinfo.filter(c=>c.n>50 && c.foot);
-  if (P.floor > 0 && live.length){
-    const fy = Math.min(...live.map(c=>c.minY));
-    const feet = live.map(c=>[c.sx/c.n, c.sz/c.n]);
-    const zc = feet.reduce((s,f)=>s+f[1],0)/feet.length, xc = feet.reduce((s,f)=>s+f[0],0)/feet.length;
-    const depth0 = Math.abs(zc), xr = TANH*depth0*2.4, zr = depth0*0.75, sig = TANH*depth0*0.28;
-    const nf = Math.round(P.floor * Math.min(90000, 9000 + target*0.08));
-    let made=0, tries=0;
-    while (made<nf && tries<nf*8){ tries++;
-      const ex = rand()*2-1, ez = rand()*2-1; if (ex*ex+ez*ez>1) continue;
-      const x = xc + ex*xr, z = zc + ez*zr;
-      if (z > -0.3) continue;
-      let near = 0; for (const f of feet){ const dx=x-f[0], dz=(z-f[1])*1.6; near=Math.max(near, Math.exp(-(dx*dx+dz*dz)/(2*sig*sig))); }
-      const edge = 1 - Math.pow(ex*ex+ez*ez, 1.5);
-      if (rand() > (0.22*edge + 0.78*near)) continue;
-      push(x, fy + (rand()-.5)*0.004, z, .6,.7,.75, 2, rand(), .5, -1); made++;
-    }
-  }
-
-  S.count = n; S.cpu = out; S.nComp = live.length;
-  // orbit pivot = centre of the subjects, or the scene middle when nothing stands out
-  if (live.length){ const all=live.reduce((a,c)=>[a[0]+c.sx, a[1]+(c.minY+c.maxY)/2*c.n, a[2]+c.sz, a[3]+c.n],[0,0,0,0]);
-    S.target=[all[0]/all[3], all[1]/all[3], all[2]/all[3]]; }
-  else S.target=[0,0,-zOf(0.5)];
-  S.comps = cinfo.map((c,i)=>({...c, id:i})).filter(c=>c.n>50 && c.top);
-  // range and height extents for colouring
-  let rmin=1e9,rmax=-1e9,ymin=1e9,ymax=-1e9;
-  for (let i=0;i<n;i+=7){ const o=i*10, x=out[o],y=out[o+1],z=out[o+2], r=Math.hypot(x,y,z); if(r<rmin)rmin=r; if(r>rmax)rmax=r; if(y<ymin)ymin=y; if(y>ymax)ymax=y; }
-  S.rng=[rmin,rmax]; S.yr=[ymin,ymax];
-  gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, out.subarray(0,n*10), gl.STATIC_DRAW);
-  refreshLabelPositions();
-  readout();
-  S.dirtyDraw = true;
+  } catch(e){}
+  return null;
+}
+function fovFrom(f35, w, h){
+  const L = Math.max(w,h), Sd = Math.min(w,h), diag = Math.hypot(L, Sd);
+  let tanLong, tanShort, src;
+  if (f35){ const hd = 21.635/f35; tanLong = hd*L/diag; tanShort = hd*Sd/diag; src = `${f35} mm lens (from the photo)`; }
+  else { tanLong = Math.tan(30*Math.PI/180); tanShort = tanLong*Sd/L; src = 'assumed, no lens data in the photo'; }
+  return {tanV: h >= w ? tanLong : tanShort, src};
 }
 
-// ---------------------------------------------------------------- draw
-let sizeScale = 1;
-function layout(){
-  const st = $('#stage').getBoundingClientRect(); const a = frameAspect();
-  let w = st.width, h = w/a; if (h > st.height){ h = st.height; w = h*a; }
-  cv.style.width = w+'px'; cv.style.height = h+'px'; cv.style.left = (st.width-w)/2+'px'; cv.style.top = (st.height-h)/2+'px';
-  let dpr = Math.min(devicePixelRatio||1, 2); const maxPx = MOBILE ? 2.6e6 : 5e6;
-  if (w*h*dpr*dpr > maxPx) dpr = Math.sqrt(maxPx/(w*h));
-  cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr); S.cssW=w; S.cssH=h;
-  S.dirtyDraw = true;
-}
-function draw(W, H){
-  W = W || cv.width; H = H || cv.height; targets(W,H);
-  const aspect = W/H, V = viewMatrix(), Pm = projMatrix(aspect);
-  S.V=V; S.P=Pm;
-  gl.bindFramebuffer(gl.FRAMEBUFFER, T.sF); gl.viewport(0,0,W,H);
-  gl.clearColor(0.012,0.014,0.017,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
-  if (S.count){
-    gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
-    gl.useProgram(gP.p); const u=gP.u;
-    gl.uniformMatrix4fv(u.uProj,false,Pm); gl.uniformMatrix4fv(u.uView,false,V);
-    // point size in pixels at the subject distance scales with output height, so an export matches the preview
-    const ref = Math.abs(S.target[2]) || 2;
-    const pa = S.photo.w/S.photo.h; const fitH = aspect < pa ? H*aspect/pa : H;
-    gl.uniform1f(u.uPx, P.size * 1.62 * fitH/1000 * ref);
-    gl.uniform1f(u.uExposure, P.exposure); gl.uniform1f(u.uSat, P.sat);
-    gl.uniform1f(u.uBgTint, LOOKS[look].bgTint); gl.uniform1f(u.uBgGain, LOOKS[look].bgGain); gl.uniform1f(u.uBgSize, LOOKS[look].bgSize);
-    gl.uniform1f(u.uSparse, LOOKS[look].sparse||0);
-    gl.uniform1i(u.uMode, ['photo','range','height','intensity','phosphor'].indexOf(P.colour));
-    gl.uniform2f(u.uR, S.rng[0], S.rng[1]); gl.uniform2f(u.uY, S.yr[0], S.yr[1]);
-    gl.bindVertexArray(vao); gl.drawArrays(gl.POINTS, 0, S.count); gl.bindVertexArray(null);
-    gl.disable(gl.DEPTH_TEST);
-  }
-  // glow: bright pass, then two blur widths
-  gl.bindVertexArray(quadVao);
-  const pass = (p, f, w, h, bind) => { gl.bindFramebuffer(gl.FRAMEBUFFER,f); gl.viewport(0,0,w,h); gl.useProgram(p.p); bind(p.u); gl.drawArrays(gl.TRIANGLES,0,3); };
-  const t0 = (unit, t) => { gl.activeTexture(gl.TEXTURE0+unit); gl.bindTexture(gl.TEXTURE_2D,t); };
-  pass(gB, T.aF, T.hw, T.hh, u=>{ t0(0,T.sT); gl.uniform1i(u.uTex,0); });
-  const k = H/900;
-  pass(gBl, T.bF, T.hw, T.hh, u=>{ t0(0,T.a); gl.uniform1i(u.uTex,0); gl.uniform2f(u.uDir,k/T.hw,0); });
-  pass(gBl, T.aF, T.hw, T.hh, u=>{ t0(0,T.b); gl.uniform1i(u.uTex,0); gl.uniform2f(u.uDir,0,k/T.hh); });
-  pass(gBl, T.dF, T.qw, T.qh, u=>{ t0(0,T.a); gl.uniform1i(u.uTex,0); gl.uniform2f(u.uDir,2.2*k/T.qw,0); });
-  pass(gBl, T.cF, T.qw, T.qh, u=>{ t0(0,T.d); gl.uniform1i(u.uTex,0); gl.uniform2f(u.uDir,0,2.2*k/T.qh); });
-  pass(gC, null, W, H, u=>{ t0(0,T.sT); t0(1,T.a); t0(2,T.c); gl.uniform1i(u.uScene,0); gl.uniform1i(u.uGlowA,1); gl.uniform1i(u.uGlowB,2);
-    gl.uniform1f(u.uGlow,P.glow); gl.uniform2f(u.uRes,W,H); });
-  gl.bindVertexArray(null);
+// Decode at a sensible size: a 50 MP phone photo decoded at full size can take the tab down.
+async function decodePhoto(file){
+  const buf = await file.arrayBuffer();
+  const f35 = readExifFocal35(buf);
+  const url = URL.createObjectURL(file);
+  const img = new Image(); img.src = url; await img.decode();
+  const W0 = img.naturalWidth, H0 = img.naturalHeight, LIM = MOBILE ? 1600 : 2000;
+  const s = Math.min(1, LIM/Math.max(W0,H0)), w = Math.round(W0*s), h = Math.round(H0*s);
+  const c = document.createElement('canvas'); c.width=w; c.height=h; const x = c.getContext('2d', {willReadFrequently:true});
+  x.drawImage(img, 0, 0, w, h);
+  return {canvas:c, url, w, h, data:x.getImageData(0,0,w,h).data, fov:fovFrom(f35, W0, H0)};
 }
 
-// ---------------------------------------------------------------- labels
-function labelWorld(L){ const d = depthAt(L.u, L.v); const p = unproject(L.u, L.v, zOf(d)); return [p[0], p[1] + L.lift, p[2]]; }
-function refreshLabelPositions(){ S.labels.forEach(L=>{ L.pos = labelWorld(L); }); }
-function project(p, W, H){ const c = M4.xf(M4.mul(S.P, S.V), p); if (c[3] <= 0) return null; return [(c[0]*.5+.5)*W, (1-(c[1]*.5+.5))*H]; }
-function renderLabels(){
-  const box = $('#labels'); const fs = Math.max(11, S.cssH*0.03);
-  while (box.children.length > S.labels.length) box.lastChild.remove();
-  while (box.children.length < S.labels.length) box.appendChild(document.createElement('div')).className='lbl';
-  const ox = parseFloat(cv.style.left), oy = parseFloat(cv.style.top);
-  S.labels.forEach((L,i)=>{ const el=box.children[i]; const s = L.pos && project(L.pos, S.cssW, S.cssH);
-    el.hidden = !s || !L.text; if (!s) return; el.textContent = L.text; el.style.fontSize = fs+'px';
-    el.style.left = (ox+s[0])+'px'; el.style.top = (oy+s[1])+'px'; });
-}
-function renderLabelList(){
-  const box = $('#lablist'); box.innerHTML = '';
-  S.labels.forEach((L,i)=>{ const row=document.createElement('div');
-    const inp=document.createElement('input'); inp.id='label-'+i; inp.value=L.text; inp.placeholder='Name'; inp.setAttribute('aria-label','Label text');
-    inp.addEventListener('input',()=>{ L.text=inp.value; S.dirtyDraw=true; });
-    const del=document.createElement('button'); del.className='btn small'; del.textContent='Remove';
-    del.addEventListener('click',()=>{ S.labels.splice(i,1); renderLabelList(); S.dirtyDraw=true; });
-    row.append(inp,del); box.appendChild(row); });
-}
-function placeLabel(cx, cy){
-  // pick the nearest subject point on screen, then hang the label over the top of that subject
-  if (!S.count) return;
-  const MV = M4.mul(S.P, S.V), out=S.cpu; let best=1e9, bi=-1;
-  const step = Math.max(1, Math.floor(S.count/250000));
-  for (let i=0;i<S.count;i+=step){ const o=i*10; if (out[o+6]===2) continue; const c=M4.xf(MV,[out[o],out[o+1],out[o+2]]); if (c[3]<=0) continue;
-    const sx=(c[0]*.5+.5)*S.cssW, sy=(1-(c[1]*.5+.5))*S.cssH, dd=(sx-cx)**2+(sy-cy)**2; if (dd<best){best=dd; bi=i;} }
-  if (bi<0 || best > 40*40) return;
-  const comp = out[bi*10+9]; const c = S.comps.find(k=>k.id===comp);
-  let L;
-  if (c){ L = {u:c.topUV[0], v:c.topUV[1], lift:(c.maxY-c.minY)*0.07, text:''}; }
-  else { const o=bi*10; const z=-out[o+2], a=S.photo.w/S.photo.h; L = {u:(out[o]/(TANH*a*z)+1)/2, v:(1-out[o+1]/(TANH*z))/2, lift:0.05*z, text:''}; }
-  L.pos = labelWorld(L); S.labels.push(L); renderLabelList();
-  const inp = $('#label-'+(S.labels.length-1)); if (inp) inp.focus();
-  setPlacing(false); S.dirtyDraw = true;
-}
-function setPlacing(on){ if (on===true) on='label'; S.placing=on; $('#addLabel').setAttribute('aria-pressed', on==='label'); $('#addFace').setAttribute('aria-pressed', on==='face'); $('#stage').classList.toggle('placing', !!on);
-  faceNote(); if (on==='face') $('#faceNote').textContent='Now tap the face to cover.';
-  $('#labelHint').textContent = on==='label' ? 'Now tap the person or object to label.' : 'Tap Add a label, then tap a person or object. The name floats above it and turns with the cloud.'; }
-
-// ---------------------------------------------------------------- UI
-function readout(){
-  const r = $('#readout'); if (!S.depth){ r.textContent='No depth yet'; return; }
-  r.innerHTML = `<b>${S.count.toLocaleString()}</b> returns &middot; ${S.nComp} subject${S.nComp===1?'':'s'} &middot; depth ${S.depth.w}&times;${S.depth.h}`;
-}
-function syncControls(){
-  SLIDERS.forEach(k=>{ const el=$('#'+k); el.value=P[k]; el.nextElementSibling.textContent = k==='density' ? Math.round(P[k]) : (+P[k]).toFixed(2); });
-  SELECTS.forEach(k=>{ $('#'+k).value=P[k]; });
-  document.querySelectorAll('.look').forEach(b=>b.setAttribute('aria-pressed', b.dataset.look===look));
-}
-function applyLook(name){
-  look = name; const L = LOOKS[name];
-  Object.assign(P, {density:L.density,size:L.size,glow:L.glow,exposure:L.exposure,sat:L.sat,relief:L.relief,cut:L.cut,bg:L.bg,floor:L.floor,colour:L.colour,pattern:L.pattern,frame:L.frame});
-  S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom;
-  syncControls(); layout(); S.dirtyBuild = true; viewButton();
-  try { localStorage.setItem('firstreturn.look', name); } catch(e){}
-}
-const REBUILD = new Set(['density','relief','cut','bg','floor','pattern']);
-SLIDERS.forEach(k=>$('#'+k).addEventListener('input', e=>{ P[k]=+e.target.value; e.target.nextElementSibling.textContent = k==='density'?Math.round(P[k]):P[k].toFixed(2);
-  if (REBUILD.has(k)) S.dirtyBuild=true; else S.dirtyDraw=true; }));
-SELECTS.forEach(k=>$('#'+k).addEventListener('change', e=>{ P[k]=e.target.value; if (k==='frame') layout(); if (REBUILD.has(k)) S.dirtyBuild=true; S.dirtyDraw=true; }));
-document.querySelectorAll('.look').forEach(b=>b.addEventListener('click',()=>applyLook(b.dataset.look)));
-function viewButton(){ const off = Math.abs(S.yaw)>0.5||Math.abs(S.pitch)>0.5||Math.abs(S.zoom-LOOKS[look].zoom)>0.01; $('#photoView').hidden = !off; }
-function resetView(){ S.yaw=0; S.pitch=0; S.zoom=LOOKS[look].zoom; S.spin=false; $('#spin').setAttribute('aria-pressed','false'); S.dirtyDraw=true; viewButton(); }
-$('#reset').addEventListener('click', resetView); $('#photoView').addEventListener('click', resetView);
-$('#spin').addEventListener('click', ()=>{ S.spin=!S.spin; $('#spin').setAttribute('aria-pressed', S.spin); });
-$('#addLabel').addEventListener('click', ()=>setPlacing(S.placing==='label'?false:'label'));
-
-// orbit: one finger or mouse turns, two fingers or wheel zoom
-const ptrs = new Map(); let pinch0=0, zoom0=1, moved=0;
-cv.addEventListener('pointerdown', e=>{ cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); moved=0;
-  if (ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch0=Math.hypot(a.x-b.x,a.y-b.y); zoom0=S.zoom; } });
-cv.addEventListener('pointermove', e=>{ const p=ptrs.get(e.pointerId); if(!p) return;
-  const dx=e.clientX-p.x, dy=e.clientY-p.y; p.x=e.clientX; p.y=e.clientY; moved+=Math.abs(dx)+Math.abs(dy);
-  if (ptrs.size===1){ S.yaw += dx*0.35; S.pitch = Math.max(-80, Math.min(80, S.pitch + dy*0.3)); }
-  else if (ptrs.size===2){ const [a,b]=[...ptrs.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y); if (pinch0) S.zoom=Math.max(0.35,Math.min(5, zoom0*pinch0/d)); }
-  S.dirtyDraw=true; viewButton(); });
-const up = e=>{ if (ptrs.size===1 && moved<6 && S.placing){ const r=cv.getBoundingClientRect(); (S.placing==='face'?placeFace:placeLabel)(e.clientX-r.left, e.clientY-r.top); } ptrs.delete(e.pointerId); pinch0=0; };
-cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', e=>ptrs.delete(e.pointerId));
-cv.addEventListener('wheel', e=>{ e.preventDefault(); S.zoom=Math.max(0.35,Math.min(5,S.zoom*Math.exp(e.deltaY*0.001))); S.dirtyDraw=true; viewButton(); }, {passive:false});
-cv.addEventListener('dblclick', resetView);
-cv.addEventListener('keydown', e=>{ const k={ArrowLeft:[-4,0],ArrowRight:[4,0],ArrowUp:[0,-4],ArrowDown:[0,4]}[e.key]; if(!k) return; e.preventDefault(); S.yaw+=k[0]; S.pitch=Math.max(-80,Math.min(80,S.pitch+k[1])); S.dirtyDraw=true; viewButton(); });
-new ResizeObserver(()=>layout()).observe($('#stage'));
-
-function frame(){
-  if (S.dirtyBuild) build();
-  if (S.spin && !S.recording){ S.yaw += 0.25; S.dirtyDraw = true; viewButton(); }
-  if (S.dirtyDraw && !S.recording){ S.dirtyDraw=false; draw(); renderLabels(); }
-  requestAnimationFrame(frame);
-}
-
-// ---------------------------------------------------------------- busy overlay
-function busy(text, frac){ const b=$('#busy'); if (text==null){ b.hidden=true; return; } b.hidden=false; $('#busyText').textContent=text; $('#busyBar').style.width = frac==null ? '100%' : (frac*100).toFixed(1)+'%'; }
-const tick = () => new Promise(r=>setTimeout(r,30));
-
-// ---------------------------------------------------------------- depth model
+// ---------------------------------------------------------------- the depth model
 let session = null;
+async function ensureOrt(){
+  if (!window.ort) await loadScript('ort/ort.wasm.min.js');
+  ort.env.wasm.wasmPaths = new URL('ort/', location.href).href;
+  ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency||2) : 1;
+}
+async function cachedFetch(url){
+  // keep the model in Cache Storage, so "first time only" is true even after the web cache expires
+  let cache = null; try { cache = await caches.open('first-return-models-v1'); const hit = await cache.match(url); if (hit) return hit; } catch(e){}
+  const r = await fetch(url); if (!r.ok) throw new Error('could not fetch '+url);
+  if (cache){ try { await cache.put(url, r.clone()); } catch(e){} }
+  return r;
+}
 async function loadModel(){
   if (session) return session;
-  const parts = ['models/depth-q8.part0','models/depth-q8.part1'];
-  // one piece at a time, each retried once, so a dropped connection does not sink the whole download
-  const total = 27258801, pieces = []; let got = 0;
+  await ensureOrt();
+  const parts = ['models/depth-q8.part0','models/depth-q8.part1'], total = 27258801, pieces = []; let got = 0;
   for (const part of parts){
     for (let attempt=0;;attempt++){
       const start = got, chunks = [];
       try {
-        const r = await fetch(part); if (!r.ok) throw new Error('could not fetch '+part);
-        const rd = r.body.getReader();
+        const rd = (await cachedFetch(part)).body.getReader();
         for(;;){ const {done,value}=await rd.read(); if(done) break; chunks.push(value); got+=value.length;
-          busy(`Fetching the depth model, first time only: ${(got/1e6).toFixed(1)} of ${(total/1e6).toFixed(1)} MB`, Math.min(1,got/total)); }
+          busy(`Getting the depth model, first time only: ${(got/1e6).toFixed(0)} of ${(total/1e6).toFixed(0)} MB`, got/total); }
         pieces.push(...chunks); break;
       } catch(err){ got = start; if (attempt>=1) throw err; }
     }
   }
   const buf = new Uint8Array(got); { let o=0; for (const c of pieces){ buf.set(c,o); o+=c.length; } }
   busy('Starting the depth model', null); await tick();
-  ort.env.wasm.wasmPaths = new URL('ort/', location.href).href;
-  ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency||2) : 1;
-  session = await ort.InferenceSession.create(buf.subarray(0,got), {executionProviders:['wasm']});
+  session = await ort.InferenceSession.create(buf, {executionProviders:['wasm']});
   return session;
 }
-async function estimateDepth(bitmap){
+async function estimateDepth(photoCanvas){
   const sess = await loadModel();
   busy('Reading depth from the photo', null); await tick();
-  const LONG = MOBILE ? 434 : 518, s = LONG/Math.max(bitmap.width,bitmap.height);
-  const mw = Math.max(14, Math.round(bitmap.width*s/14)*14), mh = Math.max(14, Math.round(bitmap.height*s/14)*14);
-  const c = document.createElement('canvas'); c.width=mw; c.height=mh; const x=c.getContext('2d'); x.drawImage(bitmap,0,0,mw,mh);
+  const LONG = MOBILE ? 434 : 518, s = LONG/Math.max(photoCanvas.width, photoCanvas.height);
+  const mw = Math.max(14, Math.round(photoCanvas.width*s/14)*14), mh = Math.max(14, Math.round(photoCanvas.height*s/14)*14);
+  const c = document.createElement('canvas'); c.width=mw; c.height=mh; const x=c.getContext('2d',{willReadFrequently:true});
+  x.drawImage(photoCanvas,0,0,mw,mh);
   const px = x.getImageData(0,0,mw,mh).data, t = new Float32Array(3*mw*mh), m=[.485,.456,.406], sd=[.229,.224,.225];
   for (let i=0;i<mw*mh;i++) for (let k=0;k<3;k++) t[k*mw*mh+i] = (px[i*4+k]/255-m[k])/sd[k];
   const res = await sess.run({[sess.inputNames[0]]: new ort.Tensor('float32', t, [1,3,mh,mw])});
-  const o = res[sess.outputNames[0]]; const dims=o.dims; const oh=dims[dims.length-2], ow=dims[dims.length-1];
-  return normaliseDepth(o.data, ow, oh);
-}
-function photoFrom(bitmap){
-  const s = Math.min(1, 1400/Math.max(bitmap.width,bitmap.height));
-  const w = Math.round(bitmap.width*s), h = Math.round(bitmap.height*s);
-  const c = document.createElement('canvas'); c.width=w; c.height=h; const x=c.getContext('2d'); x.drawImage(bitmap,0,0,w,h);
-  return {w,h,data:x.getImageData(0,0,w,h).data};
-}
-$('#file').addEventListener('change', async e=>{
-  const f = e.target.files[0]; if (!f) return; e.target.value='';
-  try {
-    busy('Opening the photo', null); await tick();
-    const bmp = await createImageBitmap(f, {imageOrientation:'from-image'});
-    const depth = await estimateDepth(bmp);
-    S.photoSrc = S.photo = photoFrom(bmp); S.depthSrc = S.depth = depth; S.ground = findGround(); S.autoCut = otsu(depth.d); S.labels=[]; renderLabelList();
-    S.faces=[]; S.facesFound=false; if (S.anon) await setAnon(true); else faceNote();
-    $('#credit').innerHTML = 'Depth: Depth Anything V2 Small (Apache 2.0) via ONNX Runtime Web (MIT). Your photo stayed on this device.';
-    layout(); S.dirtyBuild = true; busy(null);
-  } catch(err){ console.error(err); busy(null); $('#readout').textContent = 'Could not read depth: '+(err.message||err)+'. Try a JPEG or PNG.'; }
-});
-
-// ---------------------------------------------------------------- export
-function exportSize(){ const a=frameAspect(); const long = MOBILE ? 2048 : 2880; const maxT = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-  const L = Math.min(long, maxT); return a>=1 ? [L, Math.round(L/a)] : [Math.round(L*a), L]; }
-$('#save').addEventListener('click', async ()=>{
-  if (!S.count) return;
-  busy('Rendering at full size', null); await tick();
-  const [W,H] = exportSize(); const ow=cv.width, oh=cv.height;
-  cv.width=W; cv.height=H; draw(W,H);
-  const c2 = document.createElement('canvas'); c2.width=W; c2.height=H; const x=c2.getContext('2d'); x.drawImage(cv,0,0);
-  drawLabels2D(x, W, H);
-  cv.width=ow; cv.height=oh; S.dirtyDraw=true;
-  c2.toBlob(b=>{ showSheet(URL.createObjectURL(b), 'image', 'first-return.png'); busy(null); }, 'image/png');
-});
-$('#sheetClose').addEventListener('click', ()=>{ $('#sheet').hidden=true; $('#sheetVid').pause(); });
-function drawLabels2D(x, W, H){
-  const fs = H*0.03; x.save(); x.font = `560 ${fs}px Archivo, "Helvetica Neue", Arial, sans-serif`; x.textAlign='center'; x.textBaseline='bottom';
-  S.labels.forEach(L=>{ if(!L.text||!L.pos) return; const s=project(L.pos,W,H); if(!s) return;
-    x.fillStyle='#fff'; x.shadowColor='rgba(255,255,255,.55)'; x.shadowBlur=fs*0.5; x.fillText(L.text,s[0],s[1]); x.shadowBlur=fs*0.18; x.fillText(L.text,s[0],s[1]); });
-  x.restore();
-}
-function showSheet(url, kind, name){
-  const img=$('#sheetImg'), vid=$('#sheetVid');
-  img.hidden = kind!=='image'; vid.hidden = kind!=='video';
-  if (kind==='image') img.src=url; else { vid.src=url; vid.play().catch(()=>{}); }
-  $('#sheetDl').href=url; $('#sheetDl').download=name;
-  $('#sheetNote').textContent = kind==='image'
-    ? 'On a phone, press and hold the picture to save it. On a computer, right-click it and choose Save image.'
-    : 'Tap Download to save the video. If nothing saves, try the three-dot menu on the video, or use the app on your computer.';
-  $('#sheet').hidden=false;
+  const o = res[sess.outputNames[0]], dims=o.dims, oh=dims[dims.length-2], ow=dims[dims.length-1];
+  return {w:ow, h:oh, d:Float32Array.from(o.data)};
 }
 
-// ---------------------------------------------------------------- animation
-// each move is an offset from the view on screen, eased so it starts and ends at rest
-const MOVES = {
-  push:  t=>({dz:-0.32*t}),
-  orbit: t=>({dy:-14+28*t}),
-  drift: t=>({dz:-0.26*t, dy:-8+16*t, dp:4-4*t}),
-  rise:  t=>({dy:22*t, dp:16*t, dz:-0.12*t})
-};
-const ease = t => 0.5-0.5*Math.cos(Math.PI*t);
-function poseAt(base, move, t){ const m=MOVES[move](ease(t));
-  return {yaw:base.yaw+(m.dy||0), pitch:Math.max(-80,Math.min(80,base.pitch+(m.dp||0))), zoom:Math.max(0.3, base.zoom*(1+(m.dz||0)))}; }
-function videoSize(){ const a=frameAspect(), L = MOBILE ? 1280 : 1920; let w,h; if (a>=1){ w=L; h=Math.round(L/a); } else { h=L; w=Math.round(L*a); } return [w&~1, h&~1]; }
-async function playMove(recordIt){
-  if (S.recording || !S.count) return;
-  const move=$('#animMove').value, dur=+$('#animLen').value*1000, base={yaw:S.yaw,pitch:S.pitch,zoom:S.zoom};
-  let rec=null, chunks=[], rx=null, W=0, H=0, mime='';
-  const ow=cv.width, oh=cv.height;
-  if (recordIt){
-    mime = ['video/mp4;codecs=avc1.640028','video/mp4','video/webm;codecs=vp9','video/webm'].find(m=>window.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
-    if (!mime || !HTMLCanvasElement.prototype.captureStream){ $('#readout').textContent='This browser cannot record video. Try Chrome, Edge or Firefox.'; return; }
-    [W,H] = videoSize(); cv.width=W; cv.height=H;
-    const rc=document.createElement('canvas'); rc.width=W; rc.height=H; rx=rc.getContext('2d');
-    rx.fillStyle='#030405'; rx.fillRect(0,0,W,H);
-    rec = new MediaRecorder(rc.captureStream(30), {mimeType:mime, videoBitsPerSecond: MOBILE?8e6:16e6});
-    rec.ondataavailable = e=>{ if (e.data && e.data.size) chunks.push(e.data); };
-    rec.start(250);
+// Map raw model output to 0..1. Only the far end is clipped hard; clipping the near end
+// flattened the closest surfaces (often the floor at your feet) into a plateau.
+function normaliseDepth(raw){
+  const s = Float32Array.from(raw.d).sort(), lo = s[Math.floor(s.length*0.005)], hi = s[Math.min(s.length-1, Math.floor(s.length*0.9995))];
+  const d = new Float32Array(raw.d.length); for (let i=0;i<d.length;i++) d[i] = Math.min(1, Math.max(0, (raw.d[i]-lo)/(hi-lo||1)));
+  return {w:raw.w, h:raw.h, d};
+}
+
+// Depth models blur edges by a few pixels, which smears people into the wall behind them.
+// A guided filter (He, Sun and Tang) snaps the depth edges onto the photo's own edges and
+// doubles the resolution at the same time.
+function boxMean(src, w, h, r){
+  const I = new Float64Array((w+1)*(h+1));
+  for (let y=0;y<h;y++){ let row=0; for (let x=0;x<w;x++){ row+=src[y*w+x]; I[(y+1)*(w+1)+x+1]=I[y*(w+1)+x+1]+row; } }
+  const out = new Float32Array(w*h);
+  for (let y=0;y<h;y++){ const y0=Math.max(0,y-r), y1=Math.min(h,y+r+1);
+    for (let x=0;x<w;x++){ const x0=Math.max(0,x-r), x1=Math.min(w,x+r+1);
+      out[y*w+x] = (I[y1*(w+1)+x1]-I[y0*(w+1)+x1]-I[y1*(w+1)+x0]+I[y0*(w+1)+x0])/((x1-x0)*(y1-y0)); } }
+  return out;
+}
+function refineDepth(D, photoCanvas){
+  const scale = Math.min(2, photoCanvas.width/D.w), w = Math.round(D.w*scale), h = Math.round(D.h*scale), n = w*h;
+  const c = document.createElement('canvas'); c.width=w; c.height=h; const x=c.getContext('2d',{willReadFrequently:true});
+  x.drawImage(photoCanvas,0,0,w,h); const px = x.getImageData(0,0,w,h).data;
+  const I = new Float32Array(n); for (let i=0;i<n;i++) I[i]=(0.299*px[i*4]+0.587*px[i*4+1]+0.114*px[i*4+2])/255;
+  const p = new Float32Array(n);
+  for (let yy=0;yy<h;yy++) for (let xx=0;xx<w;xx++){ const u=(xx+.5)/w, v=(yy+.5)/h;
+    const fx=Math.min(D.w-1.001,Math.max(0,u*D.w-.5)), fy=Math.min(D.h-1.001,Math.max(0,v*D.h-.5)), x0=fx|0, y0=fy|0, ax=fx-x0, ay=fy-y0, i=y0*D.w+x0;
+    p[yy*w+xx]=(D.d[i]*(1-ax)+D.d[i+1]*ax)*(1-ay)+(D.d[i+D.w]*(1-ax)+D.d[i+D.w+1]*ax)*ay; }
+  const r = Math.max(2, Math.round(Math.max(w,h)*0.006)), eps = 0.0025;
+  const mI=boxMean(I,w,h,r), mP=boxMean(p,w,h,r);
+  const II=new Float32Array(n), IP=new Float32Array(n); for (let i=0;i<n;i++){ II[i]=I[i]*I[i]; IP[i]=I[i]*p[i]; }
+  const mII=boxMean(II,w,h,r), mIP=boxMean(IP,w,h,r);
+  const a=new Float32Array(n), b=new Float32Array(n);
+  for (let i=0;i<n;i++){ const varI=mII[i]-mI[i]*mI[i], cov=mIP[i]-mI[i]*mP[i]; a[i]=cov/(varI+eps); b[i]=mP[i]-a[i]*mI[i]; }
+  const ma=boxMean(a,w,h,r), mb=boxMean(b,w,h,r), d=new Float32Array(n);
+  for (let i=0;i<n;i++) d[i]=Math.min(1,Math.max(0, ma[i]*I[i]+mb[i]));
+  return {w, h, d};
+}
+
+// ---------------------------------------------------------------- floor plane and depth range
+// The model's depth is only known up to a scale and a shift. A level floor has disparity that
+// is a flat plane in (column, row, depth), and that plane reaches zero at the horizon. Fitting
+// it with RANSAC finds the floor (so it can be swapped for the synthetic one) and pins the shift,
+// which sets how far away the back wall really is compared with the subject.
+function fitFloor(D){
+  const W=D.w, H=D.h, rnd=seeded(11), pts=[];
+  for (let k=0;k<3000;k++){ const x=(rnd()*W)|0, y=(H*0.42+rnd()*H*0.58)|0; pts.push([(x+.5)/W,(y+.5)/H,D.d[y*W+x]]); }
+  let best=null, bestN=0; const tol=0.012;
+  for (let it=0; it<300; it++){
+    const a=pts[(rnd()*pts.length)|0], b=pts[(rnd()*pts.length)|0], c=pts[(rnd()*pts.length)|0];
+    const ux=b[0]-a[0], uy=b[1]-a[1], ud=b[2]-a[2], vx=c[0]-a[0], vy=c[1]-a[1], vd=c[2]-a[2];
+    const nx=uy*vd-ud*vy, ny=ud*vx-ux*vd, nd=ux*vy-uy*vx; if (Math.abs(nd)<1e-6) continue;
+    const al=-nx/nd, be=-ny/nd, ga=a[2]-al*a[0]-be*a[1];
+    if (!(be > 0.5 && Math.abs(al) < 0.6*be)) continue;          // a floor gets nearer as you look down the frame
+    let n=0; for (const p of pts) if (Math.abs(p[2]-(al*p[0]+be*p[1]+ga)) < tol) n++;
+    if (n > bestN){ bestN=n; best=[al,be,ga]; }
   }
-  S.recording = true; S.spin=false; $('#spin').setAttribute('aria-pressed','false');
-  $('#recbar').hidden=false; $('#readout').textContent = recordIt ? 'Recording the move' : 'Previewing the move';
-  const hold = recordIt ? 500 : 0;   // a still beat at the end so the video does not stop mid-motion
-  await new Promise(res=>{ const t0=performance.now();
-    const step=()=>{ const el=performance.now()-t0, t=Math.min(1, el/dur);
-      Object.assign(S, poseAt(base, move, t));
-      if (recordIt){ draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); }
-      else { draw(); renderLabels(); }
-      $('#recfill').style.width=(Math.min(1,el/(dur+hold))*100)+'%';
-      if (el < dur+hold) requestAnimationFrame(step); else res(); };
-    requestAnimationFrame(step); });
-  if (recordIt){ await new Promise(r=>{ rec.onstop=r; rec.stop(); }); cv.width=ow; cv.height=oh; }
-  S.recording=false; $('#recbar').hidden=true; Object.assign(S, base); S.dirtyDraw=true; readout(); viewButton();
-  if (recordIt){ const ext = mime.includes('mp4') ? 'mp4' : 'webm';
-    showSheet(URL.createObjectURL(new Blob(chunks,{type:mime.split(';')[0]})), 'video', 'first-return.'+ext); }
+  if (!best || bestN < pts.length*0.12) return null;
+  // least-squares polish on the inliers
+  const inl = pts.filter(p=>Math.abs(p[2]-(best[0]*p[0]+best[1]*p[1]+best[2])) < tol);
+  let Sxx=0,Sxy=0,Sx=0,Syy=0,Sy=0,Sn=inl.length,Sxd=0,Syd=0,Sd=0;
+  for (const [x,y,d] of inl){ Sxx+=x*x; Sxy+=x*y; Sx+=x; Syy+=y*y; Sy+=y; Sxd+=x*d; Syd+=y*d; Sd+=d; }
+  const A=[[Sxx,Sxy,Sx],[Sxy,Syy,Sy],[Sx,Sy,Sn]], B=[Sxd,Syd,Sd];
+  const det=m=>m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1])-m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0])+m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
+  const D0=det(A); if (Math.abs(D0)<1e-12) return {al:best[0],be:best[1],ga:best[2],frac:bestN/pts.length};
+  const col=(i)=>A.map((r,k)=>r.map((v,j)=>j===i?B[k]:v));
+  return {al:det(col(0))/D0, be:det(col(1))/D0, ga:det(col(2))/D0, frac:inl.length/pts.length};
 }
-$('#animPreview').addEventListener('click', ()=>playMove(false));
-$('#animRecord').addEventListener('click', ()=>playMove(true));
+function groundMask(D, pl){
+  const g = new Uint8Array(D.w*D.h); if (!pl) return g;
+  for (let y=0;y<D.h;y++){ const v=(y+.5)/D.h;
+    for (let x=0;x<D.w;x++){ const u=(x+.5)/D.w, e=pl.al*u+pl.be*v+pl.ga, r=D.d[y*D.w+x]-e; if (e<=0.02) continue;
+      // 1 = on the floor; 2 = at or behind the floor, which nothing standing on it can be
+      if (Math.abs(r) < 0.022) g[y*D.w+x]=1; else if (r < 0) g[y*D.w+x]=2; } }
+  return g;
+}
+function estimateShift(pl){
+  // level camera: the horizon is the middle row, where the floor's true disparity is zero
+  if (pl){ const t = -(pl.al*0.5 + pl.be*0.5 + pl.ga); if (t > 0.04 && t < 3) return t; }
+  return 1/3;                      // no floor to go on: assume the far wall is 4 times further than the subject
+}
+function otsu(d, skip){
+  const bins=64, hist=new Float64Array(bins); let total=0;
+  for (let i=0;i<d.length;i++){ if (skip && skip[i]) continue; hist[Math.min(bins-1,(d[i]*bins)|0)]++; total++; }
+  let sum=0; for (let i=0;i<bins;i++) sum+=i*hist[i];
+  let sB=0,wB=0,best=0,th=bins/2;
+  for (let i=0;i<bins;i++){ wB+=hist[i]; if(!wB) continue; const wF=total-wB; if(!wF) break; sB+=i*hist[i];
+    const mB=sB/wB, mF=(sum-sB)/wF, v=wB*wF*(mB-mF)*(mB-mF); if(v>best){best=v; th=i+1;} }
+  return th/bins;
+}
 
-// ---------------------------------------------------------------- faces
+// ---------------------------------------------------------------- geometry
+function depthAt(u,v){ const D=S.depth; const x=Math.min(D.w-1.001,Math.max(0,u*D.w-.5)), y=Math.min(D.h-1.001,Math.max(0,v*D.h-.5));
+  const x0=x|0,y0=y|0,ax=x-x0,ay=y-y0,i=y0*D.w+x0, d=D.d;
+  return (d[i]*(1-ax)+d[i+1]*ax)*(1-ay)+(d[i+D.w]*(1-ax)+d[i+D.w+1]*ax)*ay; }
+function curShift(){
+  // the 3D control scales the near-to-far ratio found for this photo
+  const R0 = (1+S.shiftAuto)/S.shiftAuto, R = Math.max(1.03, Math.min(80, Math.pow(R0, val('depth3d'))));
+  return 1/(R-1);
+}
+let SHIFT = 1/3;
+function zOf(d){ return 1.2*(1+SHIFT)/(d+SHIFT); }
+function unproject(u,v,z){ const a=S.photo.w/S.photo.h; return [(2*u-1)*S.tanV*a*z, (1-2*v)*S.tanV*z, -z]; }
+function uvOf(p){ const a=S.photo.w/S.photo.h, z=-p[2]; return [(p[0]/(S.tanV*a*z)+1)/2, (1-p[1]/(S.tanV*z))/2]; }
+
+// ---------------------------------------------------------------- choosing the subject
+// Automatic: everything nearer than a depth threshold (floor excluded) is the subject.
+function autoComponents(){
+  const D=S.depth, n=D.w*D.h, cut=S.autoCut, G=S.ground, map=new Int32Array(n).fill(-1), q=new Int32Array(n), comps=[];
+  for (let s=0;s<n;s++){
+    if (map[s]!==-1 || D.d[s]<cut || G[s]) continue;
+    let head=0, tail=0; q[tail++]=s; const id=comps.length; map[s]=id; let area=0;
+    while(head<tail){ const i=q[head++]; area++; const x=i%D.w;
+      if (x>0){ const j=i-1; if (map[j]===-1 && D.d[j]>=cut && !G[j]){ map[j]=id; q[tail++]=j; } }
+      if (x<D.w-1){ const j=i+1; if (map[j]===-1 && D.d[j]>=cut && !G[j]){ map[j]=id; q[tail++]=j; } }
+      if (i>=D.w){ const j=i-D.w; if (map[j]===-1 && D.d[j]>=cut && !G[j]){ map[j]=id; q[tail++]=j; } }
+      if (i<n-D.w){ const j=i+D.w; if (map[j]===-1 && D.d[j]>=cut && !G[j]){ map[j]=id; q[tail++]=j; } } }
+    comps.push(area);
+  }
+  const remap=[]; let k=0; comps.forEach((a,i)=>{ remap[i] = a >= n*0.004 ? k++ : -1; });
+  for (let i=0;i<n;i++) if (map[i]>=0) map[i]=remap[map[i]];
+  return map;
+}
+
+// Tapped: grow outward from the tap across surfaces at about the same depth, stopping at
+// depth cliffs. Things in front of the subject are no longer mistaken for it.
+const BANDS = [0.045, 0.085, 0.15];
+function growFrom(pick, id, map){
+  const D=S.depth, n=D.w*D.h, G=S.ground, W=D.w;
+  const sx=Math.min(W-1,(pick.u*W)|0), sy=Math.min(D.h-1,(pick.v*D.h)|0);
+  let seed=sy*W+sx;
+  // if the tap landed on the floor or a hole, use the nearest non-floor pixel close by
+  if (G[seed]){ let best=-1, bd=1e9; const r=Math.round(W*0.03);
+    for (let y=Math.max(0,sy-r);y<Math.min(D.h,sy+r);y++) for (let x=Math.max(0,sx-r);x<Math.min(W,sx+r);x++){ const i=y*W+x; if (!G[i]){ const dd=(x-sx)**2+(y-sy)**2; if (dd<bd){bd=dd; best=i;} } }
+    if (best>=0) seed=best; }
+  const tau = BANDS[S.band], step = 0.018 + 0.01*S.band;
+  let lo, hi, seg = pick.seg;
+  if (seg){
+    // the outline model gives the shape; depth decides which parts of it really belong together
+    const vals=[]; for (let i=0;i<n;i+=3) if (seg[i]) vals.push(D.d[i]);
+    // keep the outline's own depth range (an object can reach towards you), dropping only strays well off it
+    if (vals.length > 20){ vals.sort((a,b)=>a-b); lo=vals[Math.floor(vals.length*0.05)]-tau; hi=vals[Math.floor(vals.length*0.95)]+tau; }
+    else seg = null;
+  }
+  if (!seg){ const d0=D.d[seed]; lo=d0-tau; hi=d0+tau; }
+  const ok = j => map[j]===-1 && !G[j] && D.d[j]>=lo && D.d[j]<=hi && (!seg || seg[j]);
+  if (seg){ // take every pixel of the outline that sits in the depth band
+    let area=0; for (let i=0;i<n;i++) if (ok(i)){ map[i]=id; area++; } return area; }
+  const q=new Int32Array(n); let head=0, tail=0, area=0;
+  if (map[seed]!==-1) return 0; map[seed]=id; q[tail++]=seed;
+  while(head<tail){ const i=q[head++]; area++; const x=i%W, di=D.d[i];
+    const tryJ = j => { if (ok(j) && Math.abs(D.d[j]-di) < step){ map[j]=id; q[tail++]=j; } };
+    if (x>0) tryJ(i-1); if (x<W-1) tryJ(i+1); if (i>=W) tryJ(i-W); if (i<n-W) tryJ(i+W); }
+  return area;
+}
+function subjectMap(){
+  if (!S.picks.length) return autoComponents();
+  const map = new Int32Array(S.depth.w*S.depth.h).fill(-1);
+  S.picks.forEach((p,i)=>growFrom(p, i, map));
+  return map;
+}
+
+// ---------------------------------------------------------------- optional sharper outline (MediaPipe Magic Touch)
+let segmenter = null, segFailed = false;
+async function loadSegmenter(){
+  if (segmenter || segFailed) return segmenter;
+  try {
+    busy('Getting the outline finder, first time only', null); await tick();
+    await loadScript('mp/vision_bundle.js');
+    const fileset = await Vision.FilesetResolver.forVisionTasks(new URL('mp/wasm', location.href).href);
+    segmenter = await Vision.InteractiveSegmenterLegacy.createFromOptions(fileset, {
+      baseOptions:{modelAssetPath:new URL('models/magic_touch.tflite', location.href).href, delegate:'CPU'},
+      outputCategoryMask:true, outputConfidenceMasks:false});
+  } catch(err){ console.error(err); segFailed = true; segmenter = null; }
+  busy(null);
+  return segmenter;
+}
+async function outlineFor(u, v){
+  const seg = await loadSegmenter(); if (!seg) return null;
+  busy('Finding the outline', null); await tick();
+  try {
+    const res = seg.segment(S.photoCanvasForSeg || S.photoCanvas, {keypoint:{x:u, y:v}});
+    const m = res.categoryMask, mw = m.width, mh = m.height, a = m.getAsUint8Array();
+    // resample to the depth grid; the tapped pixel tells us which value means "selected"
+    const on = a[Math.min(mh-1,(v*mh)|0)*mw + Math.min(mw-1,(u*mw)|0)];
+    const D=S.depth, out=new Uint8Array(D.w*D.h); let count=0;
+    for (let y=0;y<D.h;y++) for (let x=0;x<D.w;x++){ const s=a[Math.min(mh-1,((y+.5)/D.h*mh)|0)*mw + Math.min(mw-1,((x+.5)/D.w*mw)|0)]; if (s===on){ out[y*D.w+x]=1; count++; } }
+    res.close(); busy(null);
+    if (count < D.w*D.h*0.001 || count > D.w*D.h*0.9) return null;     // nothing sensible: fall back to depth alone
+    return out;
+  } catch(err){ console.error(err); busy(null); return null; }
+}
+
+// ---------------------------------------------------------------- building the cloud
+// Each point is 10 floats: position (3), photo colour (3), kind, random, luminance, incidence.
+// kind 0 = subject, 1 = backdrop, 2 = synthetic floor. Which subject a point belongs to is kept
+// separately (S.cpuComp) because only picking needs it.
+function buildCloud(cfg){
+  const Ph=S.photo, D=S.depth, aspect=Ph.w/Ph.h, map=S.compMap, tanV=S.tanV, tanH=tanV*aspect;
+  const density = cfg.dots;                         // 0..100
+  let target = Math.round(2000*Math.pow(10, density/100*2.75)) * (cfg.low ? 0.3 : 1);
+  const floorN = cfg.floor > 0 ? Math.round(cfg.floor * Math.min(90000, 9000 + target*0.08)) : 0;
+  target = Math.max(1000, Math.min(target, (cfg.cap||MAXPTS) - floorN - 2000));
+  const cap = Math.round(target*1.08) + floorN + 4000;
+  const out = new Float32Array(cap*10), comp = new Int16Array(cap);
+  let n = 0;
+  const push = (x,y,z,r,g,b,kind,rnd,lum,inc,c) => { if (n>=cap) return; const o=n*10;
+    out[o]=x;out[o+1]=y;out[o+2]=z;out[o+3]=r;out[o+4]=g;out[o+5]=b;out[o+6]=kind;out[o+7]=rnd;out[o+8]=lum;out[o+9]=inc; comp[n]=c; n++; };
+  const nComp = map.reduce((m,v)=>Math.max(m,v+1),0);
+  const cinfo = Array.from({length:nComp},()=>({n:0,sx:0,sz:0,minY:1e9,maxY:-1e9,top:null,topUV:null,foot:null}));
+  const pix = Ph.data, pw = Ph.w, ph = Ph.h, du = 1/D.w, dv = 1/D.h;
+  const rings = cfg.pattern==='rings', fog = cfg.bgTint > 0;
+  const noise = seeded(3);
+
+  // centre of the subject in the frame, for fading the backdrop out around it
+  let fx=0.5, fy=0.5; { let sx=0,sy=0,c=0; for (let i=0;i<map.length;i+=3) if (map[i]>=0){ sx+=i%D.w; sy+=(i/D.w)|0; c++; } if (c){ fx=sx/c/D.w; fy=sy/c/D.h; } }
+
+  const sample = (u,v,cell) => {
+    if (u<0||u>=1||v<0||v>=1) return;
+    const mi = Math.min(D.h-1,(v*D.h)|0)*D.w + Math.min(D.w-1,(u*D.w)|0);
+    const c = map[mi], kind = c>=0 ? 0 : 1, rnd = hash2(cell, 17, 5);
+    const inFace = S.faceMask ? S.faceMask[mi]/255 : 0;
+    if (inFace && hash2(cell,3,9) < [0.25,0.55,0.8][S.anonLevel]*inFace) return;
+    if (kind===1){
+      let keep = cfg.backdrop;
+      if (fog){ const dx=(u-fx)*aspect/Math.max(aspect,1), dy=v-fy; keep *= Math.exp(-(dx*dx+dy*dy)/0.07); }
+      if (rnd >= keep) return;
+    }
+    const d = depthAt(u,v), z = zOf(d);
+    const zl=zOf(depthAt(u-du,v)), zr=zOf(depthAt(u+du,v)), zu=zOf(depthAt(u,v-dv)), zd=zOf(depthAt(u,v+dv));
+    // a real sensor sees one surface or the other across a depth cliff, never the smear between
+    if (Math.abs(zr-zl) > z*0.05 || Math.abs(zd-zu) > z*0.05) return;
+    // surface normal from the neighbours, for how squarely the beam hits it
+    const pl=unproject(u-du,v,zl), pr=unproject(u+du,v,zr), pu=unproject(u,v-dv,zu), pd=unproject(u,v+dv,zd);
+    const ax=pr[0]-pl[0], ay=pr[1]-pl[1], az=pr[2]-pl[2], bx=pd[0]-pu[0], by=pd[1]-pu[1], bz=pd[2]-pu[2];
+    let nx=ay*bz-az*by, ny=az*bx-ax*bz, nz=ax*by-ay*bx; const nl=Math.hypot(nx,ny,nz)||1; nx/=nl; ny/=nl; nz/=nl;
+    const p0 = unproject(u,v,z), rl=Math.hypot(p0[0],p0[1],p0[2]);
+    const inc = Math.abs((nx*p0[0]+ny*p0[1]+nz*p0[2])/rl);
+    const ci = (Math.min(ph-1,(v*ph)|0)*pw + Math.min(pw-1,(u*pw)|0))*4;
+    const r=pix[ci]/255, g=pix[ci+1]/255, b=pix[ci+2]/255, lum=0.299*r+0.587*g+0.114*b;
+    if (rings){
+      // spinning sensors lose returns from dark surfaces and from surfaces hit at a glancing angle
+      const drop = 0.4*Math.pow(1-inc,3) + 0.18*Math.pow(1-lum,4);
+      if (hash2(cell,7,11) < drop) return;
+    }
+    // range noise grows with distance, along the beam
+    const zz = z + gauss(noise)*(0.002 + 0.0035*z)*(1 + 4*inFace);
+    const p = unproject(u,v,zz);
+    push(p[0],p[1],p[2],r,g,b,kind,rnd,lum,inc,c);
+    if (kind===0){ const ci2=cinfo[c]; ci2.n++; ci2.sx+=p[0]; ci2.sz+=p[2];
+      if (p[1]>ci2.maxY){ci2.maxY=p[1]; ci2.top=p; ci2.topUV=[u,v];} if (p[1]<ci2.minY){ci2.minY=p[1]; ci2.foot=p;} }
+  };
+
+  const azMax = Math.atan(tanH), elMax = Math.atan(tanV);
+  const beamEls = [];
+  if (rings){
+    // fixed beam elevations, packed closer together near the horizon like a real multi-beam unit
+    const beams = Math.round(16 + density/100*200);
+    for (let k=0;k<beams;k++){ const s=(k+.5)/beams*2-1; beamEls.push(elMax*1.02*Math.sign(s)*Math.pow(Math.abs(s),1.45)); }
+    const per = Math.max(200, Math.min(4000, Math.round(target/beams)));
+    beamEls.forEach((el,k)=>{
+      for (let j=0;j<per;j++){ const az=-azMax + (j+.5)/per*2*azMax;
+        const u = 0.5 + Math.tan(az)/(2*tanH), v = 0.5 - Math.tan(el)/Math.cos(az)/(2*tanV);
+        sample(u, v, k*8192+j); } });
+  } else {
+    const cw = Math.sqrt(aspect/target), chh = cw/aspect, nx = Math.ceil(1/cw), ny = Math.ceil(1/chh);
+    const jit = cfg.pattern==='grid' ? 0 : 1;
+    for (let y=0;y<ny;y++) for (let x=0;x<nx;x++){ const cell=y*nx+x;
+      sample(Math.min(.9999,(x+.5+(hash2(x,y,1)-.5)*jit)/nx), Math.min(.9999,(y+.5+(hash2(x,y,2)-.5)*jit)/ny), cell); }
+  }
+
+  // synthetic floor, laid on the real floor plane when the photo has one
+  const live = cinfo.map((c,i)=>({...c,id:i})).filter(c=>c.n>50 && c.foot);
+  let floorPlane = null;
+  if (floorN && live.length){
+    floorPlane = floorPlane3D(live);
+    const feet = live.map(c=>[c.sx/c.n, c.sz/c.n]);
+    const zc = feet.reduce((s,f)=>s+f[1],0)/feet.length, xc = feet.reduce((s,f)=>s+f[0],0)/feet.length;
+    const depth0 = Math.abs(zc), xr = tanV*depth0*2.4*Math.max(1,aspect), zr = depth0*0.75, sig = tanV*depth0*0.28;
+    const fr = seeded(21);
+    const yAt = (x,z) => floorPlane.a*x + floorPlane.c*z + floorPlane.b;
+    const weight = (x,z,ex,ez) => { let near=0; for (const f of feet){ const dx=x-f[0], dz=(z-f[1])*1.6; near=Math.max(near, Math.exp(-(dx*dx+dz*dz)/(2*sig*sig))); }
+      return 0.22*(1-Math.pow(ex*ex+ez*ez,1.5)) + 0.78*near; };
+    if (rings){
+      // the beams below the horizon draw circles on the floor, the signature of a spinning scanner
+      const per = Math.max(300, Math.round(floorN/Math.max(1,beamEls.filter(e=>e<0).length)));
+      beamEls.forEach((el,k)=>{ if (el>=0) return;
+        for (let j=0;j<per*3;j++){ const az = (j/(per*3)*2-1)*Math.PI*0.95;
+          const rx=Math.sin(az)*Math.cos(el), ry=Math.sin(el), rz=-Math.cos(az)*Math.cos(el);
+          const den = ry - floorPlane.a*rx - floorPlane.c*rz; if (Math.abs(den)<1e-4) continue;
+          const t = floorPlane.b/den; if (!(t>0.2 && t<60)) continue;
+          const x=rx*t, z=rz*t, ex=(x-xc)/xr, ez=(z-zc)/zr; if (ex*ex+ez*ez>1) continue;
+          if (fr() > weight(x,z,ex,ez)*1.2) continue;
+          push(x, yAt(x,z), z, .6,.7,.75, 2, fr(), .5, 1, -1); } });
+    } else {
+      let made=0, tries=0;
+      while (made<floorN && tries<floorN*8){ tries++;
+        const ex = fr()*2-1, ez = fr()*2-1; if (ex*ex+ez*ez>1) continue;
+        const x = xc + ex*xr, z = zc + ez*zr; if (z > -0.3) continue;
+        if (fr() > weight(x,z,ex,ez)) continue;
+        push(x, yAt(x,z) + (fr()-.5)*0.004, z, .6,.7,.75, 2, fr(), .5, 1, -1); made++; }
+    }
+  }
+  return {out, comp, n, cinfo, live, floorPlane};
+}
+
+// Floor as a 3D plane y = a*x + c*z + b. From the photo's own floor when there is one, so a camera
+// tilted down gives a tilted floor; otherwise level, just under the lowest subject.
+function floorPlane3D(live){
+  const lowest = Math.min(...live.map(c=>c.minY));
+  const G = S.ground, D = S.depth;
+  if (S.plane && G){
+    const rnd = seeded(5), rows=[];
+    for (let k=0;k<6000 && rows.length<1500;k++){ const i=(rnd()*G.length)|0; if (G[i]!==1) continue;
+      const u=((i%D.w)+.5)/D.w, v=(((i/D.w)|0)+.5)/D.h; rows.push(unproject(u,v,zOf(D.d[i]))); }
+    if (rows.length > 200){
+      // least squares for y = a x + c z + b
+      let Sxx=0,Sxz=0,Sx=0,Szz=0,Sz=0,Sy=0,Sxy=0,Szy=0; const N=rows.length;
+      for (const [x,y,z] of rows){ Sxx+=x*x; Sxz+=x*z; Sx+=x; Szz+=z*z; Sz+=z; Sy+=y; Sxy+=x*y; Szy+=z*y; }
+      const A=[[Sxx,Sxz,Sx],[Sxz,Szz,Sz],[Sx,Sz,N]], B=[Sxy,Szy,Sy];
+      const det=m=>m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1])-m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0])+m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
+      const D0=det(A);
+      if (Math.abs(D0)>1e-9){ const col=i=>A.map((r,k)=>r.map((v,j)=>j===i?B[k]:v));
+        const a=det(col(0))/D0, c=det(col(1))/D0, b=det(col(2))/D0;
+        if (Math.abs(a)<0.5 && Math.abs(c)<1.2) return {a,c,b}; }
+    }
+  }
+  return {a:0, c:0, b:lowest};
+}
+
+function cfgFromP(extra){
+  const L = LOOKS[look];
+  return Object.assign({dots:val('dots'), backdrop:val('backdrop'), floor:val('floor'), pattern:P.pattern, bgTint:L.bgTint}, extra||{});
+}
+function build(){
+  S.dirtyBuild = false;
+  if (!S.photo || !S.depth) return;
+  SHIFT = curShift();
+  S.compMap = subjectMap();
+  const R = buildCloud(cfgFromP({low:S.lowDetail}));
+  S.cpu = R.out; S.cpuComp = R.comp; S.count = R.n; S.nComp = R.live.length; S.floor3d = R.floorPlane;
+  S.comps = R.live;
+  if (R.live.length){ const all=R.live.reduce((a,c)=>[a[0]+c.sx, a[1]+(c.minY+c.maxY)/2*c.n, a[2]+c.sz, a[3]+c.n],[0,0,0,0]);
+    S.target=[all[0]/all[3], all[1]/all[3], all[2]/all[3]]; }
+  else S.target=[0,0,-zOf(0.5)];
+  const ex = extents(R.out, R.n); S.rng=ex.rng; S.yr=ex.yr;
+  uploadCloud(R.out, R.n);
+  refreshLabelPositions(); renderPins();
+  S.dirtyDraw = true;
+}
+function extents(out, n){
+  let rmin=1e9,rmax=-1e9,ymin=1e9,ymax=-1e9; const step=Math.max(1,(n/20000)|0);
+  for (let i=0;i<n;i+=step){ const o=i*10, x=out[o],y=out[o+1],z=out[o+2], r=Math.hypot(x,y,z); if(r<rmin)rmin=r; if(r>rmax)rmax=r; if(y<ymin)ymin=y; if(y>ymax)ymax=y; }
+  return {rng:[rmin,rmax], yr:[ymin,ymax]};
+}
+
+// ---------------------------------------------------------------- WebGL2 renderer
+// Linear-light colour into a half-float target when the GPU allows it, eye-dome lighting for
+// lidar-viewer edges, a two-width bloom, then ACES tone mapping. Survives WebGL context loss.
+const cv = $('#gl');
+let gl = null, G = null;          // G holds every GL object so it can be rebuilt after a context loss
+
+const PTS_VS = `#version 300 es
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aCol; layout(location=2) in vec4 aMeta;
+uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus; uniform int uMode;
+uniform vec2 uR, uY;
+out vec3 vCol; flat out float vRound;
+vec3 turbo(float x){ const vec4 kR=vec4(0.13572138,4.61539260,-42.66032258,132.13108234); const vec2 kR2=vec2(-152.94239396,59.28637943);
+ const vec4 kG=vec4(0.09140261,2.19418839,4.84296658,-14.18503333); const vec2 kG2=vec2(4.27729857,2.82956604);
+ const vec4 kB=vec4(0.10667330,12.64194608,-60.58204836,110.36276771); const vec2 kB2=vec2(-89.90310912,27.34824973);
+ x=clamp(x,0.,1.); vec4 v4=vec4(1.,x,x*x,x*x*x); vec2 v2=v4.zw*v4.z; return clamp(vec3(dot(v4,kR)+dot(v2,kR2),dot(v4,kG)+dot(v2,kG2),dot(v4,kB)+dot(v2,kB2)),0.,1.); }
+vec3 heat(float t){ t=clamp(t,0.,1.);
+ vec3 a=vec3(.10,.05,.26), b=vec3(.48,.11,.43), c=vec3(.89,.35,.20), d=vec3(.98,.83,.36), e=vec3(1.,.98,.86);
+ return t<.25?mix(a,b,t/.25):t<.5?mix(b,c,(t-.25)/.25):t<.8?mix(c,d,(t-.5)/.3):mix(d,e,(t-.8)/.2); }
+vec3 lin(vec3 c){ return pow(max(c,0.),vec3(2.2)); }
+void main(){
+  vec4 vp = uView*vec4(aPos,1.); gl_Position = uProj*vp;
+  float dist = max(-vp.z, 1e-3);
+  float kind=aMeta.x, rnd=aMeta.y, lum=aMeta.z, inc=aMeta.w;
+  float r = clamp((length(aPos)-uR.x)/(uR.y-uR.x),0.,1.);
+  vec3 c = lin(aCol); float g = dot(c, vec3(.2126,.7152,.0722)); float lumL = pow(lum,2.2);
+  if(uMode==0) c = mix(vec3(g), c, uSat);
+  else if(uMode==1) c = lin(turbo(1.-r)) * (.3+.9*lumL);
+  else if(uMode==2) c = lin(heat((aPos.y-uY.x)/(uY.y-uY.x))) * (.35+.8*lumL);
+  else if(uMode==3) c = vec3(lumL*(.3+.7*inc))*vec3(.92,.97,1.)*1.4;
+  else c = lin(vec3(.25,.95,.7))*(.04+lumL*1.4);
+  c *= uExposure * (1. - .35*r);
+  float size = uPx / dist; float round_ = 1.;
+  if(uSparkle>0.5){ c *= .6 + 1.4*rnd*rnd; }
+  if(kind>.5 && kind<1.5){
+    vec3 t = lin(vec3(.30,.78,.70))*(.03+lumL*.9);
+    c = mix(c, t*uExposure, uBgTint) * uBgGain; size *= uBgSize; round_ = 1.-uBgTint;
+    c *= mix(1., .16, uFocus);
+  } else if(kind>1.5){
+    c = lin(vec3(.62,.72,.76))*(.02 + 1.1*pow(rnd,4.)) * min(uExposure,1.8);
+    size *= .75 + fract(rnd*17.3)*1.1; round_ = 0.;
+    c *= mix(1., .16, uFocus);
+  }
+  // points smaller than a pixel still draw one pixel, so dim them to keep brightness honest
+  if(size < 1.) c *= size*size;
+  vCol = c; vRound = (size >= 3. ? round_ : 0.);
+  gl_PointSize = clamp(size, 1., 64.);
+}`;
+const PTS_FS = `#version 300 es
+precision mediump float; in vec3 vCol; flat in float vRound; out vec4 o;
+void main(){ if(vRound>.5){ vec2 p=gl_PointCoord*2.-1.; if(dot(p,p)>1.) discard; } o=vec4(vCol,1.); }`;
+const QUAD_VS = `#version 300 es
+out vec2 vUv; void main(){ vec2 p=vec2((gl_VertexID<<1)&2, gl_VertexID&2); vUv=p; gl_Position=vec4(p*2.-1.,0.,1.); }`;
+const BRIGHT_FS = `#version 300 es
+precision highp float; in vec2 vUv; uniform sampler2D uTex; uniform vec2 uTexel; out vec4 o;
+void main(){ vec2 h=uTexel*.5; vec3 c=(texture(uTex,vUv+vec2(-h.x,-h.y)).rgb+texture(uTex,vUv+vec2(h.x,-h.y)).rgb+texture(uTex,vUv+vec2(-h.x,h.y)).rgb+texture(uTex,vUv+vec2(h.x,h.y)).rgb)*.25;
+ float m=max(c.r,max(c.g,c.b)); o=vec4(c*smoothstep(.35,1.2,m),1.); }`;
+const BLUR_FS = `#version 300 es
+precision highp float; in vec2 vUv; uniform sampler2D uTex; uniform vec2 uDir; out vec4 o;
+void main(){ vec3 s=texture(uTex,vUv).rgb*.227;
+ s+=(texture(uTex,vUv+uDir*1.385).rgb+texture(uTex,vUv-uDir*1.385).rgb)*.316;
+ s+=(texture(uTex,vUv+uDir*3.231).rgb+texture(uTex,vUv-uDir*3.231).rgb)*.070; o=vec4(s,1.); }`;
+const COMP_FS = `#version 300 es
+precision highp float; in vec2 vUv; uniform sampler2D uScene, uGlowA, uGlowB, uDepth; uniform float uGlow, uEdl, uNear, uFar; uniform vec2 uRes; out vec4 o;
+float h(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
+float lz(float d){ float z=(2.*uNear*uFar)/(uFar+uNear-(d*2.-1.)*(uFar-uNear)); return log2(z); }
+vec3 aces(vec3 x){ return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.); }
+void main(){
+  vec3 c=texture(uScene,vUv).rgb;
+  if(uEdl>0.){
+    // eye-dome lighting: darken a point when its neighbours on screen are nearer than it
+    float d=texture(uDepth,vUv).r;
+    if(d<1.){ float zc=lz(d), s=0.; vec2 px=1.4/uRes;
+      for(int i=0;i<8;i++){ float a=float(i)*.785398; vec2 off=vec2(cos(a),sin(a))*px;
+        float dn=texture(uDepth,vUv+off).r; float zn = dn<1. ? lz(dn) : zc+8.; s+=max(0.,zc-zn); }
+      c*=exp(-s/8.*uEdl*45.); }
+  }
+  c += uGlow*(texture(uGlowA,vUv).rgb*.9 + texture(uGlowB,vUv).rgb*1.3);
+  vec2 q=(vUv-.5)*vec2(uRes.x/uRes.y,1.); c*=1.-.4*smoothstep(.45,1.2,length(q));
+  c=pow(aces(c),vec3(1./2.2)); c+=(h(vUv*uRes)-.5)/255.; o=vec4(c,1.); }`;
+
+function initGL(){
+  gl = cv.getContext('webgl2', {antialias:false, alpha:false, preserveDrawingBuffer:false, powerPreference:'high-performance'});
+  if (!gl) return false;
+  const half = !!gl.getExtension('EXT_color_buffer_float');
+  const sh=(type,src)=>{ const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+  const prog=(vs,fs)=>{ const p=gl.createProgram(); gl.attachShader(p,sh(gl.VERTEX_SHADER,vs)); gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs)); gl.linkProgram(p); if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)); const u={}; const n=gl.getProgramParameter(p,gl.ACTIVE_UNIFORMS); for(let i=0;i<n;i++){const a=gl.getActiveUniform(p,i); u[a.name]=gl.getUniformLocation(p,a.name);} return {p,u}; };
+  G = {half, P:prog(PTS_VS,PTS_FS), B:prog(QUAD_VS,BRIGHT_FS), Bl:prog(QUAD_VS,BLUR_FS), C:prog(QUAD_VS,COMP_FS),
+       quad:gl.createVertexArray(), clouds:{}, targets:{}};
+  return true;
+}
+function cloudBuffer(key){
+  if (G.clouds[key]) return G.clouds[key];
+  const vao=gl.createVertexArray(), vbo=gl.createBuffer();
+  gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,40,0);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,40,12);
+  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,4,gl.FLOAT,false,40,24);
+  gl.bindVertexArray(null);
+  return G.clouds[key] = {vao, vbo, count:0};
+}
+function uploadCloud(out, n, key='main'){
+  const c = cloudBuffer(key); gl.bindBuffer(gl.ARRAY_BUFFER, c.vbo); gl.bufferData(gl.ARRAY_BUFFER, out.subarray(0,n*10), gl.STATIC_DRAW); c.count = n;
+}
+function targets(w,h,key){
+  const old = G.targets[key]; if (old && old.w===w && old.h===h) return old;
+  if (old){ [old.sT,old.dT,old.a,old.b,old.c,old.d].forEach(x=>gl.deleteTexture(x)); [old.sF,old.aF,old.bF,old.cF,old.dF].forEach(x=>gl.deleteFramebuffer(x)); }
+  const fmt = G.half ? [gl.RGBA16F, gl.HALF_FLOAT] : [gl.RGBA8, gl.UNSIGNED_BYTE];
+  const tex=(w,h,depth)=>{ const t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,t);
+    if (depth) gl.texImage2D(gl.TEXTURE_2D,0,gl.DEPTH_COMPONENT24,w,h,0,gl.DEPTH_COMPONENT,gl.UNSIGNED_INT,null);
+    else gl.texImage2D(gl.TEXTURE_2D,0,fmt[0],w,h,0,gl.RGBA,fmt[1],null);
+    const f = depth ? gl.NEAREST : gl.LINEAR;
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,f); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,f);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); return t; };
+  const fbo=(t,d)=>{ const f=gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER,f); gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);
+    if (d) gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.TEXTURE_2D,d,0); return f; };
+  const hw=Math.max(1,w>>1), hh=Math.max(1,h>>1), qw=Math.max(1,w>>2), qh=Math.max(1,h>>2);
+  const T={w,h,hw,hh,qw,qh, sT:tex(w,h), dT:tex(w,h,true), a:tex(hw,hh), b:tex(hw,hh), c:tex(qw,qh), d:tex(qw,qh)};
+  T.sF=fbo(T.sT,T.dT); T.aF=fbo(T.a); T.bF=fbo(T.b); T.cF=fbo(T.c); T.dF=fbo(T.d);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  return G.targets[key]=T;
+}
+
+// ---------------------------------------------------------------- camera
+function frameAspect(){ const pa = S.photo ? S.photo.w/S.photo.h : 1;
+  return S.shape==='wide'?16/9:S.shape==='square'?1:S.shape==='tall'?9/16:pa; }
+function viewMatrix(yaw, pitch, zoom){
+  // yaw = pitch = 0 and zoom = 1 is exactly the photo's own viewpoint; turning pivots on the subject
+  const t = S.target, back = (zoom-1)*Math.abs(t[2]);
+  const R = M4.mul(M4.rx(pitch*Math.PI/180), M4.ry(yaw*Math.PI/180));
+  return M4.mul(M4.tr(0,0,-back), M4.mul(M4.tr(t[0],t[1],t[2]), M4.mul(R, M4.tr(-t[0],-t[1],-t[2]))));
+}
+function projMatrix(aspect){
+  const pa = S.photo ? S.photo.w/S.photo.h : 1;
+  let tv = S.tanV; if (aspect < pa) tv = S.tanV*pa/aspect;       // tall frames keep the photo's width
+  return M4.persp(2*Math.atan(tv), aspect, 0.05, 400);
+}
+
+// Render one cloud at W x H into the canvas (viewport origin bottom left).
+function renderView(W, H, o){
+  const T = targets(W, H, o.targetKey||'main');
+  const aspect = W/H, V = viewMatrix(o.yaw, o.pitch, o.zoom), Pm = projMatrix(aspect);
+  if (!o.thumb){ S.V=V; S.P=Pm; }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, T.sF); gl.viewport(0,0,W,H);
+  gl.clearColor(0.004,0.005,0.006,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  const L = LOOKS[o.look];
+  if (o.cloud.count){
+    gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
+    gl.useProgram(G.P.p); const u=G.P.u;
+    gl.uniformMatrix4fv(u.uProj,false,Pm); gl.uniformMatrix4fv(u.uView,false,V);
+    // point size at the subject's distance scales with the output height, so exports match the preview
+    const ref = Math.abs(S.target[2]) || 2, pa = S.photo.w/S.photo.h, fitH = aspect < pa ? H*aspect/pa : H;
+    gl.uniform1f(u.uPx, o.size * 1.62 * fitH/1000 * ref * (0.466/S.tanV));
+    gl.uniform1f(u.uExposure, o.bright); gl.uniform1f(u.uSat, o.colour==='muted' ? .45 : 1);
+    gl.uniform1f(u.uBgTint, L.bgTint); gl.uniform1f(u.uBgGain, L.bgGain); gl.uniform1f(u.uBgSize, L.bgSize);
+    gl.uniform1f(u.uSparkle, L.sparkle); gl.uniform1f(u.uFocus, o.focus ? 1 : 0);
+    gl.uniform1i(u.uMode, {photo:0,muted:0,range:1,height:2,grey:3,phosphor:4}[o.colour]||0);
+    gl.uniform2f(u.uR, S.rng[0], S.rng[1]); gl.uniform2f(u.uY, S.yr[0], S.yr[1]);
+    gl.bindVertexArray(o.cloud.vao); gl.drawArrays(gl.POINTS, 0, o.cloud.count); gl.bindVertexArray(null);
+    gl.disable(gl.DEPTH_TEST);
+  }
+  gl.bindVertexArray(G.quad);
+  const pass = (p, f, w, h, bind) => { gl.bindFramebuffer(gl.FRAMEBUFFER,f); gl.viewport(0,0,w,h); gl.useProgram(p.p); bind(p.u); gl.drawArrays(gl.TRIANGLES,0,3); };
+  const tx = (unit, t) => { gl.activeTexture(gl.TEXTURE0+unit); gl.bindTexture(gl.TEXTURE_2D,t); };
+  pass(G.B, T.aF, T.hw, T.hh, u=>{ tx(0,T.sT); gl.uniform1i(u.uTex,0); gl.uniform2f(u.uTexel,1/W,1/H); });
+  const k = H/900;
+  pass(G.Bl, T.bF, T.hw, T.hh, u=>{ tx(0,T.a); gl.uniform1i(u.uTex,0); gl.uniform2f(u.uDir,k/T.hw,0); });
+  pass(G.Bl, T.aF, T.hw, T.hh, u=>{ tx(0,T.b); gl.uniform1i(u.uTex,0); gl.uniform2f(u.uDir,0,k/T.hh); });
+  pass(G.Bl, T.dF, T.qw, T.qh, u=>{ tx(0,T.a); gl.uniform1i(u.uTex,0); gl.uniform2f(u.uDir,2.2*k/T.qw,0); });
+  pass(G.Bl, T.cF, T.qw, T.qh, u=>{ tx(0,T.d); gl.uniform1i(u.uTex,0); gl.uniform2f(u.uDir,0,2.2*k/T.qh); });
+  pass(G.C, null, W, H, u=>{ tx(0,T.sT); tx(1,T.a); tx(2,T.c); tx(3,T.dT);
+    gl.uniform1i(u.uScene,0); gl.uniform1i(u.uGlowA,1); gl.uniform1i(u.uGlowB,2); gl.uniform1i(u.uDepth,3);
+    gl.uniform1f(u.uGlow,o.glow); gl.uniform1f(u.uEdl,o.edges); gl.uniform1f(u.uNear,0.05); gl.uniform1f(u.uFar,400.); gl.uniform2f(u.uRes,W,H); });
+  gl.bindVertexArray(null);
+}
+function viewOpts(extra){
+  return Object.assign({cloud:G.clouds.main||{count:0}, look, colour:P.colour, size:val('size'), bright:val('bright'), glow:val('glow'),
+    edges:val('edges'), yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, focus:S.tab==='subject' && !S.recording}, extra||{});
+}
+function draw(W, H){ if (!gl || gl.isContextLost()) return; renderView(W||cv.width, H||cv.height, viewOpts()); }
+
+cv.addEventListener('webglcontextlost', e=>{ e.preventDefault(); G=null; });
+cv.addEventListener('webglcontextrestored', ()=>{ if (initGL()){ if (S.cpu) uploadCloud(S.cpu, S.count); S.dirtyDraw=true; queueThumbs(); } });
+
+// ---------------------------------------------------------------- faces: find and anonymise
 let faceSession = null;
 async function loadFaceModel(){
   if (faceSession) return faceSession;
-  const r = await fetch('models/face-ultraface-320.onnx'); if (!r.ok) throw new Error('could not fetch the face model');
-  ort.env.wasm.wasmPaths = new URL('ort/', location.href).href;
-  ort.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency||2) : 1;
+  await ensureOrt();
+  const r = await cachedFetch('models/face-ultraface-320.onnx');
   faceSession = await ort.InferenceSession.create(new Uint8Array(await r.arrayBuffer()), {executionProviders:['wasm'], logSeverityLevel:3});
   return faceSession;
 }
-async function detectFaces(){
-  const sess = await loadFaceModel(); const Ph = S.photoSrc;
-  const src = document.createElement('canvas'); src.width=Ph.w; src.height=Ph.h;
-  src.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(Ph.data), Ph.w, Ph.h), 0, 0);
+// The detector takes 320 x 240. Every crop keeps that 4:3 shape in real pixels (a portrait photo
+// squeezed into it was stretched almost 2x and faces went unfound), and small faces in full-length
+// shots are found in overlapping tiles.
+async function detectFaces(canvas){
+  const sess = await loadFaceModel(), W = canvas.width, H = canvas.height;
   const c = document.createElement('canvas'); c.width=320; c.height=240; const x=c.getContext('2d',{willReadFrequently:true});
-  // the whole frame, then overlapping tiles so small faces in full-length shots are still big enough to find
-  const crops=[[0,0,1,1]];
-  for (const s of [0.6, 0.4]){ const n=Math.ceil((1-s)/(s*0.5)); for (let j=0;j<=n;j++) for (let i=0;i<=n;i++) crops.push([i*(1-s)/n, j*(1-s)/n, s, s]); }
+  const crops = [];
+  { const s=Math.min(320/W,240/H); crops.push({sx:0,sy:0,sw:W,sh:H,dx:(320-W*s)/2,dy:(240-H*s)/2,dw:W*s,dh:H*s}); }
+  for (const f of [0.55, 0.34]){
+    const tw = Math.round(Math.min(W, H*4/3)*f*(W>H?1:1.4)), th = Math.round(tw*0.75);
+    if (tw < 120) continue;
+    for (let y=0; y<=Math.max(0,H-th); y+=Math.max(1,Math.round(th*0.5))) for (let xx=0; xx<=Math.max(0,W-tw); xx+=Math.max(1,Math.round(tw*0.5)))
+      crops.push({sx:xx,sy:y,sw:tw,sh:th,dx:0,dy:0,dw:320,dh:240});
+  }
   const boxes=[];
-  for (const [cx,cy,cw,ch] of crops){
-    x.drawImage(src, cx*Ph.w, cy*Ph.h, cw*Ph.w, ch*Ph.h, 0, 0, 320, 240);
+  for (const k of crops){
+    x.fillStyle='#000'; x.fillRect(0,0,320,240); x.drawImage(canvas, k.sx,k.sy,k.sw,k.sh, k.dx,k.dy,k.dw,k.dh);
     const px=x.getImageData(0,0,320,240).data, t=new Float32Array(3*76800);
-    for (let i=0;i<76800;i++) for (let k=0;k<3;k++) t[k*76800+i]=(px[i*4+k]-127)/128;
+    for (let i=0;i<76800;i++) for (let j=0;j<3;j++) t[j*76800+i]=(px[i*4+j]-127)/128;
     const r = await sess.run({[sess.inputNames[0]]: new ort.Tensor('float32', t, [1,3,240,320])});
-    const sc=r.scores.data, bx=r.boxes.data;
-    for (let i=0;i<sc.length/2;i++) if (sc[i*2+1] > 0.8){
-      const b=[cx+bx[i*4]*cw, cy+bx[i*4+1]*ch, cx+bx[i*4+2]*cw, cy+bx[i*4+3]*ch];
+    const sc=r.scores.data, bx=r.boxes.data, fx=k.sw/k.dw, fy=k.sh/k.dh;
+    const thr = k.sw===W && k.sh===H ? 0.78 : 0.86;     // tiles see more clutter, so ask for more certainty
+    for (let i=0;i<sc.length/2;i++) if (sc[i*2+1] > thr){
+      const b=[(k.sx+(bx[i*4]*320-k.dx)*fx)/W, (k.sy+(bx[i*4+1]*240-k.dy)*fy)/H, (k.sx+(bx[i*4+2]*320-k.dx)*fx)/W, (k.sy+(bx[i*4+3]*240-k.dy)*fy)/H];
       if (b[2]-b[0] > 0.004 && b[3]-b[1] > 0.004) boxes.push({s:sc[i*2+1], b}); }
   }
   boxes.sort((a,b)=>b.s-a.s); const keep=[];
-  const iou=(a,b)=>{ const w=Math.max(0,Math.min(a[2],b[2])-Math.max(a[0],b[0])), h=Math.max(0,Math.min(a[3],b[3])-Math.max(a[1],b[1])), i=w*h;
-    return i/((a[2]-a[0])*(a[3]-a[1])+(b[2]-b[0])*(b[3]-b[1])-i); };
-  const within=(a,b)=>{ const w=Math.max(0,Math.min(a[2],b[2])-Math.max(a[0],b[0])), h=Math.max(0,Math.min(a[3],b[3])-Math.max(a[1],b[1])); return w*h > 0.6*(a[2]-a[0])*(a[3]-a[1]); };
-  for (const f of boxes) if (!keep.some(k=>iou(k.b,f.b)>0.25 || within(f.b,k.b) || within(k.b,f.b))) keep.push(f);
-  return keep.map(f=>({cx:(f.b[0]+f.b[2])/2, cy:(f.b[1]+f.b[3])/2, rx:(f.b[2]-f.b[0])*0.68, ry:(f.b[3]-f.b[1])*0.72, auto:true}));
+  const overlap=(a,b)=>{ const w=Math.max(0,Math.min(a[2],b[2])-Math.max(a[0],b[0])), h=Math.max(0,Math.min(a[3],b[3])-Math.max(a[1],b[1])); return w*h/Math.min((a[2]-a[0])*(a[3]-a[1]),(b[2]-b[0])*(b[3]-b[1])); };
+  for (const f of boxes) if (!keep.some(k=>overlap(k.b,f.b)>0.3)) keep.push(f);
+  return keep.map(f=>({cx:(f.b[0]+f.b[2])/2, cy:(f.b[1]+f.b[3])/2, rx:(f.b[2]-f.b[0])*0.7, ry:(f.b[3]-f.b[1])*0.75, auto:true}));
 }
+
 function boxBlur(src, w, h, ch, x0, y0, x1, y1, r, passes){
-  // separable box blur of one rectangle, in place, on an interleaved array with ch channels
   r = Math.max(1, Math.round(r)); const bw=x1-x0, bh=y1-y0; if (bw<2||bh<2) return;
   const tmp = new Float32Array(Math.max(bw,bh)*ch);
   for (let p=0;p<passes;p++){
@@ -812,100 +944,533 @@ function boxBlur(src, w, h, ch, x0, y0, x1, y1, r, passes){
       for (let y=0;y<bh;y++) for (let c=0;c<ch;c++) src[((y0+y)*w+x)*ch+c]=tmp[y*ch+c]; }
   }
 }
+// Light blurs features; Medium replaces the face with its own average colour and smooths the
+// shape; Strong also flattens the depth to a plain dome and drops most of the points.
+const ANON = [{blur:.25, flat:0,   depth:.3}, {blur:.45, flat:.75, depth:.55}, {blur:.6, flat:1, depth:.9}];
 function applyAnon(){
   const P0=S.photoSrc, D0=S.depthSrc; if (!P0 || !D0) return;
   if (!S.anon || !S.faces.length){ S.photo=P0; S.depth=D0; S.faceMask=null; S.dirtyBuild=true; return; }
-  const st = S.anonStr;
+  const L = ANON[S.anonLevel];
   const pd = new Float32Array(P0.data), dd = Float32Array.from(D0.d), mask = new Uint8Array(D0.w*D0.h);
   const pOut = new Uint8ClampedArray(P0.data), dOut = Float32Array.from(D0.d);
   const feather = (x, y, f) => Math.min(1, Math.max(0, (1.15 - Math.hypot((x-f.cx)/f.rx, (y-f.cy)/f.ry))/0.3));
   for (const f of S.faces){
-    // photo: smear the colour so eyes, brows and mouth vanish but skin tone and head shape stay
     let X0=Math.max(0,Math.floor((f.cx-f.rx*1.3)*P0.w)), X1=Math.min(P0.w,Math.ceil((f.cx+f.rx*1.3)*P0.w));
     let Y0=Math.max(0,Math.floor((f.cy-f.ry*1.3)*P0.h)), Y1=Math.min(P0.h,Math.ceil((f.cy+f.ry*1.3)*P0.h));
-    boxBlur(pd, P0.w, P0.h, 4, X0, Y0, X1, Y1, f.rx*P0.w*(0.12+0.3*st), 3);
+    let mr=0,mg=0,mb=0,mn=0;
+    for (let y=Y0;y<Y1;y++) for (let x=X0;x<X1;x++) if (feather((x+.5)/P0.w,(y+.5)/P0.h,f)>0.9){ const i=(y*P0.w+x)*4; mr+=P0.data[i]; mg+=P0.data[i+1]; mb+=P0.data[i+2]; mn++; }
+    if (mn){ mr/=mn; mg/=mn; mb/=mn; }
+    boxBlur(pd, P0.w, P0.h, 4, X0, Y0, X1, Y1, f.rx*P0.w*L.blur, 3);
     for (let y=Y0;y<Y1;y++) for (let x=X0;x<X1;x++){ const m=feather((x+.5)/P0.w,(y+.5)/P0.h,f);
-      if (m>0){ const i=(y*P0.w+x)*4; for (let c=0;c<3;c++) pOut[i+c]=P0.data[i+c]*(1-m)+pd[i+c]*m; } }
-    // depth: smooth the relief so the face's 3D profile cannot be read back out of the cloud
+      if (m>0){ const i=(y*P0.w+x)*4, mean=[mr,mg,mb];
+        for (let c=0;c<3;c++){ const smeared = pd[i+c]*(1-L.flat) + mean[c]*L.flat; pOut[i+c]=P0.data[i+c]*(1-m)+smeared*m; } } }
     X0=Math.max(0,Math.floor((f.cx-f.rx*1.3)*D0.w)); X1=Math.min(D0.w,Math.ceil((f.cx+f.rx*1.3)*D0.w));
     Y0=Math.max(0,Math.floor((f.cy-f.ry*1.3)*D0.h)); Y1=Math.min(D0.h,Math.ceil((f.cy+f.ry*1.3)*D0.h));
-    boxBlur(dd, D0.w, D0.h, 1, X0, Y0, X1, Y1, f.rx*D0.w*(0.15+0.35*st), 3);
+    boxBlur(dd, D0.w, D0.h, 1, X0, Y0, X1, Y1, f.rx*D0.w*L.depth, 3);
     for (let y=Y0;y<Y1;y++) for (let x=X0;x<X1;x++){ const m=feather((x+.5)/D0.w,(y+.5)/D0.h,f);
       if (m>0){ const i=y*D0.w+x; dOut[i]=D0.d[i]*(1-m)+dd[i]*m; mask[i]=Math.max(mask[i], Math.round(m*255)); } }
   }
   S.photo={w:P0.w,h:P0.h,data:pOut}; S.depth={w:D0.w,h:D0.h,d:dOut}; S.faceMask=mask; S.dirtyBuild=true;
 }
-function faceNote(){
-  const n=S.faces.length, auto=S.faces.filter(f=>f.auto).length;
-  $('#clearFaces').hidden = !n;
-  $('#faceNote').textContent = !S.anon
-    ? 'Finds faces and wipes out their detail: colour is smeared and the 3D shape is smoothed, so the head and body still read but the features do not. Hair, clothes and the setting can still identify someone.'
-    : `${auto ? `Found ${auto} face${auto===1?'':'s'}.` : 'No faces found automatically.'}${n-auto ? ` ${n-auto} covered by hand.` : ''} Tap Cover a face for any it missed.`;
+async function findFaces(){
+  try { busy('Looking for faces', null); await tick();
+    const found = await detectFaces(S.photoCanvas);
+    S.faces = S.faces.filter(f=>!f.auto).concat(found); S.facesFound = true;
+  } catch(err){ console.error(err); busy(null); banner('The face finder could not run here.'); return false; }
+  busy(null); return true;
 }
-async function setAnon(on){
-  S.anon=on; $('#anon').setAttribute('aria-pressed', on);
-  if (on && !S.facesFound){
-    try { busy('Looking for faces', null); await tick(); const found = await detectFaces(); S.faces = S.faces.filter(f=>!f.auto).concat(found); S.facesFound=true; }
-    catch(err){ console.error(err); busy(null); $('#faceNote').textContent='Could not run the face finder: '+(err.message||err); return; }
-    busy(null);
-  }
-  applyAnon(); faceNote();
-}
-function placeFace(cx, cy){
-  if (!S.count) return;
-  const MV = M4.mul(S.P, S.V), out=S.cpu; let best=1e9, bi=-1;
-  const step = Math.max(1, Math.floor(S.count/250000));
-  for (let i=0;i<S.count;i+=step){ const o=i*10; if (out[o+6]===2) continue; const c=M4.xf(MV,[out[o],out[o+1],out[o+2]]); if (c[3]<=0) continue;
-    const sx=(c[0]*.5+.5)*S.cssW, sy=(1-(c[1]*.5+.5))*S.cssH, dd=(sx-cx)**2+(sy-cy)**2; if (dd<best){best=dd; bi=i;} }
-  if (bi<0 || best > 40*40) return;
-  const o=bi*10, z=-out[o+2], a=S.photo.w/S.photo.h, u=(out[o]/(TANH*a*z)+1)/2, v=(1-out[o+1]/(TANH*z))/2;
+function addFaceAt(u, v, comp){
   // size the cover from the figure it sits on: a head is about an eighth of a standing person
-  const c = S.comps.find(k=>k.id===out[o+9]); let ry = 0.05;
-  if (c) ry = Math.min(0.2, Math.max(0.02, (c.maxY-c.minY)/(2*TANH*Math.abs(c.sz/c.n)) * 0.075));
+  let ry = 0.05; const c = S.comps.find(k=>k.id===comp);
+  if (c) ry = Math.min(0.2, Math.max(0.02, (c.maxY-c.minY)/(2*S.tanV*Math.abs(c.sz/c.n)) * 0.075));
   S.faces.push({cx:u, cy:v, rx:ry*S.photo.h/S.photo.w*0.85, ry, auto:false});
-  if (!S.anon){ S.anon=true; $('#anon').setAttribute('aria-pressed', true); }
-  setPlacing(false); applyAnon(); faceNote();
+  S.anon = true; applyAnon();
 }
-$('#anon').addEventListener('click', ()=>setAnon(!S.anon));
-$('#addFace').addEventListener('click', ()=>setPlacing(S.placing==='face'?false:'face'));
-$('#clearFaces').addEventListener('click', ()=>{ S.faces=[]; S.facesFound=false; S.anon=false; $('#anon').setAttribute('aria-pressed', false); applyAnon(); faceNote(); });
-$('#anonStr').addEventListener('input', e=>{ S.anonStr=+e.target.value; e.target.nextElementSibling.textContent=S.anonStr.toFixed(2); applyAnon(); });
 
-$('#ply').addEventListener('click', ()=>{
+// ---------------------------------------------------------------- saving: picture, 3D file, video
+let sheetURL = null;
+function showSheet(url, kind, name){
+  if (sheetURL && sheetURL !== url) URL.revokeObjectURL(sheetURL);
+  sheetURL = url;
+  const img=$('#sheetImg'), vid=$('#sheetVid');
+  img.hidden = kind!=='image'; vid.hidden = kind!=='video';
+  if (kind==='image') img.src=url; else { vid.src=url; vid.play().catch(()=>{}); }
+  $('#sheetDl').href=url; $('#sheetDl').download=name;
+  $('#sheetNote').textContent = kind==='image' ? 'Tap Download, or press and hold the picture to save it.' : 'Tap Download to save the video.';
+  $('#sheet').hidden=false;
+}
+$('#sheetClose').addEventListener('click', ()=>{ $('#sheet').hidden=true; $('#sheetVid').pause(); $('#sheetVid').removeAttribute('src'); $('#sheetImg').removeAttribute('src');
+  if (sheetURL){ URL.revokeObjectURL(sheetURL); sheetURL=null; } });
+
+function drawLabels2D(x, W, H){
+  const fs = H*0.03; x.save(); x.font = `560 ${fs}px Archivo, "Helvetica Neue", Arial, sans-serif`; x.textAlign='center'; x.textBaseline='bottom';
+  S.labels.forEach(L=>{ if(!L.text||!L.pos) return; const s=project(L.pos,W,H); if(!s) return;
+    x.fillStyle='#fff'; x.shadowColor='rgba(255,255,255,.55)'; x.shadowBlur=fs*0.5; x.fillText(L.text,s[0],s[1]); x.shadowBlur=fs*0.18; x.fillText(L.text,s[0],s[1]); });
+  x.restore();
+}
+function withCanvasSize(W, H, fn){
+  const ow=cv.width, oh=cv.height; cv.width=W; cv.height=H;
+  const restore = () => { cv.width=ow; cv.height=oh; S.dirtyDraw=true; };
+  let r; try { r = fn(); } catch(e){ restore(); throw e; }
+  if (r && typeof r.then === 'function') return r.finally(restore);
+  restore(); return r;
+}
+function exportSize(long){ const a=frameAspect(); const L=Math.min(long, gl.getParameter(gl.MAX_TEXTURE_SIZE));
+  return a>=1 ? [L&~1, Math.round(L/a)&~1] : [Math.round(L*a)&~1, L&~1]; }
+async function savePicture(){
   if (!S.count) return;
-  const n=S.count, out=S.cpu; const head = `ply\nformat binary_little_endian 1.0\ncomment First Return point cloud, units are relative\nelement vertex ${n}\nproperty float x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n`;
-  const hb = new TextEncoder().encode(head); const buf = new ArrayBuffer(hb.length + n*15); new Uint8Array(buf).set(hb); const dv=new DataView(buf);
+  busy('Making the picture', null); await tick();
+  const [W,H] = exportSize(MOBILE ? 2048 : 2880);
+  const c2 = document.createElement('canvas'); c2.width=W; c2.height=H; const x=c2.getContext('2d');
+  withCanvasSize(W, H, ()=>{ draw(W,H); x.drawImage(cv,0,0); });
+  drawLabels2D(x, W, H);
+  c2.toBlob(b=>{ busy(null); showSheet(URL.createObjectURL(b), 'image', 'first-return.png'); }, 'image/png');
+}
+function savePly(){
+  if (!S.count) return;
+  const n=S.count, out=S.cpu;
+  const head = `ply\nformat binary_little_endian 1.0\ncomment First Return point cloud, units are relative\nelement vertex ${n}\nproperty float x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n`;
+  const hb = new TextEncoder().encode(head), buf = new ArrayBuffer(hb.length + n*15); new Uint8Array(buf).set(hb); const dv=new DataView(buf);
   for (let i=0;i<n;i++){ const o=i*10, p=hb.length+i*15; dv.setFloat32(p,out[o],true); dv.setFloat32(p+4,out[o+1],true); dv.setFloat32(p+8,out[o+2],true);
-    const kind=out[o+6], g = kind===2 ? 0.25+0.6*out[o+7]**3 : 1;
+    const g = out[o+6]===2 ? 0.25+0.6*out[o+7]**3 : 1;
     dv.setUint8(p+12,Math.min(255,out[o+3]*255*g)); dv.setUint8(p+13,Math.min(255,out[o+4]*255*g)); dv.setUint8(p+14,Math.min(255,out[o+5]*255*g)); }
   const url = URL.createObjectURL(new Blob([buf],{type:'application/octet-stream'}));
   const a = document.createElement('a'); a.href=url; a.download='first-return.ply'; document.body.appendChild(a); a.click(); a.remove();
-  $('#readout').innerHTML = `Saved <b>first-return.ply</b> (${(buf.byteLength/1e6).toFixed(1)} MB). Opens in Blender, MeshLab or CloudCompare. If nothing downloaded, this viewer blocks downloads; use the app on your computer.`;
+  setTimeout(()=>URL.revokeObjectURL(url), 30000);
+  banner(`Saved first-return.ply, ${(buf.byteLength/1e6).toFixed(1)} MB. It opens in Blender, MeshLab or CloudCompare.`);
+  setTimeout(()=>banner(modeText()), 6000);
+}
+
+// ---------------------------------------------------------------- camera moves
+const MOVES = {
+  push:  t=>({dz:-0.32*t}),
+  orbit: t=>({dy:-14+28*t}),
+  drift: t=>({dz:-0.26*t, dy:-8+16*t, dp:4-4*t}),
+  rise:  t=>({dy:22*t, dp:16*t, dz:-0.12*t})
+};
+const ease = t => 0.5-0.5*Math.cos(Math.PI*t);
+function poseAt(base, move, t){ const m=MOVES[move](ease(Math.min(1,Math.max(0,t))));
+  return {yaw:base.yaw+(m.dy||0), pitch:Math.max(-80,Math.min(80,base.pitch+(m.dp||0))), zoom:Math.max(0.3, base.zoom*(1+(m.dz||0)))}; }
+
+async function previewMove(move, secs){
+  if (S.recording || !S.count) return;
+  const base={yaw:S.yaw,pitch:S.pitch,zoom:S.zoom}, dur=secs*1000;
+  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; banner('Playing the move');
+  await new Promise(res=>{ const t0=performance.now(); const step=()=>{ const el=performance.now()-t0;
+    Object.assign(S, poseAt(base, move, el/dur)); draw(); renderLabels(); renderPins();
+    $('#recfill').style.width=(Math.min(1,el/dur)*100)+'%'; if (el<dur) requestAnimationFrame(step); else res(); }; requestAnimationFrame(step); });
+  S.recording=false; $('#recbar').hidden=true; Object.assign(S, base); S.dirtyDraw=true; banner(modeText());
+}
+
+// Frame by frame with WebCodecs: every frame is rendered at its exact time, so a slow phone makes a
+// slower export, never a jerky video. Older browsers fall back to recording the screen in real time.
+async function recordMove(move, secs){
+  if (S.recording || !S.count) return;
+  const base={yaw:S.yaw,pitch:S.pitch,zoom:S.zoom}, fps=30, hold=Math.round(fps*0.4), frames=Math.round(secs*fps)+2*hold;
+  const [W,H] = exportSize(MOBILE ? 1280 : 1920);
+  const rc=document.createElement('canvas'); rc.width=W; rc.height=H; const rx=rc.getContext('2d');
+  const frameAt = i => { const t=(i-hold)/(frames-2*hold-1); Object.assign(S, poseAt(base, move, t)); draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
+  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false;
+  let blob=null, ext='mp4';
+  try {
+    let config=null;
+    if (window.VideoEncoder){
+      if (!window.Mp4Muxer) await loadScript('vendor/mp4-muxer.js');
+      for (const codec of ['avc1.640028','avc1.4D4028','avc1.42E028','avc1.42001f']){
+        const c={codec, width:W, height:H, bitrate: MOBILE?8e6:14e6, framerate:fps};
+        try { const s=await VideoEncoder.isConfigSupported(c); if (s.supported){ config=c; break; } } catch(e){}
+      }
+    }
+    if (config){
+      banner('Making the video');
+      const muxer = new Mp4Muxer.Muxer({target:new Mp4Muxer.ArrayBufferTarget(), video:{codec:'avc', width:W, height:H}, fastStart:'in-memory'});
+      let failed=null;
+      const enc = new VideoEncoder({output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta), error:e=>{ failed=e; }});
+      enc.configure(config);
+      await withCanvasSize(W, H, async ()=>{
+        for (let i=0;i<frames && !failed;i++){
+          frameAt(i);
+          const vf = new VideoFrame(rc, {timestamp:Math.round(i*1e6/fps), duration:Math.round(1e6/fps)});
+          enc.encode(vf, {keyFrame: i%60===0}); vf.close();
+          while (enc.encodeQueueSize > 4) await new Promise(r=>setTimeout(r,4));
+          $('#recfill').style.width=((i+1)/frames*100)+'%';
+          if (i%6===0) await new Promise(r=>setTimeout(r,0));
+        }
+        await enc.flush();
+      });
+      enc.close(); if (failed) throw failed;
+      muxer.finalize(); blob = new Blob([muxer.target.buffer], {type:'video/mp4'});
+    } else {
+      const mime = ['video/mp4','video/webm;codecs=vp9','video/webm'].find(m=>window.MediaRecorder && MediaRecorder.isTypeSupported(m));
+      if (!mime) throw new Error('This browser cannot make videos. Try Chrome or Edge.');
+      ext = mime.includes('mp4') ? 'mp4' : 'webm'; banner('Recording the move');
+      const rec = new MediaRecorder(rc.captureStream(30), {mimeType:mime, videoBitsPerSecond: MOBILE?8e6:14e6}), chunks=[];
+      rec.ondataavailable = e=>{ if (e.data && e.data.size) chunks.push(e.data); };
+      rec.start(250);
+      await withCanvasSize(W, H, ()=>new Promise(res=>{ const t0=performance.now(), dur=frames/fps*1000;
+        const step=()=>{ const el=performance.now()-t0; frameAt(Math.min(frames-1, Math.round(el/1000*fps)));
+          $('#recfill').style.width=(Math.min(1,el/dur)*100)+'%'; if (el<dur) requestAnimationFrame(step); else res(); }; requestAnimationFrame(step); }));
+      await new Promise(r=>{ rec.onstop=r; rec.stop(); });
+      blob = new Blob(chunks, {type:mime.split(';')[0]});
+    }
+  } catch(err){ console.error(err); banner(String(err.message||err)); }
+  S.recording=false; $('#recbar').hidden=true; Object.assign(S, base); S.dirtyDraw=true;
+  if (blob){ banner(modeText()); showSheet(URL.createObjectURL(blob), 'video', 'first-return.'+ext); }
+}
+
+// ---------------------------------------------------------------- interface
+const ICON_SAY = '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M18.5 6.5a8 8 0 0 1 0 11"/></svg>';
+const sayBtn = text => `<button class="say" data-say="${text.replace(/"/g,'&quot;')}" aria-label="Read aloud">${ICON_SAY}</button>`;
+const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// ---------------------------------------------------------------- undo
+let undoArmed = true;
+function snapshot(){ return {P:{...P}, look, picks:S.picks.map(p=>({...p})), band:S.band, shape:S.shape}; }
+function pushUndo(){ if (!undoArmed) return; S.undo.push(snapshot()); if (S.undo.length>40) S.undo.shift(); undoArmed=false; }
+function commit(){ undoArmed = true; persist(); renderTray(); }
+function undo(){
+  const s = S.undo.pop(); if (!s) return;
+  Object.assign(P, s.P); look=s.look; S.picks=s.picks; S.band=s.band;
+  if (s.shape!==S.shape){ S.shape=s.shape; layout(); }
+  S.dirtyBuild=true; undoArmed=true; persist(); renderTray(); banner(modeText());
+}
+function persist(){ store('state', {P, look, shape:S.shape}); }
+function isCustom(){ const L=LOOKS[look]; return LOOK_KEYS.some(k=>typeof L[k]==='number' ? Math.abs(L[k]-P[k])>0.02 : L[k]!==P[k]); }
+
+function applyLook(name, keepView){
+  pushUndo(); look=name; const L=LOOKS[name];
+  LOOK_KEYS.forEach(k=>{ P[k]=L[k]; });
+  if (!keepView){ S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; }
+  S.dirtyBuild=true; commit(); viewButton();
+}
+
+// ---------------------------------------------------------------- tabs and trays
+function setTab(t){
+  if (S.tab===t && !WIDE()) t=null;             // on a phone, tapping the open tab closes its tray
+  S.tab=t; if (t!=='people' && (S.placing==='face'||S.placing==='label')) S.placing=false;
+  document.querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-selected', b.dataset.tab===t));
+  $('#tray').hidden = !t; $('#stage').classList.toggle('picking', t==='subject' || !!S.placing);
+  renderTray(); banner(modeText()); S.dirtyDraw=true; renderPins();
+  requestAnimationFrame(layout);
+  if (t) store('tab', t);
+}
+document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click', ()=>setTab(b.dataset.tab)));
+
+function modeText(){
+  if (S.placing==='face') return 'Tap a face to cover it.';
+  if (S.placing==='label') return 'Tap a person or thing to name it.';
+  if (S.tab==='subject') return S.picks.length ? 'Tap more things to add them. Tap a ring to remove it.' : 'Tap what matters in the picture.';
+  return '';
+}
+
+function renderTray(){
+  const tr=$('#tray'); if (!S.tab){ tr.innerHTML=''; return; }
+  const undoBtn = `<button class="chip" id="undoBtn" ${S.undo.length?'':'disabled'}>Undo</button>`;
+  if (S.tab==='look'){
+    tr.innerHTML = `<h3>Look ${isCustom()?'<span class="chip" style="padding:3px 8px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent);border-color:var(--accent)">Custom</span>':''}<span class="sp"></span></h3>
+      <div class="looks">${Object.entries(LOOKS).map(([k,L])=>`<button class="look" data-look="${k}" aria-pressed="${k===look}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${L.name}</b></button>`).join('')}</div>
+      <div class="sect"><h3>Dot pattern</h3><div class="scroller">${[['scatter','Scatter'],['rings','Scan rings'],['grid','Grid']].map(([v,n])=>`<button class="chip" data-pattern="${v}" aria-pressed="${P.pattern===v}">${n}</button>`).join('')}</div></div>
+      <div class="sect row"><button class="chip" id="resetLook" ${isCustom()?'':'disabled'}>Reset look</button>${undoBtn}</div>`;
+    tr.querySelectorAll('.look').forEach(b=>b.addEventListener('click',()=>applyLook(b.dataset.look)));
+    tr.querySelectorAll('[data-pattern]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); P.pattern=b.dataset.pattern; S.dirtyBuild=true; commit(); }));
+    $('#resetLook').addEventListener('click',()=>applyLook(look, true));
+    paintThumbs();
+  }
+  else if (S.tab==='adjust'){
+    const c = CTRL[S.ctrl];
+    let body;
+    if (c.chips){
+      body = `<div class="scroller" style="margin-top:12px">${c.chips.map(([v,n])=>`<button class="chip ${LOOKS[look].colour===v?'def':''}" data-colour="${v}" aria-pressed="${P.colour===v}">${n}</button>`).join('')}</div>`;
+    } else {
+      const near = Math.round(P[c.key]), def = Math.round(LOOKS[look][c.key]);
+      body = `<div class="stepper"><input type="range" id="ctl" min="0" max="${c.stops.length-1}" step="0.05" value="${P[c.key]}" aria-label="${c.name}">
+        <div class="stops">${c.stops.map(([n],i)=>`<button data-stop="${i}" aria-current="${Math.abs(P[c.key]-i)<0.15}" class="${i===def?'def':''}">${n}${i===def?' ·':''}</button>`).join('')}</div></div>`;
+    }
+    tr.innerHTML = `<div class="scroller">${CONTROLS.map(k=>`<button class="chip" data-ctrl="${k.key}" aria-pressed="${k.key===S.ctrl}">${k.name}</button>`).join('')}</div>
+      ${body}<p class="hint">${sayBtn(c.hint)}<span>${c.hint}</span></p>
+      <div class="sect row">${undoBtn}</div>`;
+    tr.querySelectorAll('[data-ctrl]').forEach(b=>b.addEventListener('click',()=>{ S.ctrl=b.dataset.ctrl; renderTray(); }));
+    tr.querySelectorAll('[data-colour]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); P.colour=b.dataset.colour; S.dirtyDraw=true; commit(); }));
+    const r = $('#ctl');
+    if (r){
+      r.addEventListener('input', ()=>{ pushUndo(); P[c.key]=+r.value; if (c.rebuild){ S.lowDetail=true; S.dirtyBuild=true; } S.dirtyDraw=true; markStops(c); });
+      r.addEventListener('change', ()=>{ if (c.rebuild){ S.lowDetail=false; S.dirtyBuild=true; } commit(); });
+      tr.querySelectorAll('[data-stop]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); P[c.key]=+b.dataset.stop; if (c.rebuild){ S.lowDetail=false; S.dirtyBuild=true; } S.dirtyDraw=true; commit(); }));
+    }
+  }
+  else if (S.tab==='subject'){
+    tr.innerHTML = `<p class="hint" style="margin:0 0 10px">${sayBtn('Tap the thing that matters in the picture. It becomes the subject, even if something else is nearer. Tap more things to add them.')}<span>Tap the thing that matters. It becomes the subject, even if something else is nearer.</span></p>
+      <div class="scroller"><button class="chip" id="autoSub" aria-pressed="${!S.picks.length}">Auto</button>
+      ${['Tighter','Normal','Looser'].map((n,i)=>`<button class="chip" data-band="${i}" aria-pressed="${S.band===i}">${n}</button>`).join('')}
+      <button class="chip" id="sharp" aria-pressed="${!!S.sharp}">Sharper outline</button>${undoBtn}</div>
+      <p class="hint">${S.sharp?'Uses an outline finder (18 MB, first time only) for cleaner edges.':'Tighter keeps only what sits at the same depth as your tap. Looser takes in more.'}</p>`;
+    $('#autoSub').addEventListener('click',()=>{ pushUndo(); S.picks=[]; S.dirtyBuild=true; commit(); banner(modeText()); });
+    tr.querySelectorAll('[data-band]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); S.band=+b.dataset.band; S.dirtyBuild=true; commit(); }));
+    $('#sharp').addEventListener('click', async ()=>{ S.sharp=!S.sharp; renderTray();
+      if (S.sharp && S.picks.length){ for (const p of S.picks) if (!p.seg) p.seg = await outlineFor(p.u,p.v); S.dirtyBuild=true; }
+      if (S.sharp && segFailed){ S.sharp=false; banner('The outline finder could not start here. Depth alone is being used.'); renderTray(); } });
+  }
+  else if (S.tab==='move'){
+    const mv = S.move||'push', len = S.moveLen||6;
+    tr.innerHTML = `<div class="scroller">${[['push','Push in'],['orbit','Orbit'],['drift','Drift'],['rise','Rise']].map(([v,n])=>`<button class="chip" data-move="${v}" aria-pressed="${mv===v}">${n}</button>`).join('')}</div>
+      <div class="scroller" style="margin-top:8px">${[4,6,10].map(s=>`<button class="chip" data-len="${s}" aria-pressed="${len===s}">${s} seconds</button>`).join('')}</div>
+      <div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button></div>
+      <p class="hint">${sayBtn('The move starts from the view on screen, so line it up first.')}<span>Starts from the view on screen, so line it up first.</span></p>`;
+    tr.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>{ S.move=b.dataset.move; renderTray(); previewMove(S.move, Math.min(4,S.moveLen||6)); }));
+    tr.querySelectorAll('[data-len]').forEach(b=>b.addEventListener('click',()=>{ S.moveLen=+b.dataset.len; renderTray(); }));
+    $('#playMove').addEventListener('click',()=>previewMove(S.move||'push', S.moveLen||6));
+    $('#recMove').addEventListener('click',()=>recordMove(S.move||'push', S.moveLen||6));
+  }
+  else if (S.tab==='people'){
+    const auto=S.faces.filter(f=>f.auto).length, hand=S.faces.length-auto;
+    const status = !S.anon ? 'Faces are shown as they are.' : `${auto?`Found ${auto} face${auto===1?'':'s'}.`:'No faces found by itself.'}${hand?` ${hand} covered by hand.`:''}`;
+    tr.innerHTML = `<h3>Faces</h3>
+      <div class="scroller"><button class="chip" id="anon" aria-pressed="${S.anon}">Hide faces</button>
+      ${['Light','Medium','Strong'].map((n,i)=>`<button class="chip" data-level="${i}" aria-pressed="${S.anon&&S.anonLevel===i}">${n}</button>`).join('')}
+      <button class="chip" id="addFace" aria-pressed="${S.placing==='face'}">+ Face</button>${S.faces.length?'<button class="chip" id="clearFaces">Clear</button>':''}</div>
+      <p class="hint">${sayBtn(status+' Hair, clothes and the setting can still identify someone.')}<span>${status}</span></p>
+      <div class="sect"><h3>Names</h3><div class="row"><button class="chip" id="addLabel" aria-pressed="${S.placing==='label'}">+ Name</button></div>
+      <div class="lablist">${S.labels.map((L,i)=>`<div><input id="label-${i}" value="${esc(L.text)}" placeholder="Name" aria-label="Name"><button class="chip" data-del="${i}">Remove</button></div>`).join('')}</div></div>`;
+    $('#anon').addEventListener('click', async ()=>{ S.anon=!S.anon; if (S.anon && !S.facesFound) await findFaces(); applyAnon(); invalidateCompare(); renderTray(); });
+    tr.querySelectorAll('[data-level]').forEach(b=>b.addEventListener('click', async ()=>{ S.anonLevel=+b.dataset.level; if (!S.anon){ S.anon=true; if (!S.facesFound) await findFaces(); } applyAnon(); invalidateCompare(); renderTray(); }));
+    $('#addFace').addEventListener('click',()=>{ S.placing = S.placing==='face' ? false : 'face'; setTab('people'); });
+    const cf=$('#clearFaces'); if (cf) cf.addEventListener('click',()=>{ S.faces=[]; S.facesFound=false; S.anon=false; applyAnon(); invalidateCompare(); renderTray(); });
+    $('#addLabel').addEventListener('click',()=>{ S.placing = S.placing==='label' ? false : 'label'; setTab('people'); });
+    S.labels.forEach((L,i)=>{ $('#label-'+i).addEventListener('input',e=>{ L.text=e.target.value; S.dirtyDraw=true; }); });
+    tr.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{ S.labels.splice(+b.dataset.del,1); renderTray(); S.dirtyDraw=true; }));
+  }
+  tr.querySelectorAll('.scroller [aria-pressed="true"]').forEach(b=>{ const sc=b.parentElement; sc.scrollLeft = b.offsetLeft - sc.clientWidth/2 + b.offsetWidth/2; });
+  const u=$('#undoBtn'); if (u) u.addEventListener('click', undo);
+  tr.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say)));
+}
+function markStops(c){ document.querySelectorAll('[data-stop]').forEach(b=>b.setAttribute('aria-current', Math.abs(P[c.key]-(+b.dataset.stop))<0.15)); }
+
+// ---------------------------------------------------------------- look thumbnails, drawn from your own photo
+let thumbsFor = null, thumbJob = 0;
+function queueThumbs(){ thumbsFor = null; const job=++thumbJob; setTimeout(()=>makeThumbs(job), 400); }
+function makeThumbs(job){
+  if (job!==thumbJob) return;
+  if (!gl || !G || !S.photo || !S.compMap || S.dirtyBuild){ setTimeout(()=>makeThumbs(job), 300); return; }
+  const keys = Object.keys(LOOKS); const out = {};
+  const next = i => {
+    if (job!==thumbJob) return;
+    if (i>=keys.length){ thumbsFor = out; paintThumbs(); return; }
+    const k=keys[i], L=LOOKS[k];
+    const R = buildCloud({dots:CTRL.dots.stops[Math.round(Math.min(2,L.dots))][1], backdrop:CTRL.backdrop.stops[Math.round(L.backdrop)][1],
+      floor:CTRL.floor.stops[Math.round(L.floor)][1], pattern:L.pattern, bgTint:L.bgTint, cap:60000});
+    uploadCloud(R.out, R.n, 'thumb');
+    const tw=208, th=156;
+    if (cv.width>=tw && cv.height>=th){
+      renderView(tw, th, {cloud:G.clouds.thumb, look:k, colour:L.colour, size:CTRL.size.stops[Math.round(L.size)][1]*1.3, bright:val2('bright',L.bright)*1.5,
+        glow:val2('glow',L.glow), edges:val2('edges',L.edges), yaw:L.yaw, pitch:L.pitch, zoom:Math.max(1, L.zoom*0.78), thumb:true, targetKey:'thumb'});
+      const c=document.createElement('canvas'); c.width=tw; c.height=th; c.getContext('2d').drawImage(cv, 0, cv.height-th, tw, th, 0, 0, tw, th);
+      out[k]=c; S.dirtyDraw=true;
+    }
+    setTimeout(()=>next(i+1), 30);
+  };
+  next(0);
+}
+function val2(key, pos){ const c=CTRL[key], p=Math.max(0,Math.min(c.stops.length-1,pos)), i=Math.min(c.stops.length-2,Math.floor(p)), f=p-i; return c.stops[i][1]*(1-f)+c.stops[i+1][1]*f; }
+function paintThumbs(){ if (!thumbsFor) return; for (const k in thumbsFor){ const el=$('#thumb-'+k); if (el) el.getContext('2d').drawImage(thumbsFor[k],0,0); } }
+
+// ---------------------------------------------------------------- picture: layout, labels, pins
+function layout(){
+  const st=$('#stage').getBoundingClientRect(); if (!st.width || !st.height) return;
+  const a=frameAspect(); let w=st.width, h=w/a; if (h>st.height){ h=st.height; w=h*a; }
+  cv.style.width=w+'px'; cv.style.height=h+'px'; cv.style.left=(st.width-w)/2+'px'; cv.style.top=(st.height-h)/2+'px';
+  let dpr=Math.min(devicePixelRatio||1, 2); const maxPx = MOBILE ? 2.4e6 : 5e6;
+  if (w*h*dpr*dpr > maxPx) dpr=Math.sqrt(maxPx/(w*h));
+  if (!S.recording){ cv.width=Math.max(1,Math.round(w*dpr)); cv.height=Math.max(1,Math.round(h*dpr)); }
+  S.cssW=w; S.cssH=h; S.dirtyDraw=true;
+}
+new ResizeObserver(()=>layout()).observe($('#stage'));
+function project(p, W, H){ const c=M4.xf(M4.mul(S.P, S.V), p); if (c[3]<=0) return null; return [(c[0]*.5+.5)*W, (1-(c[1]*.5+.5))*H]; }
+function labelWorld(L){ const p=unproject(L.u, L.v, zOf(depthAt(L.u,L.v))); return [p[0], p[1]+L.lift, p[2]]; }
+function refreshLabelPositions(){ S.labels.forEach(L=>{ L.pos=labelWorld(L); }); }
+function renderLabels(){
+  const box=$('#labels'), fs=Math.max(11, S.cssH*0.03);
+  while (box.children.length > S.labels.length) box.lastChild.remove();
+  while (box.children.length < S.labels.length) box.appendChild(document.createElement('div')).className='lbl';
+  const ox=parseFloat(cv.style.left), oy=parseFloat(cv.style.top);
+  S.labels.forEach((L,i)=>{ const el=box.children[i], s=L.pos&&S.P&&project(L.pos,S.cssW,S.cssH); el.hidden=!s||!L.text; if(!s) return;
+    el.textContent=L.text; el.style.fontSize=fs+'px'; el.style.left=(ox+s[0])+'px'; el.style.top=(oy+s[1])+'px'; });
+}
+function renderPins(){
+  const box=$('#pins'); box.innerHTML='';
+  if (S.tab!=='subject' || !S.depth || !S.P) return;
+  const ox=parseFloat(cv.style.left), oy=parseFloat(cv.style.top);
+  S.picks.forEach(p=>{ const s=project(unproject(p.u,p.v,zOf(depthAt(p.u,p.v))), S.cssW, S.cssH); if (!s) return;
+    const d=document.createElement('div'); d.className='pin'; d.style.left=(ox+s[0])+'px'; d.style.top=(oy+s[1])+'px'; box.appendChild(d); p.sx=s[0]; p.sy=s[1]; });
+}
+
+// nearest drawn point to a tap, for picking what was tapped in any view
+function pickPoint(cx, cy){
+  if (!S.count) return null;
+  const MV=M4.mul(S.P,S.V), out=S.cpu; let best=1e9, bi=-1;
+  const step=Math.max(1, Math.floor(S.count/250000));
+  for (let i=0;i<S.count;i+=step){ const o=i*10; if (out[o+6]===2) continue; const c=M4.xf(MV,[out[o],out[o+1],out[o+2]]); if (c[3]<=0) continue;
+    const sx=(c[0]*.5+.5)*S.cssW, sy=(1-(c[1]*.5+.5))*S.cssH, dd=(sx-cx)**2+(sy-cy)**2; if (dd<best){best=dd; bi=i;} }
+  if (bi<0 || best > 44*44) return null;
+  const o=bi*10, uv=uvOf([out[o],out[o+1],out[o+2]]);
+  return {u:uv[0], v:uv[1], comp:S.cpuComp[bi]};
+}
+async function onTap(cx, cy){
+  if (S.tab==='subject'){
+    const hit = S.picks.findIndex(p=>p.sx!=null && Math.hypot(p.sx-cx,p.sy-cy)<22);
+    pushUndo();
+    if (hit>=0){ S.picks.splice(hit,1); }
+    else {
+      // tapping in photo view maps straight to the photo; otherwise use the nearest point
+      let u, v;
+      if (Math.abs(S.yaw)<0.5 && Math.abs(S.pitch)<0.5 && Math.abs(S.zoom-1)<0.01 && frameAspect()===S.photo.w/S.photo.h){ u=cx/S.cssW; v=cy/S.cssH; }
+      else { const p=pickPoint(cx,cy); if (!p){ undoArmed=true; S.undo.pop(); return; } u=p.u; v=p.v; }
+      const pick={u,v}; if (S.sharp) pick.seg = await outlineFor(u,v);
+      S.picks.push(pick); if (S.picks.length>4) S.picks.shift();
+    }
+    S.dirtyBuild=true; commit(); banner(modeText()); return;
+  }
+  if (S.placing==='face'){ const p=pickPoint(cx,cy); if (!p) return; addFaceAt(p.u, p.v, p.comp); invalidateCompare(); S.placing=false; setTab('people'); return; }
+  if (S.placing==='label'){ const p=pickPoint(cx,cy); if (!p) return;
+    const c=S.comps.find(k=>k.id===p.comp);
+    const L = c ? {u:c.topUV[0], v:c.topUV[1], lift:(c.maxY-c.minY)*0.07, text:''} : {u:p.u, v:p.v, lift:0.06, text:''};
+    L.pos=labelWorld(L); S.labels.push(L); S.placing=false; setTab('people');
+    const inp=$('#label-'+(S.labels.length-1)); if (inp) inp.focus(); S.dirtyDraw=true; }
+}
+
+// ---------------------------------------------------------------- gestures
+const ptrs=new Map(); let pinch0=0, zoom0=1, moved=0, lastTap=0;
+cv.addEventListener('pointerdown', e=>{ cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); moved=0;
+  if (ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch0=Math.hypot(a.x-b.x,a.y-b.y); zoom0=S.zoom; } });
+cv.addEventListener('pointermove', e=>{ const p=ptrs.get(e.pointerId); if(!p || S.recording) return;
+  const dx=e.clientX-p.x, dy=e.clientY-p.y; p.x=e.clientX; p.y=e.clientY; moved+=Math.abs(dx)+Math.abs(dy);
+  if (moved<8) return;
+  if (ptrs.size===1){ S.yaw+=dx*0.35; S.pitch=Math.max(-80,Math.min(80,S.pitch+dy*0.3)); }
+  else if (ptrs.size===2){ const [a,b]=[...ptrs.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y); if (pinch0) S.zoom=Math.max(0.35,Math.min(5,zoom0*pinch0/d)); }
+  S.dirtyDraw=true; viewButton(); });
+cv.addEventListener('pointerup', e=>{
+  if (ptrs.size===1 && moved<8){ const r=cv.getBoundingClientRect(), now=performance.now();
+    if (S.tab!=='subject' && !S.placing && now-lastTap<320){ resetView(); lastTap=0; }
+    else { lastTap=now; onTap(e.clientX-r.left, e.clientY-r.top); } }
+  ptrs.delete(e.pointerId); pinch0=0; });
+cv.addEventListener('pointercancel', e=>ptrs.delete(e.pointerId));
+cv.addEventListener('wheel', e=>{ e.preventDefault(); S.zoom=Math.max(0.35,Math.min(5,S.zoom*Math.exp(e.deltaY*0.001))); S.dirtyDraw=true; viewButton(); }, {passive:false});
+cv.addEventListener('keydown', e=>{ const k={ArrowLeft:[-4,0],ArrowRight:[4,0],ArrowUp:[0,-4],ArrowDown:[0,4]}[e.key]; if(!k) return; e.preventDefault(); S.yaw+=k[0]; S.pitch=Math.max(-80,Math.min(80,S.pitch+k[1])); S.dirtyDraw=true; viewButton(); });
+
+// ---------------------------------------------------------------- picture buttons
+function viewButton(){ const L=LOOKS[look]; $('#photoView').hidden = !(Math.abs(S.yaw-L.yaw)>0.5||Math.abs(S.pitch-L.pitch)>0.5||Math.abs(S.zoom-L.zoom)>0.01); }
+function resetView(){ const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.spin=false; syncSpin(); S.dirtyDraw=true; viewButton(); }
+function syncSpin(){ $('#spin').setAttribute('aria-pressed', S.spin); }
+$('#photoView').addEventListener('click', resetView);
+$('#spin').addEventListener('click', ()=>{ S.spin=!S.spin; syncSpin(); });
+let compareURL=null;
+function invalidateCompare(){ if (compareURL){ URL.revokeObjectURL(compareURL); compareURL=null; } }
+async function showCompare(on){
+  const im=$('#compare');
+  if (!on || !S.photo){ im.hidden=true; return; }
+  if (!compareURL){ const c=document.createElement('canvas'); c.width=S.photo.w; c.height=S.photo.h; c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(S.photo.data),S.photo.w,S.photo.h),0,0);
+    compareURL = URL.createObjectURL(await new Promise(r=>c.toBlob(r,'image/jpeg',0.9))); }
+  const pa=S.photo.w/S.photo.h, fa=frameAspect(); let w=S.cssW, h=S.cssH;
+  if (fa>pa) w=h*pa; else h=w/pa;
+  Object.assign(im.style, {width:w+'px', height:h+'px', left:(parseFloat(cv.style.left)+(S.cssW-w)/2)+'px', top:(parseFloat(cv.style.top)+(S.cssH-h)/2)+'px'});
+  im.src=compareURL; im.hidden=false;
+}
+const cb=$('#compareBtn');
+cb.addEventListener('pointerdown', e=>{ e.preventDefault(); showCompare(true); });
+['pointerup','pointerleave','pointercancel'].forEach(ev=>cb.addEventListener(ev, ()=>showCompare(false)));
+cb.addEventListener('contextmenu', e=>e.preventDefault());
+
+// ---------------------------------------------------------------- top bar menus
+function menu(btn, id, items){
+  const m=$(id), open=m.hidden;
+  document.querySelectorAll('.menu').forEach(x=>x.hidden=true); document.querySelectorAll('.tb[aria-haspopup]').forEach(b=>b.setAttribute('aria-expanded','false'));
+  if (!open) return;
+  m.innerHTML = items.map(([v,n,sub,on])=>`<button data-v="${v}" aria-pressed="${!!on}">${n}${sub?`<small>${sub}</small>`:''}</button>`).join('');
+  const r=btn.getBoundingClientRect(); m.style.top=(r.bottom+6)+'px'; m.style.left=Math.max(8,Math.min(innerWidth-210, r.left-60))+'px';
+  m.hidden=false; btn.setAttribute('aria-expanded','true');
+  return m;
+}
+$('#shapeBtn').addEventListener('click', e=>{ e.stopPropagation();
+  const m=menu($('#shapeBtn'), '#shapeMenu', [['photo','Same as the photo','',S.shape==='photo'],['wide','Wide','16 by 9',S.shape==='wide'],['square','Square','',S.shape==='square'],['tall','Tall','9 by 16, for stories',S.shape==='tall']]);
+  if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); S.shape=b.dataset.v; commit(); layout(); m.hidden=true; $('#shapeBtn').setAttribute('aria-expanded','false'); })); });
+$('#saveBtn').addEventListener('click', e=>{ e.stopPropagation();
+  const m=menu($('#saveBtn'), '#saveMenu', [['png','Picture','PNG, full size'],['video','Video','Opens camera moves'],['ply','3D points','PLY file for Blender, MeshLab']]);
+  if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ m.hidden=true; $('#saveBtn').setAttribute('aria-expanded','false');
+    if (b.dataset.v==='png') savePicture(); else if (b.dataset.v==='ply') savePly(); else setTab('move'); })); });
+document.addEventListener('click', ()=>{ document.querySelectorAll('.menu').forEach(x=>x.hidden=true); document.querySelectorAll('.tb[aria-haspopup]').forEach(b=>b.setAttribute('aria-expanded','false')); });
+$('#infoBtn').addEventListener('click', e=>{ e.stopPropagation(); const i=$('#info'); i.hidden=!i.hidden; $('#infoBtn').setAttribute('aria-expanded', !i.hidden);
+  if (!i.hidden){ const text='First Return turns a photo into a lidar style point cloud. Depth is worked out on your device, and the photo never leaves it.';
+    i.innerHTML = `<p style="display:flex;gap:8px;align-items:center">${sayBtn(text)}<b>${text}</b></p>
+      <p>${S.count.toLocaleString()} dots. ${S.nComp} subject${S.nComp===1?'':'s'}. Camera view: ${esc(S.fovSource)}.${S.plane?' Floor found in the photo.':''}</p>
+      <p>${esc(S.credit||'')}</p><p>Depth: Depth Anything V2 Small (Apache 2.0). Outlines: MediaPipe Magic Touch (Apache 2.0). Faces: UltraFace (MIT). Runtime: ONNX Runtime Web (MIT).</p>
+      <button class="btn" id="infoClose">Close</button>`;
+    $('#infoClose').addEventListener('click',()=>{ i.hidden=true; });
+    i.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say))); } });
+$('#info').addEventListener('click', e=>e.stopPropagation());
+
+// ---------------------------------------------------------------- opening a photo
+async function setPhoto(ph, D, credit){
+  S.photoCanvas=ph.canvas; S.photoSrc=S.photo={w:ph.w,h:ph.h,data:ph.data}; S.tanV=ph.fov.tanV; S.fovSource=ph.fov.src; S.credit=credit||'';
+  invalidateCompare();
+  busy('Sharpening the depth edges', null); await tick();
+  S.depthSrc=S.depth=refineDepth(D, ph.canvas);
+  S.plane=fitFloor(S.depth); S.ground=groundMask(S.depth, S.plane); S.shiftAuto=estimateShift(S.plane); S.autoCut=otsu(S.depth.d, S.ground);
+  S.picks=[]; S.labels=[]; S.faces=[]; S.facesFound=false; S.faceMask=null;
+  if (S.anon){ await findFaces(); applyAnon(); }
+  const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; viewButton();
+  busy(null); layout(); S.dirtyBuild=true; renderTray(); queueThumbs();
+}
+$('#file').addEventListener('change', async e=>{
+  const f=e.target.files[0]; if (!f) return; e.target.value='';
+  try { busy('Opening the photo', null); await tick();
+    const ph = await decodePhoto(f);
+    const raw = await estimateDepth(ph.canvas);
+    await setPhoto(ph, normaliseDepth(raw), 'Your photo stayed on this device.');
+  } catch(err){ console.error(err); busy(null); banner('Could not read that photo: '+(err.message||err)); }
 });
 
-// ---------------------------------------------------------------- boot with the bundled sample
-async function boot(){
-  let start = 'void'; try { const s = localStorage.getItem('firstreturn.look'); if (s && LOOKS[s]) start = s; } catch(e){}
-  applyLook(start);
+// ---------------------------------------------------------------- main loop
+function frame(){
+  if (gl && G){
+    if (S.dirtyBuild && !S.recording) build();
+    if (S.spin && !S.recording){ S.yaw+=0.25; S.dirtyDraw=true; viewButton(); }
+    if (S.dirtyDraw && !S.recording){ S.dirtyDraw=false; draw(); renderLabels(); renderPins(); }
+  }
   requestAnimationFrame(frame);
-  try {
-    const [pi, di] = await Promise.all(['sample.jpg','sample-depth.png'].map(src=>new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=()=>rej(new Error(src)); im.src=src; })));
-    const c=document.createElement('canvas'); c.width=pi.naturalWidth; c.height=pi.naturalHeight; let x=c.getContext('2d'); x.drawImage(pi,0,0);
-    S.photoSrc = S.photo = {w:c.width,h:c.height,data:x.getImageData(0,0,c.width,c.height).data};
-    const d=document.createElement('canvas'); d.width=di.naturalWidth; d.height=di.naturalHeight; x=d.getContext('2d',{willReadFrequently:true}); x.drawImage(di,0,0);
-    const px=x.getImageData(0,0,d.width,d.height).data, raw=new Float32Array(d.width*d.height);
-    for (let i=0;i<raw.length;i++) raw[i]=(px[i*4]*256+px[i*4+1])/65535;
-    S.depthSrc = S.depth = normaliseDepth(raw, d.width, d.height); S.ground = findGround(); S.autoCut = otsu(S.depth.d); faceNote();
-    S.labels = [{u:0.62, v:0.1, lift:0.06, text:'Standing Lincoln'}];
-    layout(); S.dirtyBuild = true;
-    // hang the sample label over the figure's actual head once the cloud exists
-    requestAnimationFrame(()=>{ const c = S.comps.slice().sort((a,b)=>b.n-a.n)[0]; if (c && S.labels[0] && S.labels[0].text==='Standing Lincoln'){ S.labels[0].u=c.topUV[0]; S.labels[0].v=c.topUV[1]; S.labels[0].lift=(c.maxY-c.minY)*0.07; refreshLabelPositions(); } renderLabelList(); S.dirtyDraw=true; });
-  } catch(err){ $('#readout').textContent = 'Open a photo to begin.'; }
 }
-window.__fr = {S, P, LOOKS, applyLook, build};
+
+// ---------------------------------------------------------------- start
+async function boot(){
+  if (!initGL()){ banner('This browser has no WebGL2, which drawing the dots needs.'); return; }
+  const saved = recall('state');
+  look = saved && LOOKS[saved.look] ? saved.look : 'void';
+  LOOK_KEYS.forEach(k=>{ P[k]=LOOKS[look][k]; });
+  if (saved && saved.P) LOOK_KEYS.forEach(k=>{ if (saved.P[k]!=null && typeof saved.P[k]===typeof P[k]) P[k]=saved.P[k]; });
+  S.shape = saved && saved.shape ? saved.shape : (MOBILE ? 'photo' : 'wide');
+  const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom;
+  setTab(recall('tab') || 'look');
+  layout(); requestAnimationFrame(frame);
+  try {
+    const [pi, db] = await Promise.all([
+      new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=()=>rej(new Error('sample')); im.src='sample.jpg'; }),
+      fetch('sample-depth.png').then(r=>r.blob())]);
+    const c=document.createElement('canvas'); c.width=pi.naturalWidth; c.height=pi.naturalHeight; const x=c.getContext('2d',{willReadFrequently:true}); x.drawImage(pi,0,0);
+    // decode the 16-bit depth without colour management, which would alter the low byte
+    const bmp = await createImageBitmap(db, {colorSpaceConversion:'none', premultiplyAlpha:'none'});
+    const d=document.createElement('canvas'); d.width=bmp.width; d.height=bmp.height; const dx=d.getContext('2d',{willReadFrequently:true}); dx.drawImage(bmp,0,0);
+    const px=dx.getImageData(0,0,d.width,d.height).data, raw=new Float32Array(d.width*d.height);
+    for (let i=0;i<raw.length;i++) raw[i]=(px[i*4]*256+px[i*4+1])/65535;
+    await setPhoto({canvas:c, w:c.width, h:c.height, data:x.getImageData(0,0,c.width,c.height).data, fov:{tanV:Math.tan(25*Math.PI/180), src:'museum photo, lens assumed'}},
+      normaliseDepth({w:d.width, h:d.height, d:raw}),
+      'Sample: Abraham Lincoln: The Man (Standing Lincoln), Augustus Saint-Gaudens, The Metropolitan Museum of Art, public domain (CC0).');
+    // a name over the sample's head, to show what names look like
+    requestAnimationFrame(()=>{ const c0=S.comps.slice().sort((a,b)=>b.n-a.n)[0];
+      if (c0){ const Lb={u:c0.topUV[0], v:c0.topUV[1], lift:(c0.maxY-c0.minY)*0.07, text:'Standing Lincoln'}; Lb.pos=labelWorld(Lb); S.labels=[Lb]; S.dirtyDraw=true; if (S.tab==='people') renderTray(); } });
+  } catch(err){ console.error(err); banner('Tap Open to choose a photo.'); }
+}
+window.__fr = {S, P, LOOKS, build, setTab, queueThumbs};   // for testing from the console
 boot();
+
 })();
 </script>
-
 </body>
 </html>

@@ -6,3 +6,6 @@ tools/*.jpg
 tools/facetest.mjs
 .claude/
 __pycache__/
+tools/mp/
+tools/*.tflite
+tools/first-return.v1.html

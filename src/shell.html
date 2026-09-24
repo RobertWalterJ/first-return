@@ -1,0 +1,158 @@
+<title>First Return</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  color-scheme:dark;
+  --void:#040506; --panel:#0b0d0f; --raise:#141a1e; --line:#1e2429; --line2:#2d363d;
+  --text:#e2e8eb; --dim:#8b98a1; --faint:#5a6770;
+  --accent:#72e8cb; --accent-ink:#03140f; --rec:#ff5a4e;
+  --ui:Archivo,"Helvetica Neue",Arial,sans-serif; --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  --safe-b:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;overflow:hidden}
+body{background:var(--void);color:var(--text);font:15px/1.4 var(--ui)}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- frame: top bar, picture, tools ---------- */
+.app{display:grid;height:100vh;height:100dvh;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;grid-template-areas:"top" "stage" "side"}
+.top{grid-area:top;display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-weight:780;font-stretch:125%;letter-spacing:.07em;text-transform:uppercase;font-size:15px;margin-right:auto;white-space:nowrap}
+.brand span{color:var(--accent)}
+.tb{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:52px;padding:4px 6px;border:0;background:none;border-radius:6px;font-size:11.5px;color:var(--dim)}
+.tb svg{width:22px;height:22px;stroke:var(--text);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.tb:hover,.tb[aria-expanded="true"]{background:var(--raise);color:var(--text)}
+.tb.primary svg{stroke:var(--accent)} .tb.primary{color:var(--accent)}
+
+.stage{grid-area:stage;position:relative;overflow:hidden;background:var(--void);touch-action:none;user-select:none;-webkit-user-select:none}
+.stage canvas{position:absolute;display:block;outline:none;cursor:grab}
+.stage.picking canvas{cursor:crosshair}
+.compare{position:absolute;pointer-events:none;object-fit:fill}
+.overlay{position:absolute;inset:0;pointer-events:none}
+.lbl{position:absolute;transform:translate(-50%,-100%);white-space:nowrap;color:#fff;font-weight:560;text-shadow:0 0 6px rgba(255,255,255,.55),0 0 16px rgba(255,255,255,.28)}
+.pin{position:absolute;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:2px solid var(--accent);background:rgba(114,232,203,.25);pointer-events:none}
+.banner{position:absolute;left:50%;top:10px;transform:translateX(-50%);max-width:calc(100% - 24px);background:rgba(8,10,12,.86);border:1px solid var(--line2);border-radius:18px;padding:7px 14px;font-size:14px;text-align:center;pointer-events:none}
+.float{position:absolute;right:10px;bottom:10px;display:flex;gap:8px}
+.fb{width:44px;height:44px;border-radius:50%;border:1px solid var(--line2);background:rgba(10,12,14,.8);display:grid;place-items:center;padding:0}
+.fb svg{width:22px;height:22px;stroke:var(--text);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.fb[aria-pressed="true"]{border-color:var(--accent)} .fb[aria-pressed="true"] svg{stroke:var(--accent)}
+.recbar{position:absolute;left:0;right:0;top:0;height:3px;background:var(--line)}
+.recbar i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--rec)}
+.busy{position:absolute;inset:0;display:grid;place-items:center;background:rgba(4,5,6,.74);text-align:center;padding:24px;font-size:15px}
+.busy .bar{width:min(260px,70vw);height:3px;background:var(--line2);margin:12px auto 0;position:relative;overflow:hidden;border-radius:2px}
+.busy .bar i{position:absolute;left:0;top:0;bottom:0;background:var(--accent);width:0}
+
+/* ---------- tools: tabs + one tray ---------- */
+.side{grid-area:side;display:flex;flex-direction:column-reverse;background:var(--panel);border-top:1px solid var(--line);min-height:0}
+.tabs{display:grid;grid-template-columns:repeat(5,1fr);padding-bottom:var(--safe-b)}
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 2px 7px;border:0;background:none;color:var(--dim);font-size:12px;border-top:2px solid transparent}
+.tab svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.tab[aria-selected="true"]{color:var(--accent);border-top-color:var(--accent)}
+.tray{padding:12px 14px 10px;border-bottom:1px solid var(--line);overflow-y:auto;max-height:44vh}
+.tray h3{margin:0 0 8px;font-size:11.5px;font-weight:620;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);font-stretch:112%;display:flex;align-items:center;gap:8px}
+.tray h3 .sp{margin-left:auto}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.scroller{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
+.chip{flex:none;border:1px solid var(--line2);background:var(--raise);border-radius:18px;padding:8px 13px;font-size:14px;line-height:1.1;white-space:nowrap;position:relative}
+.chip[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:#0f2621}
+.chip.def::after{content:"";position:absolute;right:5px;top:5px;width:5px;height:5px;border-radius:50%;background:var(--dim)}
+.chip:disabled{opacity:.4;cursor:default}
+.btn{border:1px solid var(--line2);background:var(--raise);border-radius:8px;padding:10px 14px;font-weight:560;line-height:1.1}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.rec{background:var(--rec);border-color:var(--rec);color:#1a0302}
+.btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+.hint{color:var(--dim);font-size:13.5px;margin:8px 0 0;display:flex;gap:8px;align-items:center}
+.say{flex:none;width:30px;height:30px;border-radius:50%;border:1px solid var(--line2);background:var(--raise);display:grid;place-items:center;padding:0}
+.say svg{width:16px;height:16px;stroke:var(--text);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.looks{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px}
+.look{flex:none;width:104px;border:1px solid var(--line2);background:var(--raise);border-radius:8px;padding:5px;display:flex;flex-direction:column;gap:5px;text-align:left}
+.look canvas{width:100%;height:78px;border-radius:5px;background:#000;display:block;object-fit:cover}
+.look b{font-size:13.5px;font-weight:620;padding:0 3px}
+.look[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.look[aria-pressed="true"] b{color:var(--accent)}
+.stepper{margin-top:12px}
+.stepper input{width:100%;height:36px;accent-color:var(--accent);margin:0}
+.stops{display:flex;justify-content:space-between;margin-top:2px}
+.stops button{border:0;background:none;color:var(--dim);font-size:12.5px;padding:4px 2px;min-width:44px}
+.stops button:first-child{text-align:left} .stops button:last-child{text-align:right}
+.stops button[aria-current="true"]{color:var(--accent);font-weight:640}
+.sect{margin-top:14px}
+.lablist{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.lablist div{display:flex;gap:6px}
+.lablist input{flex:1;min-width:0;background:var(--raise);border:1px solid var(--line2);border-radius:8px;padding:9px 10px}
+.menu{position:absolute;z-index:20;background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:4px;min-width:190px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.menu button{text-align:left;border:0;background:none;padding:10px 12px;border-radius:6px;font-size:14.5px}
+.menu button:hover,.menu button[aria-pressed="true"]{background:var(--raise)}
+.menu button[aria-pressed="true"]{color:var(--accent)}
+.menu small{display:block;color:var(--dim);font-size:12px}
+.sheet{position:fixed;inset:0;background:rgba(2,3,4,.93);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:20px 16px;z-index:30}
+.sheet img,.sheet video{max-width:100%;max-height:70vh;border:1px solid var(--line2);background:#000;-webkit-touch-callout:default}
+.sheet p{margin:0;color:var(--dim);text-align:center;max-width:52ch}
+.info{position:fixed;z-index:25;inset:auto 12px 12px 12px;max-width:420px;margin-left:auto;background:var(--panel);border:1px solid var(--line2);border-radius:12px;padding:14px 16px;font-size:14px;color:var(--dim)}
+.info b{color:var(--text)}
+.info p{margin:0 0 8px}
+
+@media (max-width:420px){ .brand{font-size:12.5px;letter-spacing:.04em} .tb{min-width:44px;padding:4px 3px} .top{gap:2px;padding:6px 8px} }
+@media (min-width:900px){
+  .app{grid-template-columns:minmax(0,1fr) 370px;grid-template-rows:auto minmax(0,1fr);grid-template-areas:"top top" "stage side"}
+  .side{flex-direction:column;border-top:0;border-left:1px solid var(--line)}
+  .tabs{border-bottom:1px solid var(--line);padding-bottom:0}
+  .tab{border-top:0;border-bottom:2px solid transparent}
+  .tab[aria-selected="true"]{border-bottom-color:var(--accent)}
+  .tray{max-height:none;flex:1;border-bottom:0;padding:16px 18px}
+  .looks{display:grid;grid-template-columns:1fr 1fr;overflow:visible} .look{width:auto} .look canvas{height:auto;aspect-ratio:4/3}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">First <span>Return</span></div>
+    <label class="tb primary" for="file" role="button" tabindex="0"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>Open</label>
+    <input id="file" type="file" accept="image/*" hidden>
+    <button class="tb" id="shapeBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M6 3v15h15"/><path d="M3 6h15v15"/></svg>Shape</button>
+    <button class="tb" id="saveBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>Save</button>
+    <button class="tb" id="infoBtn" aria-expanded="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.5v.5"/></svg>About</button>
+  </header>
+
+  <div class="stage" id="stage">
+    <canvas id="gl" tabindex="0" aria-label="The point cloud. Drag to turn it, pinch or scroll to zoom, double tap to line it up with the photo again."></canvas>
+    <img class="compare" id="compare" alt="" hidden>
+    <div class="overlay" id="pins"></div>
+    <div class="overlay" id="labels"></div>
+    <div class="banner" id="banner" hidden></div>
+    <div class="recbar" id="recbar" hidden><i id="recfill"></i></div>
+    <div class="float">
+      <button class="fb" id="photoView" aria-label="Line up with the photo" title="Line up with the photo" hidden><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4"/></svg></button>
+      <button class="fb" id="spin" aria-pressed="false" aria-label="Turntable" title="Turntable"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="15" rx="8" ry="3"/><path d="M12 12V4"/><path d="M16 7l-4-3-4 3"/></svg></button>
+      <button class="fb" id="compareBtn" aria-label="Hold to see the original photo" title="Hold to see the original photo"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 5v14"/><path d="M12 9l9 6"/></svg></button>
+    </div>
+    <div class="busy" id="busy" hidden><div><div id="busyText">Working</div><div class="bar"><i id="busyBar"></i></div></div></div>
+  </div>
+
+  <aside class="side">
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" data-tab="look"><svg viewBox="0 0 24 24"><circle cx="7" cy="8" r="1.4"/><circle cx="12" cy="6" r="1.4"/><circle cx="17" cy="8" r="1.4"/><circle cx="9" cy="13" r="1.4"/><circle cx="15" cy="13" r="1.4"/><circle cx="12" cy="18" r="1.4"/></svg>Look</button>
+      <button class="tab" role="tab" data-tab="adjust"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Adjust</button>
+      <button class="tab" role="tab" data-tab="subject"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>Subject</button>
+      <button class="tab" role="tab" data-tab="move"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg>Move</button>
+      <button class="tab" role="tab" data-tab="people"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4.5-6.5 8-6.5s7 2 8 6.5"/></svg>People</button>
+    </nav>
+    <section class="tray" id="tray"></section>
+  </aside>
+</div>
+
+<div class="menu" id="shapeMenu" hidden></div>
+<div class="menu" id="saveMenu" hidden></div>
+<div class="info" id="info" hidden></div>
+<div class="sheet" id="sheet" hidden>
+  <img id="sheetImg" alt="Your picture">
+  <video id="sheetVid" controls loop muted playsinline hidden></video>
+  <p id="sheetNote"></p>
+  <div class="row"><a class="btn primary" id="sheetDl" href="#">Download</a><button class="btn" id="sheetClose">Close</button></div>
+</div>
