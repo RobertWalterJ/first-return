@@ -36,7 +36,7 @@ button{cursor:pointer}
 .top{grid-area:top;display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
 .brand{font-weight:780;font-stretch:125%;letter-spacing:.07em;text-transform:uppercase;font-size:15px;margin-right:auto;white-space:nowrap}
 .brand span{color:var(--accent)}
-.tb{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:52px;padding:4px 6px;border:0;background:none;border-radius:6px;font-size:11.5px;color:var(--dim)}
+.tb{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:52px;padding:4px 6px;border:0;background:none;border-radius:6px;font-size:12.5px;color:var(--dim)}
 .tb svg{width:22px;height:22px;stroke:var(--text);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .tb:hover,.tb[aria-expanded="true"]{background:var(--raise);color:var(--text)}
 .tb.primary svg{stroke:var(--accent)} .tb.primary{color:var(--accent)}
@@ -52,11 +52,13 @@ button{cursor:pointer}
 .banner,.notice{max-width:100%;background:rgba(8,10,12,.88);border:1px solid var(--line2);border-radius:18px;padding:7px 14px;font-size:14px;text-align:center}
 .notice{border-color:var(--accent);color:var(--text);display:flex;align-items:center;gap:10px;text-align:left;padding:6px 14px 6px 6px}
 .notice[hidden]{display:none}
-.notice .say{pointer-events:auto}
+.notice .say,.banner .say{pointer-events:auto}
+.banner{display:flex;align-items:center;gap:10px;padding:6px 14px 6px 6px}
+.banner[hidden]{display:none}
 .panpill{position:absolute;left:10px;top:10px;border:1px solid var(--accent);background:rgba(8,10,12,.88);color:var(--accent);border-radius:16px;padding:7px 12px;font-size:13px}
 .pin b{position:absolute;left:50%;top:22px;transform:translateX(-50%);white-space:nowrap;font:600 12px var(--ui);color:var(--accent);text-shadow:0 0 4px #000}
 body.locked .side, body.locked .top .tb{pointer-events:none;opacity:.55}
-body.scan .tab[data-tab="subject"], body.scan .tab[data-tab="people"]{opacity:.5}
+body.scan .tab[data-tab="subject"]{opacity:.5}
 .float{position:absolute;right:10px;bottom:10px;display:flex;gap:8px}
 .fb{width:44px;height:44px;border-radius:50%;border:1px solid var(--line2);background:rgba(10,12,14,.8);display:grid;place-items:center;padding:0}
 .fb svg{width:22px;height:22px;stroke:var(--text);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
@@ -70,11 +72,16 @@ body.scan .tab[data-tab="subject"], body.scan .tab[data-tab="people"]{opacity:.5
 /* ---------- tools: tabs + one tray ---------- */
 .side{grid-area:side;display:flex;flex-direction:column-reverse;background:var(--panel);border-top:1px solid var(--line);min-height:0}
 .tabs{display:grid;grid-template-columns:repeat(5,1fr);padding-bottom:var(--safe-b)}
-.tab{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 2px 7px;border:0;background:none;color:var(--dim);font-size:12px;border-top:2px solid transparent}
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 2px 7px;border:0;background:none;color:var(--dim);font-size:13px;border-top:2px solid transparent}
 .tab svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .tab[aria-selected="true"]{color:var(--accent);border-top-color:var(--accent)}
-.tray{padding:12px 14px 10px;border-bottom:1px solid var(--line);overflow-y:auto;max-height:44vh}
-.tray h3{margin:0 0 8px;font-size:11.5px;font-weight:620;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);font-stretch:112%;display:flex;align-items:center;gap:8px}
+.tray{padding:12px 14px 10px;border-bottom:1px solid var(--line);overflow-y:auto;max-height:44vh;max-height:44dvh}
+.tray h3{margin:0 0 8px;font-size:13.5px;font-weight:650;letter-spacing:.01em;color:#b9c4cb;display:flex;align-items:center;gap:8px}
+.rowlabel{margin:6px 0 4px;font-size:13px;color:var(--dim)}
+.look small{font-size:11.5px;color:var(--dim);padding:0 3px}
+.lookpick:disabled{opacity:.6}
+.nclose{flex:none;border:0;background:none;color:var(--dim);font-size:15px;padding:4px 6px;pointer-events:auto}
+.stop{position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:6;border-color:var(--rec);color:#fff;background:rgba(40,8,6,.85)}
 .tray h3 .sp{margin-left:auto}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .scroller{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
@@ -84,7 +91,7 @@ body.scan .tab[data-tab="subject"], body.scan .tab[data-tab="people"]{opacity:.5
 .chip.pat{display:inline-flex;align-items:center;gap:8px;padding:6px 13px 6px 8px}
 .paticon{width:26px;height:26px;fill:currentColor;opacity:.85}
 .chip.def::after{content:"";position:absolute;right:5px;top:5px;width:5px;height:5px;border-radius:50%;background:var(--dim)}
-.chip:disabled{opacity:.4;cursor:default}
+.chip:disabled{opacity:.55;cursor:default}
 .btn{border:1px solid var(--line2);background:var(--raise);border-radius:8px;padding:10px 14px;font-weight:560;line-height:1.1}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .btn.rec{background:var(--rec);border-color:var(--rec);color:#1a0302}
@@ -164,7 +171,8 @@ body.scan .tab[data-tab="subject"], body.scan .tab[data-tab="people"]{opacity:.5
     <canvas class="compare" id="dbgView" hidden></canvas>
     <div class="overlay" id="pins"></div>
     <div class="overlay" id="labels"></div>
-    <div class="msgs"><div class="notice" id="notice" hidden></div><div class="banner" id="banner" hidden></div></div>
+    <div class="msgs"><div class="notice" id="notice" role="status" aria-live="polite" hidden></div><div class="banner" id="banner" role="status" aria-live="polite" hidden></div></div>
+    <button class="btn stop" id="stopBtn" hidden>Stop</button>
     <button class="panpill" id="panPill" hidden>Pan on. Tap to turn off</button>
     <div class="recbar" id="recbar" hidden><i id="recfill"></i></div>
     <div class="float">
@@ -173,7 +181,7 @@ body.scan .tab[data-tab="subject"], body.scan .tab[data-tab="people"]{opacity:.5
       <button class="fb" id="spin" aria-pressed="false" aria-label="Turntable" title="Turntable"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="15" rx="8" ry="3"/><path d="M12 12V4"/><path d="M16 7l-4-3-4 3"/></svg></button>
       <button class="fb" id="compareBtn" aria-label="Hold to see the original photo" title="Hold to see the original photo"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 5v14"/><path d="M12 9l9 6"/></svg></button>
     </div>
-    <div class="busy" id="busy" hidden><div><div id="busyText">Working</div><div class="bar"><i id="busyBar"></i></div></div></div>
+    <div class="busy" id="busy" role="status" aria-live="polite" hidden><div><div id="busyText">Working</div><div class="bar"><i id="busyBar"></i></div></div></div>
   </div>
 
   <aside class="side">
@@ -261,9 +269,9 @@ const LOOKS = {
   real:    {name:'Photoreal', dots:3.05, size:1.9, glow:1, bright:2, colour:'photo', depth3d:2, backdrop:1.05, floor:0, edges:0, hidden:1,
             pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:0, pitch:0, zoom:1, splat:1},
   // mixed: the subject as the photo on the Void stage of dots, or the world as the photo around a subject of dots
-  psub:    {name:'Photo subject', dots:3.05, size:1.9, glow:1.0, bright:2.3, colour:'photo', depth3d:2, backdrop:1.05, floor:1.3, edges:0, hidden:1,
+  psub:    {name:'Real subject', dots:3.05, size:1.9, glow:1.0, bright:2.3, colour:'photo', depth3d:2, backdrop:1.05, floor:1.3, edges:0, hidden:1,
             pattern:'scatter', bgTint:1, bgGain:.45, bgSize:2.4, sparkle:0, yaw:0, pitch:0, zoom:1.3, splat:1, mix:1},
-  pworld:  {name:'Photo world', dots:3.05, size:1.4, glow:.5, bright:2.4, colour:'photo', depth3d:2, backdrop:1.05, floor:0, edges:0, hidden:1,
+  pworld:  {name:'Real setting', dots:3.05, size:1.4, glow:.5, bright:2.4, colour:'photo', depth3d:2, backdrop:1.05, floor:0, edges:0, hidden:1,
             pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:0, pitch:0, zoom:1, splat:1, mix:2},
 };
 const LOOK_KEYS = ['dots','size','glow','bright','colour','depth3d','backdrop','floor','edges','hidden','pattern'];
@@ -302,11 +310,14 @@ function seeded(seed){ let a=seed>>>0; return () => { a|=0; a=a+0x6D2B79F5|0; le
 function gauss(r){ return Math.sqrt(-2*Math.log(r()+1e-9))*Math.cos(6.283185*r()); }
 const tick = () => new Promise(r=>setTimeout(r,30));
 function busy(text, frac){ const b=$('#busy'); document.body.classList.toggle('locked', text!=null || S.recording); if (text==null){ b.hidden=true; return; } b.hidden=false; $('#busyText').textContent=text; $('#busyBar').style.width = frac==null ? '100%' : (Math.min(1,frac)*100).toFixed(1)+'%'; }
-function banner(text){ const b=$('#banner'); b.hidden=!text; if (text) b.textContent=text; }
-// one-off messages carry a read-aloud button, like every other piece of text in the app
-function notice(text){ const b=$('#notice'); S.noticeText=text||''; b.hidden=!text; if (!text) return;
+function banner(text){ const b=$('#banner'); b.hidden=!text; if (!text) return;
   b.innerHTML=`<button class="say" aria-label="Read aloud"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg></button><span></span>`;
   b.querySelector('span').textContent=text; b.querySelector('.say').addEventListener('click', e=>{ e.stopPropagation(); say(text); }); }
+// one-off messages carry a read-aloud button, like every other piece of text in the app
+function notice(text){ const b=$('#notice'); S.noticeText=text||''; b.hidden=!text; if (!text) return;
+  b.innerHTML=`<button class="say" aria-label="Read aloud"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg></button><span></span><button class="nclose" aria-label="Close this message">&#x2715;</button>`;
+  b.querySelector('span').textContent=text; b.querySelector('.say').addEventListener('click', e=>{ e.stopPropagation(); say(text); });
+  b.querySelector('.nclose').addEventListener('click', e=>{ e.stopPropagation(); notice(''); }); }
 // keeps the phone awake through a long export; quietly does nothing where unsupported
 let wakeLock=null;
 async function stayAwake(on){ try { if (on && !wakeLock && navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen');
@@ -774,7 +785,8 @@ async function openScan(file){
   S.picks=[]; S.labels=[]; S.faces=[]; S.faceMask=null; S.rollAuto=0; S.roll=0; S.compCache=null;
   S.target=[0,0,-L.D]; S.refDist=L.D; S.pivot=S.target.slice(); S.pan=[0,0,0]; S.userMoved=false;
   if (!sc.hasColour && (P.colour==='photo'||P.colour==='muted')){ S.colourBeforeScan=P.colour; P.colour='height'; }
-  if (LOOKS[look].splat && (!sc.splats || LOOKS[look].mix)){ look='void'; LOOK_KEYS.forEach(k=>{ P[k]=LOOKS.void[k]; }); }
+  if (LOOKS[look].splat && (!sc.splats || LOOKS[look].mix)){ look='void'; S.activeMine=null; LOOK_KEYS.forEach(k=>{ P[k]=LOOKS.void[k]; }); }
+  if (FX_NEEDS_SPLATS.has(S.fx) && !sc.splats) S.fx='none';
   const Lk=LOOKS[look]; S.yaw=Lk.yaw; S.pitch=Math.max(Lk.pitch, 12); S.zoom=Lk.zoom;
   invalidateCompare(); $('#compareBtn').hidden = true;
   busy(null); banner(''); notice(`Opened a 3D scan: ${sc.n.toLocaleString()} points${L.levelled ? ', levelled on its floor' : ''}.`);
@@ -1789,7 +1801,7 @@ cv.addEventListener('webglcontextrestored', ()=>{ if (initGL()){ if (S.cpu) uplo
 const SPLAT_VS = `#version 300 es
 precision highp float; precision highp int;
 uniform highp usampler2D uData; uniform mat4 uProj, uView; uniform vec2 uFocal, uVp, uR;
-uniform float uCovK, uExposure, uOrbit, uFxT, uTime, uLin, uFxK; uniform int uFx, uMix;
+uniform float uCovK, uExposure, uOrbit, uFxT, uTime, uLin, uFxK, uFocus; uniform int uFx, uMix;
 layout(location=0) in vec2 aCorner; layout(location=1) in uint aIndex;
 out vec4 vCol; out vec2 vPos;
 float hsh(float n){ return fract(sin(n*12.9898+4.1)*43758.5453); }
@@ -1831,6 +1843,7 @@ void main(){
   gl_Position = vec4(clip.xy/clip.w + (aCorner.x*e1 + aCorner.y*e2)*2./uVp, 0., 1.);
   vPos = aCorner*3.;
   vec3 rgb = col.rgb*uExposure;
+  if(uFocus > .5 && !subj) rgb *= .22;                          // Subject tab: everything else steps back, as it does for dots
   if(uFx==1){ float e = 1.-smoothstep(0., .02+.025*uFxK, abs(r-uFxT*1.15)); rgb = mix(rgb, vec3(.55,1.,.9), e*min(.8,.65*uFxK)); }   // the beam's edge
   if(uLin > .5) rgb = pow(max(rgb,0.), vec3(2.2));
   vCol = vec4(rgb, col.a);
@@ -1923,10 +1936,12 @@ function drawSplats(W, H, V, Pm, o, lin, fxK=1){
   const u = G.SP.u; gl.useProgram(G.SP.p);
   gl.uniformMatrix4fv(u.uProj,false,Pm); gl.uniformMatrix4fv(u.uView,false,V);
   gl.uniform2f(u.uFocal, Pm[0]*W/2, Pm[5]*H/2); gl.uniform2f(u.uVp, W, H); gl.uniform2f(u.uR, S.rng[0], S.rng[1]);
-  gl.uniform1f(u.uCovK, Sg.covK); gl.uniform1f(u.uExposure, lin ? 1 : o.bright/1.25);   // next to dots the photo keeps its own exposure; Brightness is for the dots gl.uniform1f(u.uLin, 0);   // splats stay in the photo's own colour space; the final pass knows which pixels are photo
+  gl.uniform1f(u.uCovK, Sg.covK); gl.uniform1f(u.uExposure, lin ? 1 : o.bright/1.25);   // next to dots the photo keeps its own exposure; Brightness is for the dots 
+  gl.uniform1f(u.uLin, 0);     // splats stay in the photo's own colour space; the final pass knows which pixels are photo
+  
   const slid = o.thumb ? 0 : Math.hypot(S.pan[0], S.pan[1])/(S.refDist||2);
   gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8 + slid*8));
-  gl.uniform1i(u.uFx, o.splatFx||0); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, o.mix||0);
+  gl.uniform1i(u.uFx, o.splatFx||0); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, o.mix||0); gl.uniform1f(u.uFocus, o.focus && !S.scan ? 1 : 0);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, Sg.tex); gl.uniform1i(u.uData, 0);
   gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   gl.bindVertexArray(Sg.vao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, Sg.n); gl.bindVertexArray(null);
@@ -2121,16 +2136,21 @@ function poseAt(base, move, t){
 const viewBase = () => ({yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, pan:S.pan.slice()});
 
 // portion: play only the opening of the move at its real speed (a quick look when a chip is tapped)
-async function previewMove(move, secs, portion=1){
+// peek: a quick look from a chip tap, which leaves the controls free (the next tap cuts it off).
+// Stop ends any preview or video early.
+async function previewMove(move, secs, portion=1, peek=false){
   if (S.recording || !S.count) return;
   const base=viewBase(), dur=secs*1000*portion;
-  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked'); banner(portion<1 ? 'Playing the start of the move' : 'Playing the move');
+  S.recording=true; S.peeking=peek; S.stopReq=false; S.spin=false; syncSpin(); $('#recbar').hidden=false; $('#stopBtn').hidden=false;
+  if (!peek) document.body.classList.add('locked');
+  banner(portion<1 ? 'Playing the start of the move' : 'Playing the move');
   S.fxNow = S.fx||'none';
   await new Promise(res=>{ const t0=performance.now(); const step=()=>{ const el=performance.now()-t0, t=Math.min(1,el/dur)*portion;
     Object.assign(S, poseAt(base, move, t)); S.fxT=t; S.fxTime=el/1000; draw(); renderLabels(); renderPins();
-    $('#recfill').style.width=(Math.min(1,el/dur)*100)+'%'; if (el<dur) requestAnimationFrame(step); else res(); }; requestAnimationFrame(step); });
-  S.recording=false; S.fxNow='none'; $('#recbar').hidden=true; document.body.classList.remove('locked'); Object.assign(S, base); S.dirtyDraw=true; banner(modeText());
+    $('#recfill').style.width=(Math.min(1,el/dur)*100)+'%'; if (el<dur && !S.stopReq) requestAnimationFrame(step); else res(); }; requestAnimationFrame(step); });
+  S.recording=false; S.peeking=false; S.stopReq=false; S.fxNow='none'; $('#recbar').hidden=true; $('#stopBtn').hidden=true; document.body.classList.remove('locked'); Object.assign(S, base); S.dirtyDraw=true; banner(modeText());
 }
+$('#stopBtn').addEventListener('click', ()=>{ S.stopReq = true; });
 
 // Frame by frame with WebCodecs: every frame is rendered at its exact time, so a slow phone makes a
 // slower export, never a jerky video. Older browsers fall back to recording the screen in real time.
@@ -2140,7 +2160,7 @@ async function recordMove(move, secs){
   const [W,H] = exportSize(MOBILE ? 1280 : 1920, 1920);
   const rc=document.createElement('canvas'); rc.width=W; rc.height=H; const rx=rc.getContext('2d');
   const frameAt = i => { const t=(i-hold)/(frames-2*hold-1); Object.assign(S, poseAt(base, move, t)); S.fxT=Math.min(1,Math.max(0,t)); S.fxTime=i/fps; draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
-  S.recording=true; S.exporting=true; S.fxNow=S.fx||'none'; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked'); stayAwake(true);
+  S.recording=true; S.exporting=true; S.stopReq=false; S.fxNow=S.fx||'none'; S.spin=false; syncSpin(); $('#recbar').hidden=false; $('#stopBtn').hidden=false; document.body.classList.add('locked'); stayAwake(true);
   let blob=null, ext='mp4';
   try {
     let config=null;
@@ -2158,7 +2178,7 @@ async function recordMove(move, secs){
       const enc = new VideoEncoder({output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta), error:e=>{ failed=e; }});
       enc.configure(config);
       await withCanvasSize(W, H, async ()=>{
-        for (let i=0;i<frames && !failed;i++){
+        for (let i=0;i<frames && !failed && !S.stopReq;i++){
           frameAt(i);
           const vf = new VideoFrame(rc, {timestamp:Math.round(i*1e6/fps), duration:Math.round(1e6/fps)});
           enc.encode(vf, {keyFrame: i%60===0}); vf.close();
@@ -2183,8 +2203,9 @@ async function recordMove(move, secs){
       await new Promise(r=>{ rec.onstop=r; rec.stop(); });
       blob = new Blob(chunks, {type:mime.split(';')[0]});
     }
-  } catch(err){ console.error(err); banner(String(err.message||err)); }
-  S.recording=false; S.exporting=false; S.fxNow='none'; $('#recbar').hidden=true; document.body.classList.remove('locked'); stayAwake(false); Object.assign(S, base); S.dirtyDraw=true;
+  } catch(err){ console.error(err); notice('The video could not be made: '+String(err.message||err)); }
+  const stopped = S.stopReq; if (stopped){ blob=null; notice('Stopped. No video was saved.'); }
+  S.recording=false; S.exporting=false; S.stopReq=false; S.fxNow='none'; $('#recbar').hidden=true; $('#stopBtn').hidden=true; document.body.classList.remove('locked'); stayAwake(false); Object.assign(S, base); S.dirtyDraw=true;
   if (blob){ banner(modeText()); showSheet(URL.createObjectURL(blob), 'video', 'first-return.'+ext, blob); }
 }
 
@@ -2285,12 +2306,12 @@ const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&
 
 // ---------------------------------------------------------------- undo
 let undoArmed = true;
-function snapshot(){ return {P:{...P}, look, picks:S.picks.map(p=>({...p})), band:S.band, shape:S.shape, level:S.level}; }
+function snapshot(){ return {P:{...P}, look, activeMine:S.activeMine, picks:S.picks.map(p=>({...p})), band:S.band, shape:S.shape, level:S.level}; }
 function pushUndo(){ if (!undoArmed) return; S.undo.push(snapshot()); if (S.undo.length>40) S.undo.shift(); undoArmed=false; }
 function commit(){ undoArmed = true; persist(); renderTray(); }
 function undo(){
   const s = S.undo.pop(); if (!s) return;
-  Object.assign(P, s.P); look=s.look; S.picks=s.picks; S.band=s.band;
+  Object.assign(P, s.P); look=s.look; S.activeMine=s.activeMine||null; S.picks=s.picks; S.band=s.band;
   if (s.shape!==S.shape){ S.shape=s.shape; layout(); }
   if (s.level!==S.level){ S.level=s.level; S.roll = S.level ? S.rollAuto : 0; }
   S.dirtyBuild=true; undoArmed=true; persist(); renderTray(); banner(modeText());
@@ -2300,11 +2321,13 @@ function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activ
 function myLooks(){ const v=recall('myLooks'); return Array.isArray(v) ? v : []; }
 function saveMyLooks(list){ store('myLooks', list); }
 function activePreset(){ const m = S.activeMine && myLooks().find(x=>x.id===S.activeMine); return m ? {...LOOKS[m.base], ...m.values, name:m.name} : LOOKS[look]; }
-function applyMine(id){
+function applyMine(id, keepView){
   const m = myLooks().find(x=>x.id===id); if (!m || !LOOKS[m.base]) return;
+  if (!lookAvailable(m.base)){ notice(`"${m.name}" is based on ${LOOKS[m.base].name}, which needs ${S.scan ? 'a photo' : 'splats'}.`); return; }
   pushUndo(); look=m.base; const L=LOOKS[look];
   LOOK_KEYS.forEach(k=>{ P[k] = m.values[k]!=null ? m.values[k] : L[k]; });
-  S.activeMine=id; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pan=[0,0,0]; S.userMoved=false; S.home=null; S.reframe = L.bgTint>0 && !S.isSample && !S.scan;
+  S.activeMine=id;
+  if (!keepView){ S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pan=[0,0,0]; S.userMoved=false; S.home=null; S.reframe = L.bgTint>0 && !S.isSample && !S.scan; }
   S.dirtyBuild=true; commit(); viewButton();
 }
 function saveCurrentLook(name){
@@ -2340,7 +2363,7 @@ async function importLooks(file){
 function isCustom(){ const L=activePreset(); return LOOK_KEYS.some(k=>typeof L[k]==='number' ? Math.abs(L[k]-P[k])>0.02 : L[k]!==P[k]); }
 
 function applyLook(name, keepView){
-  if (keepView && S.activeMine){ applyMine(S.activeMine); P.light = S.lightAuto; S.dirtyBuild=true; commit(); return; }   // Reset look returns to the saved look
+  if (keepView && S.activeMine){ applyMine(S.activeMine, true); P.light = S.lightAuto; S.dirtyBuild=true; commit(); return; }   // Reset look returns to the saved look, view kept
   pushUndo(); look=name; const L=LOOKS[name]; S.activeMine=null;
   LOOK_KEYS.forEach(k=>{ P[k]=L[k]; });
   if (keepView) P.light = S.lightAuto;          // Reset look also returns Light to what the photo needed
@@ -2359,7 +2382,6 @@ function setTab(t){
   if (t) store('tab', t);
 }
 document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click', ()=>{ notice(''); setTab(b.dataset.tab); }));
-$('#tray').addEventListener('click', ()=>notice(''), true);
 
 function modeText(){
   if (S.placing==='face') return 'Tap a face to cover it.';
@@ -2374,12 +2396,13 @@ function renderTray(){
   if (S.tab==='look'){
     const mine = myLooks(), custom = isCustom();
     tr.innerHTML = `<h3>Look ${custom?'<span class="chip" style="padding:3px 8px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent);border-color:var(--accent)">Changed</span>':''}<span class="sp"></span></h3>
-      <div class="looks">${Object.entries(LOOKS).filter(([k])=>lookAvailable(k)).map(([k,L])=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${L.name}</b></button>`).join('')}</div>
-      ${LOOKS[look].splat && !LOOKS[look].mix ? '' : `<h3 style="margin-top:12px">Dot pattern</h3>
-      <div class="scroller pats">${CTRL.pattern.chips.map(([v,n])=>`<button class="chip pat" data-pat="${v}" aria-pressed="${P.pattern===v}" ${S.scan?'disabled':''}>${PAT_ICON[v]}${n}</button>`).join('')}</div>${S.scan?'<p class="hint" style="margin:4px 0 0">A 3D scan keeps the points it measured, so the pattern applies to photos only.</p>':''}`}
+      ${[['Dots', k=>!LOOKS[k].splat], ['Photo', k=>LOOKS[k].splat]].map(([title, test])=>{ const ks=Object.keys(LOOKS).filter(k=>test(k) && lookAvailable(k)); return ks.length ? `<p class="rowlabel">${title}</p><div class="looks">${ks.map(k=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${LOOKS[k].name}</b></button>`).join('')}</div>` : ''; }).join('')}
+      <p class="hint">${sayBtn(LOOK_HINT[look]||'')}<span>${LOOK_HINT[look]||''}</span></p>
+      ${(LOOKS[look].splat && !LOOKS[look].mix) || S.scan ? '' : `<h3 style="margin-top:12px">Dot pattern</h3>
+      <div class="scroller pats">${CTRL.pattern.chips.map(([v,n])=>`<button class="chip pat" data-pat="${v}" aria-pressed="${P.pattern===v}">${PAT_ICON[v]}${n}</button>`).join('')}</div>`}
       <div class="sect row"><button class="chip" id="resetLook" ${custom?'':'disabled'}>Reset look</button>${undoBtn}</div>
       <div class="sect"><h3>My looks</h3>
-        ${mine.length ? `<div class="looks">${mine.map(m=>`<div class="look mine" aria-pressed="${S.activeMine===m.id}"><button class="lookpick" data-mine="${m.id}" aria-label="Use ${esc(m.name)}"><canvas id="thumb-${m.id}" width="208" height="156"></canvas><b>${esc(m.name)}</b></button><button class="lookdel" data-delmine="${m.id}" aria-label="Remove ${esc(m.name)}">&#x2715;</button></div>`).join('')}</div>` : '<p class="hint" style="margin:0 0 8px">Change anything, then save it here to use again on other photos.</p>'}
+        ${mine.length ? `<div class="looks">${mine.map(m=>`<div class="look mine" aria-pressed="${S.activeMine===m.id}"><button class="lookpick" data-mine="${m.id}" aria-label="Use ${esc(m.name)}" ${lookAvailable(m.base)?'':'disabled'}><canvas id="thumb-${m.id}" width="208" height="156"></canvas><b>${esc(m.name)}</b>${lookAvailable(m.base)?'':'<small>Needs a photo</small>'}</button><button class="lookdel" data-delmine="${m.id}" aria-label="Remove ${esc(m.name)}">&#x2715;</button></div>`).join('')}</div>` : `<p class="hint" style="margin:0 0 8px">${sayBtn('Change anything, then save it here to use again on other photos.')}<span>Change anything, then save it here to use again on other photos.</span></p>`}
         ${S.savingLook ? `<div class="row" style="margin-top:8px"><input id="lookName" class="nameinput" value="My look ${mine.length+1}" aria-label="Name for this look" maxlength="40"><button class="btn primary" id="saveLookOk">Save</button><button class="btn" id="saveLookNo">Cancel</button></div>`
           : `<div class="row" style="margin-top:8px"><button class="chip" id="saveLook">Save this look</button><button class="chip" id="shareLooks" ${mine.length?'':'disabled'}>Share looks</button><button class="chip" id="loadLooks">Load looks</button>${S.lastRemoved?`<button class="chip" id="bringBack">Bring back ${esc(S.lastRemoved.m.name)}</button>`:''}</div>`}
       </div>`;
@@ -2413,8 +2436,10 @@ function renderTray(){
       body = `<div class="scroller" style="margin-top:12px">${c.chips.map(([v,n])=>`<button class="chip ${activePreset()[c.key]===v?'def':''}" data-choice="${v}" aria-pressed="${P[c.key]===v}">${n}</button>`).join('')}</div>`;
     } else {
       const def = c.key==='light' ? S.lightAuto : Math.round(activePreset()[c.key]);
-      body = `<div class="stepper"><input type="range" id="ctl" min="0" max="${c.stops.length-1}" step="0.05" value="${P[c.key]}" aria-label="${c.name}">
-        <div class="stops">${c.stops.map(([n],i)=>`<button data-stop="${i}" aria-current="${Math.abs(P[c.key]-i)<0.15}" class="${i===def?'def':''}">${n}${i===def?(c.key==='light'?' (auto)':' ·'):''}</button>`).join('')}</div></div>`;
+      // splats have no backs to fill, so Hidden parts is Off or On there
+      const stops = c.key==='hidden' && LOOKS[look].splat ? [['Off',0],['On',1]] : c.stops;
+      body = `<div class="stepper"><input type="range" id="ctl" min="0" max="${stops.length-1}" step="0.05" value="${Math.min(P[c.key], stops.length-1)}" aria-label="${c.name}">
+        <div class="stops">${stops.map(([n],i)=>`<button data-stop="${i}" aria-current="${Math.abs(P[c.key]-i)<0.15}" class="${i===def?'def':''}">${n}${i===def?(c.key==='light'?' (auto)':' ·'):''}</button>`).join('')}</div></div>`;
     }
     const note = c.key==='floor' && !S.hasFloor && !S.scan ? ' This photo has no floor, so moving this adds one.' : '';
     tr.innerHTML = `${groupRow()}
@@ -2437,13 +2462,15 @@ function renderTray(){
   }
   else if (S.tab==='subject'){
     const outlined = S.sharp || S.picks.some(p=>p.seg);
-    tr.innerHTML = `<p class="hint" style="margin:0 0 10px">${sayBtn('Tap Find to look for people and things, or tap the thing that matters in the picture. It becomes the subject, even if something else is nearer.')}<span>Tap Find, or tap the thing that matters. It becomes the subject even if something else is nearer.</span></p>
+    const sHint = LOOKS[look].splat && !LOOKS[look].mix ? 'In Photoreal the subject shows only while this tab is open. It shapes Real subject and Real setting, and every dot look.' : 'Tap Find, or tap the thing that matters. It becomes the subject even if something else is nearer.';
+    const sHint2 = outlined ? 'Outlines come from an outline finder, part of the 23 MB finder download.' : 'Tighter keeps only what sits at the same depth as your tap. Looser takes in more.';
+    tr.innerHTML = `<p class="hint" style="margin:0 0 10px">${sayBtn(sHint)}<span>${sHint}</span></p>
       <div class="row" style="margin-bottom:10px"><button class="btn primary" id="findThings">Find people and things</button></div>
       ${S.picks.length ? `<div class="scroller" style="margin-bottom:8px">${S.picks.map((p,i)=>`<button class="chip" data-unpick="${i}" aria-label="Remove ${esc(pickName(p,i))}">${esc(pickName(p,i))} &#x2715;</button>`).join('')}</div>` : ''}
       <div class="scroller"><button class="chip" id="autoSub" aria-pressed="${!S.picks.length}">Nearest things</button>
       ${['Tighter','Normal','Looser'].map((n,i)=>`<button class="chip" data-band="${i}" aria-pressed="${S.band===i}">${n}</button>`).join('')}
       <button class="chip" id="sharp" aria-pressed="${outlined}">Sharper outline</button>${undoBtn}</div>
-      <p class="hint">${outlined?'Outlines come from an outline finder (part of the 23 MB finder download).':'Tighter keeps only what sits at the same depth as your tap. Looser takes in more.'}</p>`;
+      <p class="hint">${sayBtn(sHint2)}<span>${sHint2}</span></p>`;
     $('#autoSub').addEventListener('click',()=>{ pushUndo(); S.picks=[]; S.dirtyBuild=true; S.reframe=true; commit(); banner(modeText()); });
     tr.querySelectorAll('[data-unpick]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); S.picks.splice(+b.dataset.unpick,1); S.dirtyBuild=true; S.reframe=true; commit(); banner(modeText()); }));
     $('#findThings').addEventListener('click', async ()=>{
@@ -2461,43 +2488,47 @@ function renderTray(){
   }
   else if (S.tab==='move'){
     const mv = S.move||'push', len = S.moveLen||6;
-    const fx = FX.find(f=>f[0]===(S.fx||'none')) || FX[0], st = S.strength||'gentle', fxs = FX.filter(([v])=>!FX_NEEDS_SPLATS.has(v)||hasSplats());
-    const moveHint = 'The move starts from the view on screen, so line it up first. '+fx[2];
+    const fxs = FX.filter(([v])=>!FX_NEEDS_SPLATS.has(v)||hasSplats()); if (!fxs.some(f=>f[0]===S.fx)) S.fx='none';
+    const fx = FX.find(f=>f[0]===S.fx) || FX[0], st = S.strength||'gentle';
+    const moveHint = fx[2]+' The move starts from the view on screen.';
     tr.innerHTML = `<h3>Move</h3><div class="scroller">${MOVE_NAMES.map(([v,n])=>`<button class="chip" data-move="${v}" aria-pressed="${mv===v}">${n}</button>`).join('')}</div>
       <h3 style="margin-top:10px">Effect</h3><div class="scroller">${fxs.map(([v,n])=>`<button class="chip" data-fx="${v}" aria-pressed="${fx[0]===v}">${n}</button>`).join('')}</div>
-      <h3 style="margin-top:10px">Strength and length</h3>
-      <div class="scroller">${STRENGTH.map(([v,n])=>`<button class="chip" data-strength="${v}" aria-pressed="${st===v}">${n}</button>`).join('')}<span class="chipgap"></span>${MOVE_LENGTHS.map(s=>`<button class="chip" data-len="${s}" aria-pressed="${len===s}">${s} s</button>`).join('')}</div>
-      <p class="hint">${sayBtn(moveHint)}<span>${fx[2]}</span></p>
-      <div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button></div>`;
+      <h3 style="margin-top:10px">Strength</h3>
+      <div class="scroller">${STRENGTH.map(([v,n])=>`<button class="chip" data-strength="${v}" aria-pressed="${st===v}">${n}</button>`).join('')}</div>
+      <p class="hint">${sayBtn(moveHint)}<span>${moveHint}</span></p>
+      <div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button><button class="chip" id="lenChip" aria-label="Length ${len} seconds, tap to change">Length ${len} s</button></div>`;
     // a tapped chip plays the opening of the real move at its real speed
-    const peek = () => previewMove(S.move||'push', S.moveLen||6, Math.min(1, 4/(S.moveLen||6)));
+    // a new tap cuts off the look still playing, so trying options never means waiting
+    const peek = async () => { if (S.peeking){ S.stopReq=true; await S.playP; } S.playP = previewMove(S.move||'push', S.moveLen||6, Math.min(1, 4/(S.moveLen||6)), true); };
     tr.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>{ S.move=b.dataset.move; persist(); renderTray(); peek(); }));
-    tr.querySelectorAll('[data-len]').forEach(b=>b.addEventListener('click',()=>{ S.moveLen=+b.dataset.len; persist(); renderTray(); }));
+    $('#lenChip').addEventListener('click',()=>{ const i=MOVE_LENGTHS.indexOf(S.moveLen||6); S.moveLen=MOVE_LENGTHS[(i+1)%MOVE_LENGTHS.length]; persist(); renderTray(); });
     tr.querySelectorAll('[data-strength]').forEach(b=>b.addEventListener('click',()=>{ S.strength=b.dataset.strength; persist(); renderTray(); peek(); }));
     tr.querySelectorAll('[data-fx]').forEach(b=>b.addEventListener('click',()=>{ S.fx=b.dataset.fx; persist(); renderTray(); if (S.fx!=='none') peek(); }));
-    $('#playMove').addEventListener('click',()=>previewMove(S.move||'push', S.moveLen||6));
-    $('#recMove').addEventListener('click',()=>recordMove(S.move||'push', S.moveLen||6));
+    $('#playMove').addEventListener('click',async ()=>{ if (S.peeking){ S.stopReq=true; await S.playP; } previewMove(S.move||'push', S.moveLen||6); });
+    $('#recMove').addEventListener('click',async ()=>{ if (S.peeking){ S.stopReq=true; await S.playP; } recordMove(S.move||'push', S.moveLen||6); });
   }
   else if (S.tab==='people'){
     const auto=S.faces.filter(f=>f.auto).length, hand=S.faces.length-auto;
     const status = !S.anon ? 'Faces are shown as they are.' : `${auto?`Found ${auto} face${auto===1?'':'s'}.`:'No faces found by itself.'}${hand?` ${hand} covered by hand.`:''}`;
-    tr.innerHTML = S.scan ? `<p class="hint" style="margin:0 0 10px"><span>Faces can only be found in photos.</span></p><div class="sect"><h3>Names</h3><div class="row"><button class="chip" id="addLabel" aria-pressed="${S.placing==='label'}">+ Name</button></div>
-      <div class="lablist">${S.labels.map((L,i)=>`<div><input id="label-${i}" value="${esc(L.text)}" placeholder="Name" aria-label="Name"><button class="chip" data-del="${i}">Remove</button></div>`).join('')}</div></div>` : `<h3>Faces</h3>
+    const pHint = status+(S.anon&&S.anonLevel===0?' Light only blurs, which can sometimes be undone.':' Hair, clothes and the setting can still identify someone.');
+    const nameRows = S.labels.map((L,i)=>`<div><input id="label-${i}" value="${esc(L.text)}" placeholder="Name" aria-label="Name ${i+1}"><button class="chip" data-del="${i}" aria-label="Remove name ${i+1}">Remove</button></div>`).join('');
+    tr.innerHTML = S.scan ? `<p class="hint" style="margin:0 0 10px">${sayBtn('Faces can only be found in photos. Names work on scans too.')}<span>Faces can only be found in photos. Names work on scans too.</span></p><div class="sect"><h3>Names</h3><div class="row"><button class="chip" id="addLabel" aria-pressed="${S.placing==='label'}">+ Name</button></div>
+      <div class="lablist">${nameRows}</div></div>` : `<h3>Faces</h3>
       <div class="scroller"><button class="chip" id="anon" aria-pressed="${S.anon}">Hide faces</button>
       ${['Light','Medium','Strong'].map((n,i)=>`<button class="chip" data-level="${i}" aria-pressed="${S.anon&&S.anonLevel===i}">${n}</button>`).join('')}
       <button class="chip" id="addFace" aria-pressed="${S.placing==='face'}">+ Face</button>${S.faces.length?'<button class="chip" id="clearFaces">Clear</button>':''}</div>
-      <p class="hint">${sayBtn(status+' Medium and Strong fill each face with a flat colour. Light only blurs, and a blur can sometimes be undone. Hair, clothes and the setting can still identify someone.')}<span>${status}${S.anon&&S.anonLevel===0?' Light only blurs, which can sometimes be undone.':''}</span></p>
+      <p class="hint">${sayBtn(pHint)}<span>${pHint}</span></p>
       <div class="sect"><h3>Names</h3><div class="row"><button class="chip" id="addLabel" aria-pressed="${S.placing==='label'}">+ Name</button></div>
-      <div class="lablist">${S.labels.map((L,i)=>`<div><input id="label-${i}" value="${esc(L.text)}" placeholder="Name" aria-label="Name"><button class="chip" data-del="${i}">Remove</button></div>`).join('')}</div></div>`;
-    if ($('#anon')) $('#anon').addEventListener('click', async ()=>{ S.anon=!S.anon; if (S.anon && !S.facesFound) await findFaces(); applyAnon(); invalidateCompare(); renderTray(); });
-    tr.querySelectorAll('[data-level]').forEach(b=>b.addEventListener('click', async ()=>{ S.anonLevel=+b.dataset.level; if (!S.anon){ S.anon=true; if (!S.facesFound) await findFaces(); } applyAnon(); invalidateCompare(); renderTray(); }));
+      <div class="lablist">${nameRows}</div></div>`;
+    if ($('#anon')) $('#anon').addEventListener('click', async ()=>{ S.anon=!S.anon; if (S.anon && !S.facesFound) await findFaces(); applyAnon(); invalidateCompare(); queueThumbs(); renderTray(); });
+    tr.querySelectorAll('[data-level]').forEach(b=>b.addEventListener('click', async ()=>{ S.anonLevel=+b.dataset.level; if (!S.anon){ S.anon=true; if (!S.facesFound) await findFaces(); } applyAnon(); invalidateCompare(); queueThumbs(); renderTray(); }));
     if ($('#addFace')) $('#addFace').addEventListener('click',()=>setPlacing('face'));
-    const cf=$('#clearFaces'); if (cf) cf.addEventListener('click',()=>{ S.faces=[]; S.facesFound=false; S.anon=false; applyAnon(); invalidateCompare(); renderTray(); });
+    const cf=$('#clearFaces'); if (cf) cf.addEventListener('click',()=>{ S.faces=[]; S.facesFound=false; S.anon=false; applyAnon(); invalidateCompare(); queueThumbs(); renderTray(); });
     $('#addLabel').addEventListener('click',()=>setPlacing('label'));
     S.labels.forEach((L,i)=>{ $('#label-'+i).addEventListener('input',e=>{ L.text=e.target.value; S.dirtyDraw=true; }); });
     tr.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{ S.labels.splice(+b.dataset.del,1); renderTray(); S.dirtyDraw=true; }));
   }
-  if (S.tab==='adjust') tr.querySelectorAll('.scroller [aria-pressed="true"]').forEach(b=>{ const sc=b.parentElement; sc.scrollLeft = b.offsetLeft - sc.clientWidth/2 + b.offsetWidth/2; });
+  tr.querySelectorAll('.scroller [aria-pressed="true"], .looks [aria-pressed="true"]').forEach(b=>{ const sc=b.parentElement; sc.scrollLeft = b.offsetLeft - sc.clientWidth/2 + b.offsetWidth/2; });
   const u=$('#undoBtn'); if (u) u.addEventListener('click', undo);
   tr.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say)));
 }
@@ -2507,6 +2538,14 @@ function afterPlacing(){ if (S.tab!=='people') setTab('people'); else { $('#stag
 function setPlacing(kind){ S.placing = S.placing===kind ? false : kind; $('#stage').classList.toggle('picking', !!S.placing || S.tab==='subject');
   renderTray(); banner(modeText()); renderPins(); }
 const SPLAT_KEYS = ['bright','glow','depth3d','hidden'];
+const LOOK_HINT = {
+  void:'Void: the subject in true colour on a black stage, with a faint backdrop and floor.',
+  sparse:'Sparse: fewer, bigger, glowing dots, muted colour.',
+  scanner:'Scanner: rings like a spinning lidar, coloured by distance, seen from above.',
+  survey:'Survey: a dense scan coloured by height, with outlines.',
+  real:'Photoreal: the photo itself in 3D, made of soft splats. Turn the view to see its depth.',
+  psub:'Real subject: the people or things you picked as the real photo, on the stage of dots.',
+  pworld:'Real setting: everything around the subject as the real photo, the subject as dots.'};
 // Photoreal needs splats; the mixed looks also need a subject, so not scans
 function lookAvailable(k){ const L=LOOKS[k]; return !L.splat || (hasSplats() && (!L.mix || !S.scan)); }
 function groupKeys(g){ const G=GROUPS.find(x=>x.id===g)||GROUPS[0]; return G.keys.filter(k=>!(S.scan && (k==='depth3d'||k==='light'||k==='hidden'||k==='floor')) && (!LOOKS[look].splat || LOOKS[look].mix || SPLAT_KEYS.includes(k))); }
@@ -2522,17 +2561,17 @@ function renderAdvanced(tr){
   const row = (id, label, min, max, step, v, out, auto) => `<div class="advrow"><label for="${id}">${label}</label><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${v}"><output id="${id}Out">${out}</output>${auto?`<button class="chip small" data-auto="${id}">Auto</button>`:'<span></span>'}</div>`;
   tr.innerHTML = `${groupRow()}
     <div class="sect"><h3>Show</h3><div class="scroller">${[['result','The result'],['depth','Depth map'],['masks','Subject and floors']].map(([v,n])=>`<button class="chip" data-dbg="${v}" aria-pressed="${S.dbg===v}" ${S.scan&&v!=='result'?'disabled':''}>${n}</button>`).join('')}</div>
-      ${S.dbg==='masks'?'<p class="hint">Yellow is the subject. Blue, cyan and violet are floors that were fitted; green is other ground facing up.</p>':S.dbg==='depth'?'<p class="hint">Light is near, dark is far.</p>':''}</div>
+      ${(h=>h?`<p class="hint">${sayBtn(h)}<span>${h}</span></p>`:'')(S.dbg==='masks'?'Yellow is the subject. Blue, cyan and violet are floors that were fitted. Green is other ground facing up.':S.dbg==='depth'?'Light is near, dark is far.':'')}</div>
     <div class="sect"><h3>Camera and depth</h3>
       ${row('advFov','View angle',20,110,1,fov.toFixed(0),fov.toFixed(0)+'°',!!A.fov)}
       ${S.scan?'':row('advRatio','Far vs near',0,100,1,ratioPos.toFixed(0),ratio.toFixed(1)+'x',!!A.ratio)}
       ${S.scan?'':row('advRoll','Tilt',-12,12,0.1,roll.toFixed(1),roll.toFixed(1)+'°',A.roll!=null)}
     </div>
-    ${S.scan ? '' : `<div class="sect"><h3>Scanner</h3>
-      ${P.pattern==='rings' ? row('advBeams','Beams',16,256,1,beams,beams,!!A.beams) : '<p class="hint">Beams applies to the Scan rings pattern (Look tab).</p>'}
+    ${S.scan || (LOOKS[look].splat && !LOOKS[look].mix) ? '' : `<div class="sect"><h3>Scanner</h3>
+      ${P.pattern==='rings' ? row('advBeams','Beams',16,256,1,beams,beams,!!A.beams) : '<p class="hint">Beams applies to the Scan rings pattern, on the Look tab.</p>'}
       ${row('advNoise','Range noise',0,4,0.1,A.noise,A.noise.toFixed(1)+'x',A.noise!==1)}
     </div>`}
-    <p class="hint">Picture size is in the Save menu.</p>`;
+    <p class="hint">${sayBtn('Picture size is in the Save menu.')}<span>Picture size is in the Save menu.</span></p>`;
   wireGroupRow(tr);
   tr.querySelectorAll('[data-dbg]').forEach(b=>b.addEventListener('click',()=>{ S.dbg=b.dataset.dbg; renderTray(); showDebug(); }));
   const on = (id, fn) => { const el=$('#'+id); if (el) el.addEventListener('input', ()=>fn(+el.value, $('#'+id+'Out'))); };
@@ -2571,6 +2610,7 @@ let thumbsFor = null, thumbJob = 0;
 function queueThumbs(){ thumbsFor = null; const job=++thumbJob; setTimeout(()=>makeThumbs(job), 400); }
 function makeThumbs(job){
   if (job!==thumbJob) return;
+  if (S.recording){ setTimeout(()=>makeThumbs(job), 500); return; }     // re-sorting splats mid-move would flicker
   if (!gl || !G || !S.photo || (!S.compMap && !S.scan) || S.dirtyBuild){ setTimeout(()=>makeThumbs(job), 300); return; }
   const mine = myLooks(), keys = Object.keys(LOOKS).filter(lookAvailable).concat(mine.map(m=>m.id)); const out = {};
   const next = i => {
@@ -2673,7 +2713,7 @@ async function onTap(cx, cy){
     }
     S.dirtyBuild=true; S.reframe=true; commit(); banner(modeText()); return;
   }
-  if (S.placing==='face'){ const p=pickPoint(cx,cy); if (!p) return; addFaceAt(p.u, p.v, p.comp); invalidateCompare(); S.placing=false; afterPlacing(); return; }
+  if (S.placing==='face'){ const p=pickPoint(cx,cy); if (!p) return; addFaceAt(p.u, p.v, p.comp); invalidateCompare(); queueThumbs(); S.placing=false; afterPlacing(); return; }
   if (S.placing==='label'){ const p=pickPoint(cx,cy); if (!p) return;
     if (S.scan){ const L={fixed:[p.p[0], p.p[1]+0.06*S.refDist, p.p[2]], text:''}; L.pos=L.fixed; S.labels.push(L); S.placing=false; afterPlacing();
       markNewName(); S.dirtyDraw=true; return; }
@@ -2723,7 +2763,7 @@ function centreOn(p){
 const ptrs=new Map(); let pinch0=0, zoom0=1, moved=0, lastTap=0, mid0=null, panDrag=false, didPan=false;
 const midOf = () => { const v=[...ptrs.values()]; return [(v[0].x+v[1].x)/2, (v[0].y+v[1].y)/2]; };
 cv.addEventListener('contextmenu', e=>e.preventDefault());
-cv.addEventListener('pointerdown', e=>{ notice(''); try { cv.setPointerCapture(e.pointerId); } catch(err){} if (!ptrs.size) didPan=false; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); moved=0; glide++;
+cv.addEventListener('pointerdown', e=>{ try { cv.setPointerCapture(e.pointerId); } catch(err){} if (!ptrs.size) didPan=false; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); moved=0; glide++;
   // pan with the Pan button on, a right or middle mouse button, or Shift held
   panDrag = S.panMode || e.button===1 || e.button===2 || e.shiftKey;
   if (ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch0=Math.hypot(a.x-b.x,a.y-b.y); zoom0=S.zoom; mid0=midOf(); } });
@@ -2806,7 +2846,7 @@ function menu(btn, id, items){
   const m=$(id), open=m.hidden;
   document.querySelectorAll('.menu').forEach(x=>x.hidden=true); document.querySelectorAll('.tb[aria-haspopup]').forEach(b=>b.setAttribute('aria-expanded','false'));
   if (!open) return;
-  m.innerHTML = items.map(([v,n,sub,on])=>`<button data-v="${v}" aria-pressed="${!!on}">${n}${sub?`<small>${sub}</small>`:''}</button>`).join('');
+  m.innerHTML = items.map(([v,n,sub,on])=>`<button data-v="${v}"${typeof on==='boolean' ? ` aria-pressed="${on}"` : ''}>${n}${sub?`<small>${sub}</small>`:''}</button>`).join('');
   const r=btn.getBoundingClientRect(); m.style.top=(r.bottom+6)+'px'; m.style.left=Math.max(8,Math.min(innerWidth-210, r.left-60))+'px';
   m.hidden=false; btn.setAttribute('aria-expanded','true');
   return m;
@@ -2817,10 +2857,8 @@ $('#openBtn').addEventListener('click', e=>{ e.stopPropagation();
     (b.dataset.v==='scan' ? $('#fileScan') : $('#file')).click(); })); });
 $('#shapeBtn').addEventListener('click', e=>{ e.stopPropagation();
   const items=[['photo','Same as the photo','',S.shape==='photo'],['wide','Wide','16 by 9',S.shape==='wide'],['square','Square','',S.shape==='square'],['tall','Tall','9 by 16, for stories',S.shape==='tall']];
-  if (S.rollAuto) items.push(['level', S.level ? 'Straightened' : 'Straighten', S.level ? `Tilted ${(Math.abs(S.rollAuto)*180/Math.PI).toFixed(1)}°, levelled from its upright edges. Tap to undo.` : `Tilted ${(Math.abs(S.rollAuto)*180/Math.PI).toFixed(1)}°. Tap to level it.`, S.level]);
   const m=menu($('#shapeBtn'), '#shapeMenu', items);
   if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ m.hidden=true; $('#shapeBtn').setAttribute('aria-expanded','false');
-    if (b.dataset.v==='level'){ pushUndo(); S.level=!S.level; S.roll = S.level ? S.rollAuto : 0; S.dirtyDraw=true; commit(); return; }
     pushUndo(); S.shape=b.dataset.v; commit(); layout(); })); });
 const PIC_SIZES = [null, 1080, 2048, 2880, 4096];
 // Effects play over a camera move, in preview and in the video.
@@ -2837,13 +2875,16 @@ const MOVE_LENGTHS = [4, 6, 10, 20, 30];
 $('#saveBtn').addEventListener('click', e=>{ e.stopPropagation();
   const px = S.adv.exportLong || (MOBILE ? 2048 : 2880);
   const m=menu($('#saveBtn'), '#saveMenu', [['png','Picture',`PNG, ${px} pixels on the long side`],
-    ['size', `Picture size: ${S.adv.exportLong || 'Auto'}`, 'Tap to change. Videos stop at 1920.'],
-    ['video','Video','Opens camera moves and effects'],['ply','3D points','PLY file for Blender, MeshLab'], ...(hasSplats() ? [['spz','Splat file','.spz, small, for SuperSplat and splat apps'],['splat','Splat file, full','.ply, larger, for any 3DGS tool']] : [])]);
+    ['size', `Picture size: ${S.adv.exportLong ? S.adv.exportLong+' pixels' : 'Auto'}`, 'Tap to change. Videos stop at 1920.'],
+    ['video','Video','Moves and effects, on the Move tab'],['ply','Points (.ply)','For Blender, MeshLab, CloudCompare'], ...(hasSplats() ? [['spz','Splat, small (.spz)','For SuperSplat and splat apps'],['splat','Splat, full (.ply)','Larger, for any 3DGS tool']] : [])]);
   if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',ev=>{
     if (b.dataset.v==='size'){ ev.stopPropagation(); const i=PIC_SIZES.indexOf(S.adv.exportLong); S.adv.exportLong=PIC_SIZES[(i+1)%PIC_SIZES.length]; persist();
       m.hidden=true; $('#saveBtn').click(); return; }       // reopen with the new size showing
     m.hidden=true; $('#saveBtn').setAttribute('aria-expanded','false');
-    if (b.dataset.v==='png') savePicture(); else if (b.dataset.v==='ply') savePly(); else if (b.dataset.v==='splat') saveSplatPly(); else if (b.dataset.v==='spz') saveSplatSpz(); else if (S.tab!=='move') setTab('move'); })); });
+    if (b.dataset.v==='png') savePicture(); else if (b.dataset.v==='ply') savePly(); else if (b.dataset.v==='splat') saveSplatPly(); else if (b.dataset.v==='spz') saveSplatSpz(); else if (S.tab!=='move') setTab('move'); else notice('Choose a move and an effect below, then tap Record video.'); })); });
+document.addEventListener('keydown', e=>{ if (e.key!=='Escape') return;
+  document.querySelectorAll('.menu').forEach(x=>x.hidden=true); document.querySelectorAll('.tb[aria-haspopup]').forEach(b=>b.setAttribute('aria-expanded','false'));
+  if (!$('#info').hidden) $('#info').hidden=true; if (!$('#sheet').hidden) $('#sheetClose').click(); });
 document.addEventListener('click', ()=>{ document.querySelectorAll('.menu').forEach(x=>x.hidden=true); document.querySelectorAll('.tb[aria-haspopup]').forEach(b=>b.setAttribute('aria-expanded','false')); });
 $('#infoBtn').addEventListener('click', e=>{ e.stopPropagation(); const i=$('#info'); i.hidden=!i.hidden; $('#infoBtn').setAttribute('aria-expanded', !i.hidden);
   if (!i.hidden){ const text='First Return turns a photo into a lidar style point cloud. Depth is worked out on your device, and the photo never leaves it.';

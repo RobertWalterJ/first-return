@@ -91,16 +91,21 @@ function poseAt(base, move, t){
 const viewBase = () => ({yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, pan:S.pan.slice()});
 
 // portion: play only the opening of the move at its real speed (a quick look when a chip is tapped)
-async function previewMove(move, secs, portion=1){
+// peek: a quick look from a chip tap, which leaves the controls free (the next tap cuts it off).
+// Stop ends any preview or video early.
+async function previewMove(move, secs, portion=1, peek=false){
   if (S.recording || !S.count) return;
   const base=viewBase(), dur=secs*1000*portion;
-  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked'); banner(portion<1 ? 'Playing the start of the move' : 'Playing the move');
+  S.recording=true; S.peeking=peek; S.stopReq=false; S.spin=false; syncSpin(); $('#recbar').hidden=false; $('#stopBtn').hidden=false;
+  if (!peek) document.body.classList.add('locked');
+  banner(portion<1 ? 'Playing the start of the move' : 'Playing the move');
   S.fxNow = S.fx||'none';
   await new Promise(res=>{ const t0=performance.now(); const step=()=>{ const el=performance.now()-t0, t=Math.min(1,el/dur)*portion;
     Object.assign(S, poseAt(base, move, t)); S.fxT=t; S.fxTime=el/1000; draw(); renderLabels(); renderPins();
-    $('#recfill').style.width=(Math.min(1,el/dur)*100)+'%'; if (el<dur) requestAnimationFrame(step); else res(); }; requestAnimationFrame(step); });
-  S.recording=false; S.fxNow='none'; $('#recbar').hidden=true; document.body.classList.remove('locked'); Object.assign(S, base); S.dirtyDraw=true; banner(modeText());
+    $('#recfill').style.width=(Math.min(1,el/dur)*100)+'%'; if (el<dur && !S.stopReq) requestAnimationFrame(step); else res(); }; requestAnimationFrame(step); });
+  S.recording=false; S.peeking=false; S.stopReq=false; S.fxNow='none'; $('#recbar').hidden=true; $('#stopBtn').hidden=true; document.body.classList.remove('locked'); Object.assign(S, base); S.dirtyDraw=true; banner(modeText());
 }
+$('#stopBtn').addEventListener('click', ()=>{ S.stopReq = true; });
 
 // Frame by frame with WebCodecs: every frame is rendered at its exact time, so a slow phone makes a
 // slower export, never a jerky video. Older browsers fall back to recording the screen in real time.
@@ -110,7 +115,7 @@ async function recordMove(move, secs){
   const [W,H] = exportSize(MOBILE ? 1280 : 1920, 1920);
   const rc=document.createElement('canvas'); rc.width=W; rc.height=H; const rx=rc.getContext('2d');
   const frameAt = i => { const t=(i-hold)/(frames-2*hold-1); Object.assign(S, poseAt(base, move, t)); S.fxT=Math.min(1,Math.max(0,t)); S.fxTime=i/fps; draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
-  S.recording=true; S.exporting=true; S.fxNow=S.fx||'none'; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked'); stayAwake(true);
+  S.recording=true; S.exporting=true; S.stopReq=false; S.fxNow=S.fx||'none'; S.spin=false; syncSpin(); $('#recbar').hidden=false; $('#stopBtn').hidden=false; document.body.classList.add('locked'); stayAwake(true);
   let blob=null, ext='mp4';
   try {
     let config=null;
@@ -128,7 +133,7 @@ async function recordMove(move, secs){
       const enc = new VideoEncoder({output:(chunk,meta)=>muxer.addVideoChunk(chunk,meta), error:e=>{ failed=e; }});
       enc.configure(config);
       await withCanvasSize(W, H, async ()=>{
-        for (let i=0;i<frames && !failed;i++){
+        for (let i=0;i<frames && !failed && !S.stopReq;i++){
           frameAt(i);
           const vf = new VideoFrame(rc, {timestamp:Math.round(i*1e6/fps), duration:Math.round(1e6/fps)});
           enc.encode(vf, {keyFrame: i%60===0}); vf.close();
@@ -153,7 +158,8 @@ async function recordMove(move, secs){
       await new Promise(r=>{ rec.onstop=r; rec.stop(); });
       blob = new Blob(chunks, {type:mime.split(';')[0]});
     }
-  } catch(err){ console.error(err); banner(String(err.message||err)); }
-  S.recording=false; S.exporting=false; S.fxNow='none'; $('#recbar').hidden=true; document.body.classList.remove('locked'); stayAwake(false); Object.assign(S, base); S.dirtyDraw=true;
+  } catch(err){ console.error(err); notice('The video could not be made: '+String(err.message||err)); }
+  const stopped = S.stopReq; if (stopped){ blob=null; notice('Stopped. No video was saved.'); }
+  S.recording=false; S.exporting=false; S.stopReq=false; S.fxNow='none'; $('#recbar').hidden=true; $('#stopBtn').hidden=true; document.body.classList.remove('locked'); stayAwake(false); Object.assign(S, base); S.dirtyDraw=true;
   if (blob){ banner(modeText()); showSheet(URL.createObjectURL(blob), 'video', 'first-return.'+ext, blob); }
 }

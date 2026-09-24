@@ -11,12 +11,12 @@ const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&
 
 // ---------------------------------------------------------------- undo
 let undoArmed = true;
-function snapshot(){ return {P:{...P}, look, picks:S.picks.map(p=>({...p})), band:S.band, shape:S.shape, level:S.level}; }
+function snapshot(){ return {P:{...P}, look, activeMine:S.activeMine, picks:S.picks.map(p=>({...p})), band:S.band, shape:S.shape, level:S.level}; }
 function pushUndo(){ if (!undoArmed) return; S.undo.push(snapshot()); if (S.undo.length>40) S.undo.shift(); undoArmed=false; }
 function commit(){ undoArmed = true; persist(); renderTray(); }
 function undo(){
   const s = S.undo.pop(); if (!s) return;
-  Object.assign(P, s.P); look=s.look; S.picks=s.picks; S.band=s.band;
+  Object.assign(P, s.P); look=s.look; S.activeMine=s.activeMine||null; S.picks=s.picks; S.band=s.band;
   if (s.shape!==S.shape){ S.shape=s.shape; layout(); }
   if (s.level!==S.level){ S.level=s.level; S.roll = S.level ? S.rollAuto : 0; }
   S.dirtyBuild=true; undoArmed=true; persist(); renderTray(); banner(modeText());
@@ -26,11 +26,13 @@ function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activ
 function myLooks(){ const v=recall('myLooks'); return Array.isArray(v) ? v : []; }
 function saveMyLooks(list){ store('myLooks', list); }
 function activePreset(){ const m = S.activeMine && myLooks().find(x=>x.id===S.activeMine); return m ? {...LOOKS[m.base], ...m.values, name:m.name} : LOOKS[look]; }
-function applyMine(id){
+function applyMine(id, keepView){
   const m = myLooks().find(x=>x.id===id); if (!m || !LOOKS[m.base]) return;
+  if (!lookAvailable(m.base)){ notice(`"${m.name}" is based on ${LOOKS[m.base].name}, which needs ${S.scan ? 'a photo' : 'splats'}.`); return; }
   pushUndo(); look=m.base; const L=LOOKS[look];
   LOOK_KEYS.forEach(k=>{ P[k] = m.values[k]!=null ? m.values[k] : L[k]; });
-  S.activeMine=id; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pan=[0,0,0]; S.userMoved=false; S.home=null; S.reframe = L.bgTint>0 && !S.isSample && !S.scan;
+  S.activeMine=id;
+  if (!keepView){ S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pan=[0,0,0]; S.userMoved=false; S.home=null; S.reframe = L.bgTint>0 && !S.isSample && !S.scan; }
   S.dirtyBuild=true; commit(); viewButton();
 }
 function saveCurrentLook(name){
@@ -66,7 +68,7 @@ async function importLooks(file){
 function isCustom(){ const L=activePreset(); return LOOK_KEYS.some(k=>typeof L[k]==='number' ? Math.abs(L[k]-P[k])>0.02 : L[k]!==P[k]); }
 
 function applyLook(name, keepView){
-  if (keepView && S.activeMine){ applyMine(S.activeMine); P.light = S.lightAuto; S.dirtyBuild=true; commit(); return; }   // Reset look returns to the saved look
+  if (keepView && S.activeMine){ applyMine(S.activeMine, true); P.light = S.lightAuto; S.dirtyBuild=true; commit(); return; }   // Reset look returns to the saved look, view kept
   pushUndo(); look=name; const L=LOOKS[name]; S.activeMine=null;
   LOOK_KEYS.forEach(k=>{ P[k]=L[k]; });
   if (keepView) P.light = S.lightAuto;          // Reset look also returns Light to what the photo needed
@@ -85,7 +87,6 @@ function setTab(t){
   if (t) store('tab', t);
 }
 document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click', ()=>{ notice(''); setTab(b.dataset.tab); }));
-$('#tray').addEventListener('click', ()=>notice(''), true);
 
 function modeText(){
   if (S.placing==='face') return 'Tap a face to cover it.';
@@ -100,12 +101,13 @@ function renderTray(){
   if (S.tab==='look'){
     const mine = myLooks(), custom = isCustom();
     tr.innerHTML = `<h3>Look ${custom?'<span class="chip" style="padding:3px 8px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent);border-color:var(--accent)">Changed</span>':''}<span class="sp"></span></h3>
-      <div class="looks">${Object.entries(LOOKS).filter(([k])=>lookAvailable(k)).map(([k,L])=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${L.name}</b></button>`).join('')}</div>
-      ${LOOKS[look].splat && !LOOKS[look].mix ? '' : `<h3 style="margin-top:12px">Dot pattern</h3>
-      <div class="scroller pats">${CTRL.pattern.chips.map(([v,n])=>`<button class="chip pat" data-pat="${v}" aria-pressed="${P.pattern===v}" ${S.scan?'disabled':''}>${PAT_ICON[v]}${n}</button>`).join('')}</div>${S.scan?'<p class="hint" style="margin:4px 0 0">A 3D scan keeps the points it measured, so the pattern applies to photos only.</p>':''}`}
+      ${[['Dots', k=>!LOOKS[k].splat], ['Photo', k=>LOOKS[k].splat]].map(([title, test])=>{ const ks=Object.keys(LOOKS).filter(k=>test(k) && lookAvailable(k)); return ks.length ? `<p class="rowlabel">${title}</p><div class="looks">${ks.map(k=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${LOOKS[k].name}</b></button>`).join('')}</div>` : ''; }).join('')}
+      <p class="hint">${sayBtn(LOOK_HINT[look]||'')}<span>${LOOK_HINT[look]||''}</span></p>
+      ${(LOOKS[look].splat && !LOOKS[look].mix) || S.scan ? '' : `<h3 style="margin-top:12px">Dot pattern</h3>
+      <div class="scroller pats">${CTRL.pattern.chips.map(([v,n])=>`<button class="chip pat" data-pat="${v}" aria-pressed="${P.pattern===v}">${PAT_ICON[v]}${n}</button>`).join('')}</div>`}
       <div class="sect row"><button class="chip" id="resetLook" ${custom?'':'disabled'}>Reset look</button>${undoBtn}</div>
       <div class="sect"><h3>My looks</h3>
-        ${mine.length ? `<div class="looks">${mine.map(m=>`<div class="look mine" aria-pressed="${S.activeMine===m.id}"><button class="lookpick" data-mine="${m.id}" aria-label="Use ${esc(m.name)}"><canvas id="thumb-${m.id}" width="208" height="156"></canvas><b>${esc(m.name)}</b></button><button class="lookdel" data-delmine="${m.id}" aria-label="Remove ${esc(m.name)}">&#x2715;</button></div>`).join('')}</div>` : '<p class="hint" style="margin:0 0 8px">Change anything, then save it here to use again on other photos.</p>'}
+        ${mine.length ? `<div class="looks">${mine.map(m=>`<div class="look mine" aria-pressed="${S.activeMine===m.id}"><button class="lookpick" data-mine="${m.id}" aria-label="Use ${esc(m.name)}" ${lookAvailable(m.base)?'':'disabled'}><canvas id="thumb-${m.id}" width="208" height="156"></canvas><b>${esc(m.name)}</b>${lookAvailable(m.base)?'':'<small>Needs a photo</small>'}</button><button class="lookdel" data-delmine="${m.id}" aria-label="Remove ${esc(m.name)}">&#x2715;</button></div>`).join('')}</div>` : `<p class="hint" style="margin:0 0 8px">${sayBtn('Change anything, then save it here to use again on other photos.')}<span>Change anything, then save it here to use again on other photos.</span></p>`}
         ${S.savingLook ? `<div class="row" style="margin-top:8px"><input id="lookName" class="nameinput" value="My look ${mine.length+1}" aria-label="Name for this look" maxlength="40"><button class="btn primary" id="saveLookOk">Save</button><button class="btn" id="saveLookNo">Cancel</button></div>`
           : `<div class="row" style="margin-top:8px"><button class="chip" id="saveLook">Save this look</button><button class="chip" id="shareLooks" ${mine.length?'':'disabled'}>Share looks</button><button class="chip" id="loadLooks">Load looks</button>${S.lastRemoved?`<button class="chip" id="bringBack">Bring back ${esc(S.lastRemoved.m.name)}</button>`:''}</div>`}
       </div>`;
@@ -139,8 +141,10 @@ function renderTray(){
       body = `<div class="scroller" style="margin-top:12px">${c.chips.map(([v,n])=>`<button class="chip ${activePreset()[c.key]===v?'def':''}" data-choice="${v}" aria-pressed="${P[c.key]===v}">${n}</button>`).join('')}</div>`;
     } else {
       const def = c.key==='light' ? S.lightAuto : Math.round(activePreset()[c.key]);
-      body = `<div class="stepper"><input type="range" id="ctl" min="0" max="${c.stops.length-1}" step="0.05" value="${P[c.key]}" aria-label="${c.name}">
-        <div class="stops">${c.stops.map(([n],i)=>`<button data-stop="${i}" aria-current="${Math.abs(P[c.key]-i)<0.15}" class="${i===def?'def':''}">${n}${i===def?(c.key==='light'?' (auto)':' ·'):''}</button>`).join('')}</div></div>`;
+      // splats have no backs to fill, so Hidden parts is Off or On there
+      const stops = c.key==='hidden' && LOOKS[look].splat ? [['Off',0],['On',1]] : c.stops;
+      body = `<div class="stepper"><input type="range" id="ctl" min="0" max="${stops.length-1}" step="0.05" value="${Math.min(P[c.key], stops.length-1)}" aria-label="${c.name}">
+        <div class="stops">${stops.map(([n],i)=>`<button data-stop="${i}" aria-current="${Math.abs(P[c.key]-i)<0.15}" class="${i===def?'def':''}">${n}${i===def?(c.key==='light'?' (auto)':' ·'):''}</button>`).join('')}</div></div>`;
     }
     const note = c.key==='floor' && !S.hasFloor && !S.scan ? ' This photo has no floor, so moving this adds one.' : '';
     tr.innerHTML = `${groupRow()}
@@ -163,13 +167,15 @@ function renderTray(){
   }
   else if (S.tab==='subject'){
     const outlined = S.sharp || S.picks.some(p=>p.seg);
-    tr.innerHTML = `<p class="hint" style="margin:0 0 10px">${sayBtn('Tap Find to look for people and things, or tap the thing that matters in the picture. It becomes the subject, even if something else is nearer.')}<span>Tap Find, or tap the thing that matters. It becomes the subject even if something else is nearer.</span></p>
+    const sHint = LOOKS[look].splat && !LOOKS[look].mix ? 'In Photoreal the subject shows only while this tab is open. It shapes Real subject and Real setting, and every dot look.' : 'Tap Find, or tap the thing that matters. It becomes the subject even if something else is nearer.';
+    const sHint2 = outlined ? 'Outlines come from an outline finder, part of the 23 MB finder download.' : 'Tighter keeps only what sits at the same depth as your tap. Looser takes in more.';
+    tr.innerHTML = `<p class="hint" style="margin:0 0 10px">${sayBtn(sHint)}<span>${sHint}</span></p>
       <div class="row" style="margin-bottom:10px"><button class="btn primary" id="findThings">Find people and things</button></div>
       ${S.picks.length ? `<div class="scroller" style="margin-bottom:8px">${S.picks.map((p,i)=>`<button class="chip" data-unpick="${i}" aria-label="Remove ${esc(pickName(p,i))}">${esc(pickName(p,i))} &#x2715;</button>`).join('')}</div>` : ''}
       <div class="scroller"><button class="chip" id="autoSub" aria-pressed="${!S.picks.length}">Nearest things</button>
       ${['Tighter','Normal','Looser'].map((n,i)=>`<button class="chip" data-band="${i}" aria-pressed="${S.band===i}">${n}</button>`).join('')}
       <button class="chip" id="sharp" aria-pressed="${outlined}">Sharper outline</button>${undoBtn}</div>
-      <p class="hint">${outlined?'Outlines come from an outline finder (part of the 23 MB finder download).':'Tighter keeps only what sits at the same depth as your tap. Looser takes in more.'}</p>`;
+      <p class="hint">${sayBtn(sHint2)}<span>${sHint2}</span></p>`;
     $('#autoSub').addEventListener('click',()=>{ pushUndo(); S.picks=[]; S.dirtyBuild=true; S.reframe=true; commit(); banner(modeText()); });
     tr.querySelectorAll('[data-unpick]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); S.picks.splice(+b.dataset.unpick,1); S.dirtyBuild=true; S.reframe=true; commit(); banner(modeText()); }));
     $('#findThings').addEventListener('click', async ()=>{
@@ -187,43 +193,47 @@ function renderTray(){
   }
   else if (S.tab==='move'){
     const mv = S.move||'push', len = S.moveLen||6;
-    const fx = FX.find(f=>f[0]===(S.fx||'none')) || FX[0], st = S.strength||'gentle', fxs = FX.filter(([v])=>!FX_NEEDS_SPLATS.has(v)||hasSplats());
-    const moveHint = 'The move starts from the view on screen, so line it up first. '+fx[2];
+    const fxs = FX.filter(([v])=>!FX_NEEDS_SPLATS.has(v)||hasSplats()); if (!fxs.some(f=>f[0]===S.fx)) S.fx='none';
+    const fx = FX.find(f=>f[0]===S.fx) || FX[0], st = S.strength||'gentle';
+    const moveHint = fx[2]+' The move starts from the view on screen.';
     tr.innerHTML = `<h3>Move</h3><div class="scroller">${MOVE_NAMES.map(([v,n])=>`<button class="chip" data-move="${v}" aria-pressed="${mv===v}">${n}</button>`).join('')}</div>
       <h3 style="margin-top:10px">Effect</h3><div class="scroller">${fxs.map(([v,n])=>`<button class="chip" data-fx="${v}" aria-pressed="${fx[0]===v}">${n}</button>`).join('')}</div>
-      <h3 style="margin-top:10px">Strength and length</h3>
-      <div class="scroller">${STRENGTH.map(([v,n])=>`<button class="chip" data-strength="${v}" aria-pressed="${st===v}">${n}</button>`).join('')}<span class="chipgap"></span>${MOVE_LENGTHS.map(s=>`<button class="chip" data-len="${s}" aria-pressed="${len===s}">${s} s</button>`).join('')}</div>
-      <p class="hint">${sayBtn(moveHint)}<span>${fx[2]}</span></p>
-      <div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button></div>`;
+      <h3 style="margin-top:10px">Strength</h3>
+      <div class="scroller">${STRENGTH.map(([v,n])=>`<button class="chip" data-strength="${v}" aria-pressed="${st===v}">${n}</button>`).join('')}</div>
+      <p class="hint">${sayBtn(moveHint)}<span>${moveHint}</span></p>
+      <div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button><button class="chip" id="lenChip" aria-label="Length ${len} seconds, tap to change">Length ${len} s</button></div>`;
     // a tapped chip plays the opening of the real move at its real speed
-    const peek = () => previewMove(S.move||'push', S.moveLen||6, Math.min(1, 4/(S.moveLen||6)));
+    // a new tap cuts off the look still playing, so trying options never means waiting
+    const peek = async () => { if (S.peeking){ S.stopReq=true; await S.playP; } S.playP = previewMove(S.move||'push', S.moveLen||6, Math.min(1, 4/(S.moveLen||6)), true); };
     tr.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>{ S.move=b.dataset.move; persist(); renderTray(); peek(); }));
-    tr.querySelectorAll('[data-len]').forEach(b=>b.addEventListener('click',()=>{ S.moveLen=+b.dataset.len; persist(); renderTray(); }));
+    $('#lenChip').addEventListener('click',()=>{ const i=MOVE_LENGTHS.indexOf(S.moveLen||6); S.moveLen=MOVE_LENGTHS[(i+1)%MOVE_LENGTHS.length]; persist(); renderTray(); });
     tr.querySelectorAll('[data-strength]').forEach(b=>b.addEventListener('click',()=>{ S.strength=b.dataset.strength; persist(); renderTray(); peek(); }));
     tr.querySelectorAll('[data-fx]').forEach(b=>b.addEventListener('click',()=>{ S.fx=b.dataset.fx; persist(); renderTray(); if (S.fx!=='none') peek(); }));
-    $('#playMove').addEventListener('click',()=>previewMove(S.move||'push', S.moveLen||6));
-    $('#recMove').addEventListener('click',()=>recordMove(S.move||'push', S.moveLen||6));
+    $('#playMove').addEventListener('click',async ()=>{ if (S.peeking){ S.stopReq=true; await S.playP; } previewMove(S.move||'push', S.moveLen||6); });
+    $('#recMove').addEventListener('click',async ()=>{ if (S.peeking){ S.stopReq=true; await S.playP; } recordMove(S.move||'push', S.moveLen||6); });
   }
   else if (S.tab==='people'){
     const auto=S.faces.filter(f=>f.auto).length, hand=S.faces.length-auto;
     const status = !S.anon ? 'Faces are shown as they are.' : `${auto?`Found ${auto} face${auto===1?'':'s'}.`:'No faces found by itself.'}${hand?` ${hand} covered by hand.`:''}`;
-    tr.innerHTML = S.scan ? `<p class="hint" style="margin:0 0 10px"><span>Faces can only be found in photos.</span></p><div class="sect"><h3>Names</h3><div class="row"><button class="chip" id="addLabel" aria-pressed="${S.placing==='label'}">+ Name</button></div>
-      <div class="lablist">${S.labels.map((L,i)=>`<div><input id="label-${i}" value="${esc(L.text)}" placeholder="Name" aria-label="Name"><button class="chip" data-del="${i}">Remove</button></div>`).join('')}</div></div>` : `<h3>Faces</h3>
+    const pHint = status+(S.anon&&S.anonLevel===0?' Light only blurs, which can sometimes be undone.':' Hair, clothes and the setting can still identify someone.');
+    const nameRows = S.labels.map((L,i)=>`<div><input id="label-${i}" value="${esc(L.text)}" placeholder="Name" aria-label="Name ${i+1}"><button class="chip" data-del="${i}" aria-label="Remove name ${i+1}">Remove</button></div>`).join('');
+    tr.innerHTML = S.scan ? `<p class="hint" style="margin:0 0 10px">${sayBtn('Faces can only be found in photos. Names work on scans too.')}<span>Faces can only be found in photos. Names work on scans too.</span></p><div class="sect"><h3>Names</h3><div class="row"><button class="chip" id="addLabel" aria-pressed="${S.placing==='label'}">+ Name</button></div>
+      <div class="lablist">${nameRows}</div></div>` : `<h3>Faces</h3>
       <div class="scroller"><button class="chip" id="anon" aria-pressed="${S.anon}">Hide faces</button>
       ${['Light','Medium','Strong'].map((n,i)=>`<button class="chip" data-level="${i}" aria-pressed="${S.anon&&S.anonLevel===i}">${n}</button>`).join('')}
       <button class="chip" id="addFace" aria-pressed="${S.placing==='face'}">+ Face</button>${S.faces.length?'<button class="chip" id="clearFaces">Clear</button>':''}</div>
-      <p class="hint">${sayBtn(status+' Medium and Strong fill each face with a flat colour. Light only blurs, and a blur can sometimes be undone. Hair, clothes and the setting can still identify someone.')}<span>${status}${S.anon&&S.anonLevel===0?' Light only blurs, which can sometimes be undone.':''}</span></p>
+      <p class="hint">${sayBtn(pHint)}<span>${pHint}</span></p>
       <div class="sect"><h3>Names</h3><div class="row"><button class="chip" id="addLabel" aria-pressed="${S.placing==='label'}">+ Name</button></div>
-      <div class="lablist">${S.labels.map((L,i)=>`<div><input id="label-${i}" value="${esc(L.text)}" placeholder="Name" aria-label="Name"><button class="chip" data-del="${i}">Remove</button></div>`).join('')}</div></div>`;
-    if ($('#anon')) $('#anon').addEventListener('click', async ()=>{ S.anon=!S.anon; if (S.anon && !S.facesFound) await findFaces(); applyAnon(); invalidateCompare(); renderTray(); });
-    tr.querySelectorAll('[data-level]').forEach(b=>b.addEventListener('click', async ()=>{ S.anonLevel=+b.dataset.level; if (!S.anon){ S.anon=true; if (!S.facesFound) await findFaces(); } applyAnon(); invalidateCompare(); renderTray(); }));
+      <div class="lablist">${nameRows}</div></div>`;
+    if ($('#anon')) $('#anon').addEventListener('click', async ()=>{ S.anon=!S.anon; if (S.anon && !S.facesFound) await findFaces(); applyAnon(); invalidateCompare(); queueThumbs(); renderTray(); });
+    tr.querySelectorAll('[data-level]').forEach(b=>b.addEventListener('click', async ()=>{ S.anonLevel=+b.dataset.level; if (!S.anon){ S.anon=true; if (!S.facesFound) await findFaces(); } applyAnon(); invalidateCompare(); queueThumbs(); renderTray(); }));
     if ($('#addFace')) $('#addFace').addEventListener('click',()=>setPlacing('face'));
-    const cf=$('#clearFaces'); if (cf) cf.addEventListener('click',()=>{ S.faces=[]; S.facesFound=false; S.anon=false; applyAnon(); invalidateCompare(); renderTray(); });
+    const cf=$('#clearFaces'); if (cf) cf.addEventListener('click',()=>{ S.faces=[]; S.facesFound=false; S.anon=false; applyAnon(); invalidateCompare(); queueThumbs(); renderTray(); });
     $('#addLabel').addEventListener('click',()=>setPlacing('label'));
     S.labels.forEach((L,i)=>{ $('#label-'+i).addEventListener('input',e=>{ L.text=e.target.value; S.dirtyDraw=true; }); });
     tr.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{ S.labels.splice(+b.dataset.del,1); renderTray(); S.dirtyDraw=true; }));
   }
-  if (S.tab==='adjust') tr.querySelectorAll('.scroller [aria-pressed="true"]').forEach(b=>{ const sc=b.parentElement; sc.scrollLeft = b.offsetLeft - sc.clientWidth/2 + b.offsetWidth/2; });
+  tr.querySelectorAll('.scroller [aria-pressed="true"], .looks [aria-pressed="true"]').forEach(b=>{ const sc=b.parentElement; sc.scrollLeft = b.offsetLeft - sc.clientWidth/2 + b.offsetWidth/2; });
   const u=$('#undoBtn'); if (u) u.addEventListener('click', undo);
   tr.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say)));
 }
@@ -233,6 +243,14 @@ function afterPlacing(){ if (S.tab!=='people') setTab('people'); else { $('#stag
 function setPlacing(kind){ S.placing = S.placing===kind ? false : kind; $('#stage').classList.toggle('picking', !!S.placing || S.tab==='subject');
   renderTray(); banner(modeText()); renderPins(); }
 const SPLAT_KEYS = ['bright','glow','depth3d','hidden'];
+const LOOK_HINT = {
+  void:'Void: the subject in true colour on a black stage, with a faint backdrop and floor.',
+  sparse:'Sparse: fewer, bigger, glowing dots, muted colour.',
+  scanner:'Scanner: rings like a spinning lidar, coloured by distance, seen from above.',
+  survey:'Survey: a dense scan coloured by height, with outlines.',
+  real:'Photoreal: the photo itself in 3D, made of soft splats. Turn the view to see its depth.',
+  psub:'Real subject: the people or things you picked as the real photo, on the stage of dots.',
+  pworld:'Real setting: everything around the subject as the real photo, the subject as dots.'};
 // Photoreal needs splats; the mixed looks also need a subject, so not scans
 function lookAvailable(k){ const L=LOOKS[k]; return !L.splat || (hasSplats() && (!L.mix || !S.scan)); }
 function groupKeys(g){ const G=GROUPS.find(x=>x.id===g)||GROUPS[0]; return G.keys.filter(k=>!(S.scan && (k==='depth3d'||k==='light'||k==='hidden'||k==='floor')) && (!LOOKS[look].splat || LOOKS[look].mix || SPLAT_KEYS.includes(k))); }
@@ -248,17 +266,17 @@ function renderAdvanced(tr){
   const row = (id, label, min, max, step, v, out, auto) => `<div class="advrow"><label for="${id}">${label}</label><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${v}"><output id="${id}Out">${out}</output>${auto?`<button class="chip small" data-auto="${id}">Auto</button>`:'<span></span>'}</div>`;
   tr.innerHTML = `${groupRow()}
     <div class="sect"><h3>Show</h3><div class="scroller">${[['result','The result'],['depth','Depth map'],['masks','Subject and floors']].map(([v,n])=>`<button class="chip" data-dbg="${v}" aria-pressed="${S.dbg===v}" ${S.scan&&v!=='result'?'disabled':''}>${n}</button>`).join('')}</div>
-      ${S.dbg==='masks'?'<p class="hint">Yellow is the subject. Blue, cyan and violet are floors that were fitted; green is other ground facing up.</p>':S.dbg==='depth'?'<p class="hint">Light is near, dark is far.</p>':''}</div>
+      ${(h=>h?`<p class="hint">${sayBtn(h)}<span>${h}</span></p>`:'')(S.dbg==='masks'?'Yellow is the subject. Blue, cyan and violet are floors that were fitted. Green is other ground facing up.':S.dbg==='depth'?'Light is near, dark is far.':'')}</div>
     <div class="sect"><h3>Camera and depth</h3>
       ${row('advFov','View angle',20,110,1,fov.toFixed(0),fov.toFixed(0)+'°',!!A.fov)}
       ${S.scan?'':row('advRatio','Far vs near',0,100,1,ratioPos.toFixed(0),ratio.toFixed(1)+'x',!!A.ratio)}
       ${S.scan?'':row('advRoll','Tilt',-12,12,0.1,roll.toFixed(1),roll.toFixed(1)+'°',A.roll!=null)}
     </div>
-    ${S.scan ? '' : `<div class="sect"><h3>Scanner</h3>
-      ${P.pattern==='rings' ? row('advBeams','Beams',16,256,1,beams,beams,!!A.beams) : '<p class="hint">Beams applies to the Scan rings pattern (Look tab).</p>'}
+    ${S.scan || (LOOKS[look].splat && !LOOKS[look].mix) ? '' : `<div class="sect"><h3>Scanner</h3>
+      ${P.pattern==='rings' ? row('advBeams','Beams',16,256,1,beams,beams,!!A.beams) : '<p class="hint">Beams applies to the Scan rings pattern, on the Look tab.</p>'}
       ${row('advNoise','Range noise',0,4,0.1,A.noise,A.noise.toFixed(1)+'x',A.noise!==1)}
     </div>`}
-    <p class="hint">Picture size is in the Save menu.</p>`;
+    <p class="hint">${sayBtn('Picture size is in the Save menu.')}<span>Picture size is in the Save menu.</span></p>`;
   wireGroupRow(tr);
   tr.querySelectorAll('[data-dbg]').forEach(b=>b.addEventListener('click',()=>{ S.dbg=b.dataset.dbg; renderTray(); showDebug(); }));
   const on = (id, fn) => { const el=$('#'+id); if (el) el.addEventListener('input', ()=>fn(+el.value, $('#'+id+'Out'))); };
@@ -297,6 +315,7 @@ let thumbsFor = null, thumbJob = 0;
 function queueThumbs(){ thumbsFor = null; const job=++thumbJob; setTimeout(()=>makeThumbs(job), 400); }
 function makeThumbs(job){
   if (job!==thumbJob) return;
+  if (S.recording){ setTimeout(()=>makeThumbs(job), 500); return; }     // re-sorting splats mid-move would flicker
   if (!gl || !G || !S.photo || (!S.compMap && !S.scan) || S.dirtyBuild){ setTimeout(()=>makeThumbs(job), 300); return; }
   const mine = myLooks(), keys = Object.keys(LOOKS).filter(lookAvailable).concat(mine.map(m=>m.id)); const out = {};
   const next = i => {
@@ -399,7 +418,7 @@ async function onTap(cx, cy){
     }
     S.dirtyBuild=true; S.reframe=true; commit(); banner(modeText()); return;
   }
-  if (S.placing==='face'){ const p=pickPoint(cx,cy); if (!p) return; addFaceAt(p.u, p.v, p.comp); invalidateCompare(); S.placing=false; afterPlacing(); return; }
+  if (S.placing==='face'){ const p=pickPoint(cx,cy); if (!p) return; addFaceAt(p.u, p.v, p.comp); invalidateCompare(); queueThumbs(); S.placing=false; afterPlacing(); return; }
   if (S.placing==='label'){ const p=pickPoint(cx,cy); if (!p) return;
     if (S.scan){ const L={fixed:[p.p[0], p.p[1]+0.06*S.refDist, p.p[2]], text:''}; L.pos=L.fixed; S.labels.push(L); S.placing=false; afterPlacing();
       markNewName(); S.dirtyDraw=true; return; }
@@ -449,7 +468,7 @@ function centreOn(p){
 const ptrs=new Map(); let pinch0=0, zoom0=1, moved=0, lastTap=0, mid0=null, panDrag=false, didPan=false;
 const midOf = () => { const v=[...ptrs.values()]; return [(v[0].x+v[1].x)/2, (v[0].y+v[1].y)/2]; };
 cv.addEventListener('contextmenu', e=>e.preventDefault());
-cv.addEventListener('pointerdown', e=>{ notice(''); try { cv.setPointerCapture(e.pointerId); } catch(err){} if (!ptrs.size) didPan=false; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); moved=0; glide++;
+cv.addEventListener('pointerdown', e=>{ try { cv.setPointerCapture(e.pointerId); } catch(err){} if (!ptrs.size) didPan=false; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); moved=0; glide++;
   // pan with the Pan button on, a right or middle mouse button, or Shift held
   panDrag = S.panMode || e.button===1 || e.button===2 || e.shiftKey;
   if (ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch0=Math.hypot(a.x-b.x,a.y-b.y); zoom0=S.zoom; mid0=midOf(); } });
@@ -532,7 +551,7 @@ function menu(btn, id, items){
   const m=$(id), open=m.hidden;
   document.querySelectorAll('.menu').forEach(x=>x.hidden=true); document.querySelectorAll('.tb[aria-haspopup]').forEach(b=>b.setAttribute('aria-expanded','false'));
   if (!open) return;
-  m.innerHTML = items.map(([v,n,sub,on])=>`<button data-v="${v}" aria-pressed="${!!on}">${n}${sub?`<small>${sub}</small>`:''}</button>`).join('');
+  m.innerHTML = items.map(([v,n,sub,on])=>`<button data-v="${v}"${typeof on==='boolean' ? ` aria-pressed="${on}"` : ''}>${n}${sub?`<small>${sub}</small>`:''}</button>`).join('');
   const r=btn.getBoundingClientRect(); m.style.top=(r.bottom+6)+'px'; m.style.left=Math.max(8,Math.min(innerWidth-210, r.left-60))+'px';
   m.hidden=false; btn.setAttribute('aria-expanded','true');
   return m;
@@ -543,10 +562,8 @@ $('#openBtn').addEventListener('click', e=>{ e.stopPropagation();
     (b.dataset.v==='scan' ? $('#fileScan') : $('#file')).click(); })); });
 $('#shapeBtn').addEventListener('click', e=>{ e.stopPropagation();
   const items=[['photo','Same as the photo','',S.shape==='photo'],['wide','Wide','16 by 9',S.shape==='wide'],['square','Square','',S.shape==='square'],['tall','Tall','9 by 16, for stories',S.shape==='tall']];
-  if (S.rollAuto) items.push(['level', S.level ? 'Straightened' : 'Straighten', S.level ? `Tilted ${(Math.abs(S.rollAuto)*180/Math.PI).toFixed(1)}°, levelled from its upright edges. Tap to undo.` : `Tilted ${(Math.abs(S.rollAuto)*180/Math.PI).toFixed(1)}°. Tap to level it.`, S.level]);
   const m=menu($('#shapeBtn'), '#shapeMenu', items);
   if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ m.hidden=true; $('#shapeBtn').setAttribute('aria-expanded','false');
-    if (b.dataset.v==='level'){ pushUndo(); S.level=!S.level; S.roll = S.level ? S.rollAuto : 0; S.dirtyDraw=true; commit(); return; }
     pushUndo(); S.shape=b.dataset.v; commit(); layout(); })); });
 const PIC_SIZES = [null, 1080, 2048, 2880, 4096];
 // Effects play over a camera move, in preview and in the video.
@@ -563,13 +580,16 @@ const MOVE_LENGTHS = [4, 6, 10, 20, 30];
 $('#saveBtn').addEventListener('click', e=>{ e.stopPropagation();
   const px = S.adv.exportLong || (MOBILE ? 2048 : 2880);
   const m=menu($('#saveBtn'), '#saveMenu', [['png','Picture',`PNG, ${px} pixels on the long side`],
-    ['size', `Picture size: ${S.adv.exportLong || 'Auto'}`, 'Tap to change. Videos stop at 1920.'],
-    ['video','Video','Opens camera moves and effects'],['ply','3D points','PLY file for Blender, MeshLab'], ...(hasSplats() ? [['spz','Splat file','.spz, small, for SuperSplat and splat apps'],['splat','Splat file, full','.ply, larger, for any 3DGS tool']] : [])]);
+    ['size', `Picture size: ${S.adv.exportLong ? S.adv.exportLong+' pixels' : 'Auto'}`, 'Tap to change. Videos stop at 1920.'],
+    ['video','Video','Moves and effects, on the Move tab'],['ply','Points (.ply)','For Blender, MeshLab, CloudCompare'], ...(hasSplats() ? [['spz','Splat, small (.spz)','For SuperSplat and splat apps'],['splat','Splat, full (.ply)','Larger, for any 3DGS tool']] : [])]);
   if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',ev=>{
     if (b.dataset.v==='size'){ ev.stopPropagation(); const i=PIC_SIZES.indexOf(S.adv.exportLong); S.adv.exportLong=PIC_SIZES[(i+1)%PIC_SIZES.length]; persist();
       m.hidden=true; $('#saveBtn').click(); return; }       // reopen with the new size showing
     m.hidden=true; $('#saveBtn').setAttribute('aria-expanded','false');
-    if (b.dataset.v==='png') savePicture(); else if (b.dataset.v==='ply') savePly(); else if (b.dataset.v==='splat') saveSplatPly(); else if (b.dataset.v==='spz') saveSplatSpz(); else if (S.tab!=='move') setTab('move'); })); });
+    if (b.dataset.v==='png') savePicture(); else if (b.dataset.v==='ply') savePly(); else if (b.dataset.v==='splat') saveSplatPly(); else if (b.dataset.v==='spz') saveSplatSpz(); else if (S.tab!=='move') setTab('move'); else notice('Choose a move and an effect below, then tap Record video.'); })); });
+document.addEventListener('keydown', e=>{ if (e.key!=='Escape') return;
+  document.querySelectorAll('.menu').forEach(x=>x.hidden=true); document.querySelectorAll('.tb[aria-haspopup]').forEach(b=>b.setAttribute('aria-expanded','false'));
+  if (!$('#info').hidden) $('#info').hidden=true; if (!$('#sheet').hidden) $('#sheetClose').click(); });
 document.addEventListener('click', ()=>{ document.querySelectorAll('.menu').forEach(x=>x.hidden=true); document.querySelectorAll('.tb[aria-haspopup]').forEach(b=>b.setAttribute('aria-expanded','false')); });
 $('#infoBtn').addEventListener('click', e=>{ e.stopPropagation(); const i=$('#info'); i.hidden=!i.hidden; $('#infoBtn').setAttribute('aria-expanded', !i.hidden);
   if (!i.hidden){ const text='First Return turns a photo into a lidar style point cloud. Depth is worked out on your device, and the photo never leaves it.';

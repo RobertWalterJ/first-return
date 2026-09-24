@@ -57,9 +57,9 @@ const LOOKS = {
   real:    {name:'Photoreal', dots:3.05, size:1.9, glow:1, bright:2, colour:'photo', depth3d:2, backdrop:1.05, floor:0, edges:0, hidden:1,
             pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:0, pitch:0, zoom:1, splat:1},
   // mixed: the subject as the photo on the Void stage of dots, or the world as the photo around a subject of dots
-  psub:    {name:'Photo subject', dots:3.05, size:1.9, glow:1.0, bright:2.3, colour:'photo', depth3d:2, backdrop:1.05, floor:1.3, edges:0, hidden:1,
+  psub:    {name:'Real subject', dots:3.05, size:1.9, glow:1.0, bright:2.3, colour:'photo', depth3d:2, backdrop:1.05, floor:1.3, edges:0, hidden:1,
             pattern:'scatter', bgTint:1, bgGain:.45, bgSize:2.4, sparkle:0, yaw:0, pitch:0, zoom:1.3, splat:1, mix:1},
-  pworld:  {name:'Photo world', dots:3.05, size:1.4, glow:.5, bright:2.4, colour:'photo', depth3d:2, backdrop:1.05, floor:0, edges:0, hidden:1,
+  pworld:  {name:'Real setting', dots:3.05, size:1.4, glow:.5, bright:2.4, colour:'photo', depth3d:2, backdrop:1.05, floor:0, edges:0, hidden:1,
             pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:0, pitch:0, zoom:1, splat:1, mix:2},
 };
 const LOOK_KEYS = ['dots','size','glow','bright','colour','depth3d','backdrop','floor','edges','hidden','pattern'];
@@ -98,11 +98,14 @@ function seeded(seed){ let a=seed>>>0; return () => { a|=0; a=a+0x6D2B79F5|0; le
 function gauss(r){ return Math.sqrt(-2*Math.log(r()+1e-9))*Math.cos(6.283185*r()); }
 const tick = () => new Promise(r=>setTimeout(r,30));
 function busy(text, frac){ const b=$('#busy'); document.body.classList.toggle('locked', text!=null || S.recording); if (text==null){ b.hidden=true; return; } b.hidden=false; $('#busyText').textContent=text; $('#busyBar').style.width = frac==null ? '100%' : (Math.min(1,frac)*100).toFixed(1)+'%'; }
-function banner(text){ const b=$('#banner'); b.hidden=!text; if (text) b.textContent=text; }
-// one-off messages carry a read-aloud button, like every other piece of text in the app
-function notice(text){ const b=$('#notice'); S.noticeText=text||''; b.hidden=!text; if (!text) return;
+function banner(text){ const b=$('#banner'); b.hidden=!text; if (!text) return;
   b.innerHTML=`<button class="say" aria-label="Read aloud"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg></button><span></span>`;
   b.querySelector('span').textContent=text; b.querySelector('.say').addEventListener('click', e=>{ e.stopPropagation(); say(text); }); }
+// one-off messages carry a read-aloud button, like every other piece of text in the app
+function notice(text){ const b=$('#notice'); S.noticeText=text||''; b.hidden=!text; if (!text) return;
+  b.innerHTML=`<button class="say" aria-label="Read aloud"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg></button><span></span><button class="nclose" aria-label="Close this message">&#x2715;</button>`;
+  b.querySelector('span').textContent=text; b.querySelector('.say').addEventListener('click', e=>{ e.stopPropagation(); say(text); });
+  b.querySelector('.nclose').addEventListener('click', e=>{ e.stopPropagation(); notice(''); }); }
 // keeps the phone awake through a long export; quietly does nothing where unsupported
 let wakeLock=null;
 async function stayAwake(on){ try { if (on && !wakeLock && navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen');

@@ -7,7 +7,7 @@
 const SPLAT_VS = `#version 300 es
 precision highp float; precision highp int;
 uniform highp usampler2D uData; uniform mat4 uProj, uView; uniform vec2 uFocal, uVp, uR;
-uniform float uCovK, uExposure, uOrbit, uFxT, uTime, uLin, uFxK; uniform int uFx, uMix;
+uniform float uCovK, uExposure, uOrbit, uFxT, uTime, uLin, uFxK, uFocus; uniform int uFx, uMix;
 layout(location=0) in vec2 aCorner; layout(location=1) in uint aIndex;
 out vec4 vCol; out vec2 vPos;
 float hsh(float n){ return fract(sin(n*12.9898+4.1)*43758.5453); }
@@ -49,6 +49,7 @@ void main(){
   gl_Position = vec4(clip.xy/clip.w + (aCorner.x*e1 + aCorner.y*e2)*2./uVp, 0., 1.);
   vPos = aCorner*3.;
   vec3 rgb = col.rgb*uExposure;
+  if(uFocus > .5 && !subj) rgb *= .22;                          // Subject tab: everything else steps back, as it does for dots
   if(uFx==1){ float e = 1.-smoothstep(0., .02+.025*uFxK, abs(r-uFxT*1.15)); rgb = mix(rgb, vec3(.55,1.,.9), e*min(.8,.65*uFxK)); }   // the beam's edge
   if(uLin > .5) rgb = pow(max(rgb,0.), vec3(2.2));
   vCol = vec4(rgb, col.a);
@@ -141,10 +142,12 @@ function drawSplats(W, H, V, Pm, o, lin, fxK=1){
   const u = G.SP.u; gl.useProgram(G.SP.p);
   gl.uniformMatrix4fv(u.uProj,false,Pm); gl.uniformMatrix4fv(u.uView,false,V);
   gl.uniform2f(u.uFocal, Pm[0]*W/2, Pm[5]*H/2); gl.uniform2f(u.uVp, W, H); gl.uniform2f(u.uR, S.rng[0], S.rng[1]);
-  gl.uniform1f(u.uCovK, Sg.covK); gl.uniform1f(u.uExposure, lin ? 1 : o.bright/1.25);   // next to dots the photo keeps its own exposure; Brightness is for the dots gl.uniform1f(u.uLin, 0);   // splats stay in the photo's own colour space; the final pass knows which pixels are photo
+  gl.uniform1f(u.uCovK, Sg.covK); gl.uniform1f(u.uExposure, lin ? 1 : o.bright/1.25);   // next to dots the photo keeps its own exposure; Brightness is for the dots 
+  gl.uniform1f(u.uLin, 0);     // splats stay in the photo's own colour space; the final pass knows which pixels are photo
+  
   const slid = o.thumb ? 0 : Math.hypot(S.pan[0], S.pan[1])/(S.refDist||2);
   gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8 + slid*8));
-  gl.uniform1i(u.uFx, o.splatFx||0); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, o.mix||0);
+  gl.uniform1i(u.uFx, o.splatFx||0); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, o.mix||0); gl.uniform1f(u.uFocus, o.focus && !S.scan ? 1 : 0);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, Sg.tex); gl.uniform1i(u.uData, 0);
   gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   gl.bindVertexArray(Sg.vao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, Sg.n); gl.bindVertexArray(null);

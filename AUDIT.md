@@ -208,3 +208,47 @@ Everything before RF-DETR adds about 8 KB and no models.
 6. **Lighter splat files.** Export `.spz` (gzip, 8 to 10 times smaller) or a thinned `.ply`. The 72 MB desktop file is heavy to share.
 7. **Loops.** The Resolve then Decay pair makes a natural seamless loop for social video.
 8. **Several photos, one scene.** Out of reach in the browser without camera-pose solving. The offline route is Brush. Deliberately not pursued, since the aim is to avoid clunky off-app processing.
+
+---
+
+# Round five, 24 September 2026: gentle moves, mixed looks, and a UX/UI audit
+
+## Built
+- **Gentle moves.** Push in, Pull out, Slide, Float (loops), Drift, Orbit and Rise, eased with smootherstep. Strength (Gentle by default, Medium, Strong) scales every move and effect. Length goes from 4 to 30 s. Tapping a chip plays the opening of the real move at its real speed.
+- **Gentle effects.** Build up, Dissolve and Dust are new. Sweep, Resolve, Decay and Glitch now scale with Strength.
+- **Mixed looks.** Real subject and Real setting. Each pixel knows whether it is photo or dots (splat coverage in the alpha channel), so the photo keeps its colours while dots get the filmic curve and glow.
+- **Edges filled.** Behind every depth edge the far surface is grown in, closing the tears that showed when the view turned.
+- **.spz export.** 12 MB where the .ply is 72 MB. Round trip verified.
+
+## Audit and fixes (code review plus a live walk through at 375 x 812)
+- **Fixed, blank picture:** auto framing with no size on screen (page in the background) made the view NaN, and that could be saved into the resume data. It now waits for a size, rejects values that are not numbers, and resume ignores them.
+- **Fixed, My looks:** they could apply a look this picture cannot show (blank on a plain scan). They are now greyed out with "Needs a photo". Undo restores which saved look was on. Reset on a saved look keeps the view.
+- **Fixed, stale thumbnails:** thumbnails now follow Hide faces and hand-covered faces, and they wait while a move plays.
+- **Fixed, Move tab:**
+  - Stop ends any preview or video.
+  - A chip tap's quick look leaves the controls free, and the next tap cuts it off.
+  - An effect this picture cannot play is reset rather than silently swapped.
+  - Strength has its own row. Length is a chip next to Play that changes each time it is tapped.
+- **Fixed, Photoreal:**
+  - The Subject tab dims everything but the subject, and says what it does there.
+  - Hidden parts is Off or On.
+  - Scanner settings are hidden.
+- **Layout:**
+  - Looks sit in two labelled rows, Dots and Photo, with a description line that reads aloud.
+  - The pattern row is hidden on scans.
+  - The selected chip scrolls into view on every tab.
+  - The tray height follows the visible screen (dvh).
+  - Straighten now lives only in Adjust, Scene.
+  - Save items are named by what they are: Points (.ply), Splat, small (.spz), Splat, full (.ply). Picture size says pixels.
+- **Accessibility:**
+  - Read-aloud is on every message, banner and hint, and each one speaks what it shows.
+  - Messages stay until closed or the tab changes, instead of vanishing at a touch.
+  - Messages, banners and the busy screen are announced politely (role="status" with aria-live).
+  - Menu actions are no longer announced as toggles, and Escape closes menus, About and the save screen.
+  - Each name box and Remove button has its own label.
+  - Headings are 13.5 px in sentence case. Tab and top-bar labels are larger. Disabled chips have more contrast.
+
+## Still open
+- The Look tray scrolls on a phone: two rows of looks plus My looks.
+- Double tap to centre still needs two quick taps. A tap-to-centre mode would remove the timing.
+- The page is 225 KB, over the 200 KB budget. The looks and effects tables are the easiest trims.
