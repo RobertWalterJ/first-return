@@ -57,3 +57,52 @@ Three reviews ran in parallel: design and user journey (tested on the live site 
 4. **Run depth in a worker**, so the page does not freeze while depth is being worked out.
 5. **Protect feet** where a person meets the floor. They can still be trimmed.
 6. **Licence traps to keep avoiding:** RMBG-1.4 and 2.0, EdgeSAM, the SCRFD weights, UniDepth, Depth Anything 3 Large and Giant, and Apple SHARP are all non-commercial or research-only.
+
+---
+
+# Round two, 24 September 2026
+
+Three more reviews ran after the subject finder, 3D scans and straightening were added: a code and science audit, a design audit of the new flows, and a research sweep of MIT and other groups (2024 to 2026) for better methods that can run in a phone browser.
+
+## Fixed from the code and science audit
+- **Results landing on the wrong photo:** a generation counter drops any result that arrives after another photo or scan was opened. Controls lock while the app is busy or recording. Undo is cleared for each new photo.
+- **Straighten fooled by converging verticals:** edge lean is now fitted against position across the frame. The constant part is the roll; the slope is the camera's pitch. The fit is robust and calibrated on synthetic scenes of known tilt. On real photos turned by a known amount it reads 3.0°, 3.9°, 5.1° and 6.0° against true 3°, 4°, 5° and 6°.
+- **Depth range thrown off by pitch:** the pitch now sets the horizon row on which the floor's depth range is measured.
+- **Smaller issues:**
+  - roll applied before the turn;
+  - zoom distance fixed per photo;
+  - outline value chosen by majority;
+  - found things seeded on their nearest pixel, with a fallback;
+  - up-facing floors judged at the automatic depth, against the floor's own "up";
+  - depth-relative tolerances;
+  - extra floors must share the main floor's horizon;
+  - the subject map is cached;
+  - scan levelling rejects walls;
+  - scan memory capped on phones;
+  - range noise is stable between rebuilds.
+
+## Fixed from the design audit
+- Automatic finds, straightening and dark-subject Light each report what they did, in a one-off notice placed low on the picture so names stay clear. Instructions sit in a separate line.
+- The finder download shows megabytes.
+- Found things are listed by name with remove buttons, and their rings are labelled.
+- The auto-framed view is "home" for Photo view.
+- Pan mode shows a reminder.
+- Light marks its automatic setting.
+- Open is a Photo / 3D scan menu, so the phone's normal photo picker is kept.
+
+## Adopted from the research
+- **Multi-core processing on GitHub Pages** (coi-serviceworker, MIT). Confirmed active on the live site.
+- **YuNet face finder** (OpenCV Zoo, MIT) replaces UltraFace.
+- **Solid fill by default for faces**, because blur can be reversed by recognition software.
+
+## New
+- **Hidden parts:** the background behind subjects is filled in (push-pull inpainting of depth and colour), and each subject gets a rounded back. Both appear only when the view turns.
+- **Advanced:** diagnostic views and direct settings.
+
+## Still worth doing (from the research)
+1. **MoGe-2 small** (Microsoft, MIT): metric depth, view angle and surface normals from one image. It needs an int8 version of the 141 MB model and a phone speed test.
+2. **RF-DETR Segmentation Nano** (Apache): one pass gives outlines for all common objects. It could replace detector plus outline.
+3. **GeoCalib** (ETH, CC BY weights): stronger tilt estimation, if straightening still misses on some photos.
+4. **Full 3D objects from one photo** (SAM 3D, TRELLIS and similar): these need a PC GPU. Their output can come back in through the .ply import.
+
+Avoid (non-commercial or copyleft): Perspective Fields, EdgeSAM, UniDepthV2, MASt3R/DUSt3R, Depth Anything 3 Large and Giant, the original VGGT, YOLO-World and Ultralytics YOLO.
