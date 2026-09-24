@@ -26,7 +26,8 @@ function withCanvasSize(W, H, fn){
   if (r && typeof r.then === 'function') return r.finally(restore);
   restore(); return r;
 }
-function exportSize(long){ const a=frameAspect(); const L=Math.min(S.adv.exportLong || long, gl.getParameter(gl.MAX_TEXTURE_SIZE));
+// Picture size applies to pictures; video is capped at 1920, the most phone encoders will take.
+function exportSize(long, cap){ const a=frameAspect(); const L=Math.min(S.adv.exportLong || long, cap || 1e9, gl.getParameter(gl.MAX_TEXTURE_SIZE));
   return a>=1 ? [L&~1, Math.round(L/a)&~1] : [Math.round(L*a)&~1, L&~1]; }
 async function savePicture(){
   if (!S.count) return;
@@ -37,8 +38,9 @@ async function savePicture(){
   drawLabels2D(x, W, H);
   c2.toBlob(b=>{ busy(null); showSheet(URL.createObjectURL(b), 'image', 'first-return.png'); }, 'image/png');
 }
-function savePly(){
+async function savePly(){
   if (!S.count) return;
+  busy('Making the 3D file', null); await tick();
   const n=S.count, out=S.cpu;
   const head = `ply\nformat binary_little_endian 1.0\ncomment First Return point cloud, units are relative\nelement vertex ${n}\nproperty float x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n`;
   const hb = new TextEncoder().encode(head), buf = new ArrayBuffer(hb.length + n*15); new Uint8Array(buf).set(hb); const dv=new DataView(buf);
@@ -47,7 +49,7 @@ function savePly(){
     dv.setUint8(p+12,Math.min(255,out[o+3]*255*g)); dv.setUint8(p+13,Math.min(255,out[o+4]*255*g)); dv.setUint8(p+14,Math.min(255,out[o+5]*255*g)); }
   const url = URL.createObjectURL(new Blob([buf],{type:'application/octet-stream'}));
   const a = document.createElement('a'); a.href=url; a.download='first-return.ply'; document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url), 30000);
+  setTimeout(()=>URL.revokeObjectURL(url), 30000); busy(null);
   notice(`Saved first-return.ply, ${(buf.byteLength/1e6).toFixed(1)} MB. It opens in Blender, MeshLab or CloudCompare.`);
 }
 
@@ -65,11 +67,11 @@ function poseAt(base, move, t){ const m=MOVES[move](ease(Math.min(1,Math.max(0,t
 async function previewMove(move, secs){
   if (S.recording || !S.count) return;
   const base={yaw:S.yaw,pitch:S.pitch,zoom:S.zoom}, dur=secs*1000;
-  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; banner('Playing the move');
+  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked'); banner('Playing the move');
   await new Promise(res=>{ const t0=performance.now(); const step=()=>{ const el=performance.now()-t0;
     Object.assign(S, poseAt(base, move, el/dur)); draw(); renderLabels(); renderPins();
     $('#recfill').style.width=(Math.min(1,el/dur)*100)+'%'; if (el<dur) requestAnimationFrame(step); else res(); }; requestAnimationFrame(step); });
-  S.recording=false; $('#recbar').hidden=true; Object.assign(S, base); S.dirtyDraw=true; banner(modeText());
+  S.recording=false; $('#recbar').hidden=true; document.body.classList.remove('locked'); Object.assign(S, base); S.dirtyDraw=true; banner(modeText());
 }
 
 // Frame by frame with WebCodecs: every frame is rendered at its exact time, so a slow phone makes a
@@ -77,10 +79,10 @@ async function previewMove(move, secs){
 async function recordMove(move, secs){
   if (S.recording || !S.count) return;
   const base={yaw:S.yaw,pitch:S.pitch,zoom:S.zoom}, fps=30, hold=Math.round(fps*0.4), frames=Math.round(secs*fps)+2*hold;
-  const [W,H] = exportSize(MOBILE ? 1280 : 1920);
+  const [W,H] = exportSize(MOBILE ? 1280 : 1920, 1920);
   const rc=document.createElement('canvas'); rc.width=W; rc.height=H; const rx=rc.getContext('2d');
   const frameAt = i => { const t=(i-hold)/(frames-2*hold-1); Object.assign(S, poseAt(base, move, t)); draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
-  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked');
+  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked'); stayAwake(true);
   let blob=null, ext='mp4';
   try {
     let config=null;
@@ -124,6 +126,6 @@ async function recordMove(move, secs){
       blob = new Blob(chunks, {type:mime.split(';')[0]});
     }
   } catch(err){ console.error(err); banner(String(err.message||err)); }
-  S.recording=false; $('#recbar').hidden=true; document.body.classList.remove('locked'); Object.assign(S, base); S.dirtyDraw=true;
+  S.recording=false; $('#recbar').hidden=true; document.body.classList.remove('locked'); stayAwake(false); Object.assign(S, base); S.dirtyDraw=true;
   if (blob){ banner(modeText()); showSheet(URL.createObjectURL(blob), 'video', 'first-return.'+ext); }
 }

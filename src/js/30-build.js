@@ -212,7 +212,7 @@ function build(){
     for (let i=0;i<R.n;i+=7) if (R.out[i*10+6]===0) ls.push(R.out[i*10+8]);
     ls.sort((a,b)=>a-b); const med = ls.length ? ls[ls.length>>1] : 0.5;
     P.light = S.lightAuto = med < 0.16 ? 2 : med < 0.26 ? 1 : 0;
-    if (P.light){ const cur=$('#notice'); notice((cur.hidden ? '' : cur.textContent+' ') + (P.light===2 ? 'The subject was in shadow, so its light is evened out (Adjust, Shadows).' : 'The subject was dark, so its light is lifted (Adjust, Shadows).')); }
+    if (P.light){ notice((S.noticeText ? S.noticeText+' ' : '') +(P.light===2 ? 'The subject was in shadow, so its light is evened out (Adjust, Shadows).' : 'The subject was dark, so its light is lifted (Adjust, Shadows).')); }
     if (S.tab==='adjust') renderTray();
   }
   if (R.live.length){ const all=R.live.reduce((a,c)=>[a[0]+c.sx, a[1]+(c.minY+c.maxY)/2*c.n, a[2]+c.sz, a[3]+c.n],[0,0,0,0]);

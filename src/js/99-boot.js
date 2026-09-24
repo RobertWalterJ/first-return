@@ -8,6 +8,9 @@ async function boot(){
   S.shape = saved && saved.shape ? saved.shape : (MOBILE ? 'photo' : 'wide');
   if (saved && typeof saved.level==='boolean') S.level = saved.level;
   if (saved && saved.activeMine && myLooks().some(m=>m.id===saved.activeMine)) S.activeMine = saved.activeMine;
+  if (saved && MOVES[saved.move]) S.move = saved.move;
+  if (saved && [4,6,10].includes(saved.moveLen)) S.moveLen = saved.moveLen;
+  if (saved && PIC_SIZES.includes(saved.exportLong)) S.adv.exportLong = saved.exportLong;
   { const g = recall('group'); if (GROUPS.some(x=>x.id===g)) S.group = g; }
   $('#fileLooks').addEventListener('change', e=>{ const f=e.target.files[0]; e.target.value=''; if (f) importLooks(f); });
   const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom;

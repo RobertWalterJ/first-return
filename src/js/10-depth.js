@@ -35,8 +35,11 @@ async function decodePhoto(file){
   const buf = await file.arrayBuffer();
   const f35 = readExifFocal35(buf);
   const url = URL.createObjectURL(file);
-  const img = new Image(); img.src = url; await img.decode();
-  const W0 = img.naturalWidth, H0 = img.naturalHeight, LIM = MOBILE ? 1600 : 2000;
+  // createImageBitmap keeps going when the page is in the background (img.decode waits until it is
+  // shown again), and it applies the photo's own rotation
+  let img; try { img = await createImageBitmap(file, {imageOrientation:'from-image'}); }
+  catch(e){ img = new Image(); img.src = url; await img.decode(); }
+  const W0 = img.naturalWidth || img.width, H0 = img.naturalHeight || img.height, LIM = MOBILE ? 1600 : 2000;
   const s = Math.min(1, LIM/Math.max(W0,H0)), w = Math.round(W0*s), h = Math.round(H0*s);
   const c = document.createElement('canvas'); c.width=w; c.height=h; const x = c.getContext('2d', {willReadFrequently:true});
   x.drawImage(img, 0, 0, w, h);
@@ -77,8 +80,10 @@ async function loadModel(){
   session = await ort.InferenceSession.create(buf, {executionProviders:['wasm']});
   return session;
 }
-async function estimateDepth(photoCanvas){
+// onReady runs once the depth runtime is up: starting another model's runtime at the same moment hangs both
+async function estimateDepth(photoCanvas, onReady){
   const sess = await loadModel();
+  if (onReady) onReady();
   busy('Reading depth from the photo', null); await tick();
   const LONG = MOBILE ? 434 : 518, s = LONG/Math.max(photoCanvas.width, photoCanvas.height);
   const mw = Math.max(14, Math.round(photoCanvas.width*s/14)*14), mh = Math.max(14, Math.round(photoCanvas.height*s/14)*14);

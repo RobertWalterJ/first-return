@@ -21,7 +21,7 @@ function undo(){
   if (s.level!==S.level){ S.level=s.level; S.roll = S.level ? S.rollAuto : 0; }
   S.dirtyBuild=true; undoArmed=true; persist(); renderTray(); banner(modeText());
 }
-function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine}); }
+function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine, move:S.move, moveLen:S.moveLen, exportLong:S.adv.exportLong}); }
 // ---------------------------------------------------------------- my looks: save, apply, share
 function myLooks(){ const v=recall('myLooks'); return Array.isArray(v) ? v : []; }
 function saveMyLooks(list){ store('myLooks', list); }
@@ -100,7 +100,7 @@ function renderTray(){
     tr.innerHTML = `<h3>Look ${custom?'<span class="chip" style="padding:3px 8px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent);border-color:var(--accent)">Changed</span>':''}<span class="sp"></span></h3>
       <div class="looks">${Object.entries(LOOKS).map(([k,L])=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${L.name}</b></button>`).join('')}</div>
       <h3 style="margin-top:12px">Dot pattern</h3>
-      <div class="scroller pats">${CTRL.pattern.chips.map(([v,n])=>`<button class="chip pat" data-pat="${v}" aria-pressed="${P.pattern===v}">${PAT_ICON[v]}${n}</button>`).join('')}</div>
+      <div class="scroller pats">${CTRL.pattern.chips.map(([v,n])=>`<button class="chip pat" data-pat="${v}" aria-pressed="${P.pattern===v}" ${S.scan?'disabled':''}>${PAT_ICON[v]}${n}</button>`).join('')}</div>${S.scan?'<p class="hint" style="margin:4px 0 0">A 3D scan keeps the points it measured, so the pattern applies to photos only.</p>':''}
       <div class="sect row"><button class="chip" id="resetLook" ${custom?'':'disabled'}>Reset look</button>${undoBtn}</div>
       <div class="sect"><h3>My looks</h3>
         ${mine.length ? `<div class="looks">${mine.map(m=>`<div class="look mine" aria-pressed="${S.activeMine===m.id}"><button class="lookpick" data-mine="${m.id}" aria-label="Use ${esc(m.name)}"><canvas id="thumb-${m.id}" width="208" height="156"></canvas><b>${esc(m.name)}</b></button><button class="lookdel" data-delmine="${m.id}" aria-label="Remove ${esc(m.name)}">&#x2715;</button></div>`).join('')}</div>` : '<p class="hint" style="margin:0 0 8px">Change anything, then save it here to use again on other photos.</p>'}
@@ -141,10 +141,11 @@ function renderTray(){
     }
     const note = c.key==='floor' && !S.hasFloor && !S.scan ? ' This photo has no floor, so moving this adds one.' : '';
     tr.innerHTML = `${groupRow()}
-      ${keys.length>1 ? `<div class="scroller" style="margin-top:8px">${keys.map(k=>`<button class="chip" data-ctrl="${k}" aria-pressed="${k===S.ctrl}">${CTRL[k].name}</button>`).join('')}</div>` : ''}
+      ${keys.length>1 ? `<div class="scroller" style="margin-top:8px">${keys.map(k=>`<button class="chip" data-ctrl="${k}" aria-pressed="${k===S.ctrl}">${CTRL[k].name}</button>`).join('')}${S.group==='scene' && S.rollAuto && !S.scan ? `<button class="chip" id="levelChip" aria-pressed="${S.level}">Straighten ${(Math.abs(S.rollAuto)*180/Math.PI).toFixed(1)}°</button>` : ''}</div>` : ''}
       ${body}<p class="hint">${sayBtn(c.hint+note)}<span>${c.hint}${note}</span></p>
       <div class="sect row">${undoBtn}</div>`;
     tr.querySelectorAll('[data-ctrl]').forEach(b=>b.addEventListener('click',()=>{ S.ctrl=b.dataset.ctrl; renderTray(); }));
+    if ($('#levelChip')) $('#levelChip').addEventListener('click',()=>{ pushUndo(); S.level=!S.level; S.roll = S.level ? S.rollAuto : 0; S.adv.roll=null; S.dirtyDraw=true; commit(); });
     tr.querySelectorAll('[data-choice]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); P[c.key]=b.dataset.choice; if (c.rebuild) S.dirtyBuild=true; S.dirtyDraw=true; commit(); }));
     wireGroupRow(tr);
     const r = $('#ctl');
@@ -155,7 +156,7 @@ function renderTray(){
     }
   }
   else if (S.tab==='subject' && S.scan){
-    tr.innerHTML = `<p class="hint" style="margin:0">${sayBtn('A scan keeps every point it measured, so there is no subject to pick. Use Backdrop under Adjust to thin out its floor.')}<span>A scan keeps every point it measured, so there is no subject to pick. Use Backdrop under Adjust to thin out its floor.</span></p>`;
+    tr.innerHTML = `<p class="hint" style="margin:0">${sayBtn('A scan keeps every point it measured, so there is no subject to pick. Use Background under Adjust, Scene to thin out its floor.')}<span>A scan keeps every point it measured, so there is no subject to pick. Use Background under Adjust, Scene to thin out its floor.</span></p>`;
   }
   else if (S.tab==='subject'){
     const outlined = S.sharp || S.picks.some(p=>p.seg);
@@ -187,8 +188,8 @@ function renderTray(){
       <div class="scroller" style="margin-top:8px">${[4,6,10].map(s=>`<button class="chip" data-len="${s}" aria-pressed="${len===s}">${s} seconds</button>`).join('')}</div>
       <div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button></div>
       <p class="hint">${sayBtn('The move starts from the view on screen, so line it up first.')}<span>Starts from the view on screen, so line it up first.</span></p>`;
-    tr.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>{ S.move=b.dataset.move; renderTray(); previewMove(S.move, Math.min(4,S.moveLen||6)); }));
-    tr.querySelectorAll('[data-len]').forEach(b=>b.addEventListener('click',()=>{ S.moveLen=+b.dataset.len; renderTray(); }));
+    tr.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>{ S.move=b.dataset.move; persist(); renderTray(); previewMove(S.move, Math.min(4,S.moveLen||6)); }));
+    tr.querySelectorAll('[data-len]').forEach(b=>b.addEventListener('click',()=>{ S.moveLen=+b.dataset.len; persist(); renderTray(); }));
     $('#playMove').addEventListener('click',()=>previewMove(S.move||'push', S.moveLen||6));
     $('#recMove').addEventListener('click',()=>recordMove(S.move||'push', S.moveLen||6));
   }
@@ -205,9 +206,9 @@ function renderTray(){
       <div class="lablist">${S.labels.map((L,i)=>`<div><input id="label-${i}" value="${esc(L.text)}" placeholder="Name" aria-label="Name"><button class="chip" data-del="${i}">Remove</button></div>`).join('')}</div></div>`;
     if ($('#anon')) $('#anon').addEventListener('click', async ()=>{ S.anon=!S.anon; if (S.anon && !S.facesFound) await findFaces(); applyAnon(); invalidateCompare(); renderTray(); });
     tr.querySelectorAll('[data-level]').forEach(b=>b.addEventListener('click', async ()=>{ S.anonLevel=+b.dataset.level; if (!S.anon){ S.anon=true; if (!S.facesFound) await findFaces(); } applyAnon(); invalidateCompare(); renderTray(); }));
-    if ($('#addFace')) $('#addFace').addEventListener('click',()=>{ S.placing = S.placing==='face' ? false : 'face'; setTab('people'); });
+    if ($('#addFace')) $('#addFace').addEventListener('click',()=>setPlacing('face'));
     const cf=$('#clearFaces'); if (cf) cf.addEventListener('click',()=>{ S.faces=[]; S.facesFound=false; S.anon=false; applyAnon(); invalidateCompare(); renderTray(); });
-    $('#addLabel').addEventListener('click',()=>{ S.placing = S.placing==='label' ? false : 'label'; setTab('people'); });
+    $('#addLabel').addEventListener('click',()=>setPlacing('label'));
     S.labels.forEach((L,i)=>{ $('#label-'+i).addEventListener('input',e=>{ L.text=e.target.value; S.dirtyDraw=true; }); });
     tr.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{ S.labels.splice(+b.dataset.del,1); renderTray(); S.dirtyDraw=true; }));
   }
@@ -215,7 +216,12 @@ function renderTray(){
   const u=$('#undoBtn'); if (u) u.addEventListener('click', undo);
   tr.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say)));
 }
-function groupKeys(g){ const G=GROUPS.find(x=>x.id===g)||GROUPS[0]; return G.keys.filter(k=>!(S.scan && (k==='depth3d'||k==='light'||k==='hidden'))); }
+// Waiting for a tap on the picture. This must not go through setTab: on a phone, re-selecting the open
+// tab closes it, and closing People cancels the placing, so the tap would do nothing.
+function afterPlacing(){ if (S.tab!=='people') setTab('people'); else { $('#stage').classList.remove('picking'); renderTray(); banner(modeText()); } }
+function setPlacing(kind){ S.placing = S.placing===kind ? false : kind; $('#stage').classList.toggle('picking', !!S.placing || S.tab==='subject');
+  renderTray(); banner(modeText()); renderPins(); }
+function groupKeys(g){ const G=GROUPS.find(x=>x.id===g)||GROUPS[0]; return G.keys.filter(k=>!(S.scan && (k==='depth3d'||k==='light'||k==='hidden'||k==='floor'))); }
 function groupRow(){ return `<div class="seg" role="tablist">${GROUPS.map(g=>`<button class="segb" data-group="${g.id}" aria-selected="${S.group===g.id}">${g.name}</button>`).join('')}</div>`; }
 function wireGroupRow(tr){ tr.querySelectorAll('[data-group]').forEach(b=>b.addEventListener('click',()=>{ S.group=b.dataset.group; if (S.group!=='advanced') S.ctrl=groupKeys(S.group)[0]; store('group', S.group); renderTray(); showDebug(); })); }
 // ---------------------------------------------------------------- Advanced: diagnostic views and direct settings
@@ -234,15 +240,13 @@ function renderAdvanced(tr){
       ${S.scan?'':row('advRatio','Far vs near',0,100,1,ratioPos.toFixed(0),ratio.toFixed(1)+'x',!!A.ratio)}
       ${S.scan?'':row('advRoll','Tilt',-12,12,0.1,roll.toFixed(1),roll.toFixed(1)+'°',A.roll!=null)}
     </div>
-    <div class="sect"><h3>Scanner</h3>
-      ${row('advBeams','Beams',16,256,1,beams,beams,!!A.beams)}
+    ${S.scan ? '' : `<div class="sect"><h3>Scanner</h3>
+      ${P.pattern==='rings' ? row('advBeams','Beams',16,256,1,beams,beams,!!A.beams) : '<p class="hint">Beams applies to the Scan rings pattern (Look tab).</p>'}
       ${row('advNoise','Range noise',0,4,0.1,A.noise,A.noise.toFixed(1)+'x',A.noise!==1)}
-    </div>
-    <div class="sect"><h3>Picture size</h3><div class="scroller">${[[null,'Auto'],[1080,'1080'],[2048,'2048'],[2880,'2880'],[4096,'4096']].map(([v,n])=>`<button class="chip" data-size="${v}" aria-pressed="${A.exportLong===v}">${n}</button>`).join('')}</div>
-      <p class="hint">Pixels along the long side of saved pictures.</p></div>`;
+    </div>`}
+    <p class="hint">Picture size is in the Save menu.</p>`;
   wireGroupRow(tr);
   tr.querySelectorAll('[data-dbg]').forEach(b=>b.addEventListener('click',()=>{ S.dbg=b.dataset.dbg; renderTray(); showDebug(); }));
-  tr.querySelectorAll('[data-size]').forEach(b=>b.addEventListener('click',()=>{ A.exportLong = b.dataset.size==='null' ? null : +b.dataset.size; renderTray(); }));
   const on = (id, fn) => { const el=$('#'+id); if (el) el.addEventListener('input', ()=>fn(+el.value, $('#'+id+'Out'))); };
   on('advFov', (v,o)=>{ A.fov=v; S.tanV=Math.tan(v*Math.PI/360); o.textContent=v+'°'; S.dirtyBuild=true; });
   on('advRatio', (v,o)=>{ const r=1.1*Math.pow(60/1.1, v/100); A.ratio=r; o.textContent=r.toFixed(1)+'x'; S.lowDetail=true; S.dirtyBuild=true; });
@@ -380,16 +384,20 @@ async function onTap(cx, cy){
     }
     S.dirtyBuild=true; S.reframe=true; commit(); banner(modeText()); return;
   }
-  if (S.placing==='face'){ const p=pickPoint(cx,cy); if (!p) return; addFaceAt(p.u, p.v, p.comp); invalidateCompare(); S.placing=false; setTab('people'); return; }
+  if (S.placing==='face'){ const p=pickPoint(cx,cy); if (!p) return; addFaceAt(p.u, p.v, p.comp); invalidateCompare(); S.placing=false; afterPlacing(); return; }
   if (S.placing==='label'){ const p=pickPoint(cx,cy); if (!p) return;
-    if (S.scan){ const L={fixed:[p.p[0], p.p[1]+0.06*S.refDist, p.p[2]], text:''}; L.pos=L.fixed; S.labels.push(L); S.placing=false; setTab('people');
-      const inp=$('#label-'+(S.labels.length-1)); if (inp) inp.focus(); S.dirtyDraw=true; return; }
+    if (S.scan){ const L={fixed:[p.p[0], p.p[1]+0.06*S.refDist, p.p[2]], text:''}; L.pos=L.fixed; S.labels.push(L); S.placing=false; afterPlacing();
+      markNewName(); S.dirtyDraw=true; return; }
     const c=S.comps.find(k=>k.id===p.comp);
     const L = c ? {u:c.topUV[0], v:c.topUV[1], lift:(c.maxY-c.minY)*0.07, text:''} : {u:p.u, v:p.v, lift:0.06, text:''};
-    L.pos=labelWorld(L); S.labels.push(L); S.placing=false; setTab('people');
-    const inp=$('#label-'+(S.labels.length-1)); if (inp) inp.focus(); S.dirtyDraw=true; }
+    L.pos=labelWorld(L); S.labels.push(L); S.placing=false; afterPlacing();
+    markNewName(); S.dirtyDraw=true; }
 }
 
+// A new name box is marked rather than focused: focusing opens the phone keyboard, which hides the
+// picture just when you want to see where the name landed.
+function markNewName(){ const inp=$('#label-'+(S.labels.length-1)); if (!inp) return; inp.classList.add('fresh'); inp.placeholder='Tap here to type the name';
+  inp.addEventListener('focus',()=>inp.classList.remove('fresh'),{once:true}); inp.scrollIntoView({block:'nearest'}); }
 // ---------------------------------------------------------------- gestures
 // ---------------------------------------------------------------- panning and the centre of turning
 function rotOnly(){ return M4.mul(M4.rx(S.pitch*Math.PI/180), M4.mul(M4.ry(S.yaw*Math.PI/180), M4.rz(S.roll))); }
@@ -520,10 +528,17 @@ $('#shapeBtn').addEventListener('click', e=>{ e.stopPropagation();
   if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ m.hidden=true; $('#shapeBtn').setAttribute('aria-expanded','false');
     if (b.dataset.v==='level'){ pushUndo(); S.level=!S.level; S.roll = S.level ? S.rollAuto : 0; S.dirtyDraw=true; commit(); return; }
     pushUndo(); S.shape=b.dataset.v; commit(); layout(); })); });
+const PIC_SIZES = [null, 1080, 2048, 2880, 4096];
 $('#saveBtn').addEventListener('click', e=>{ e.stopPropagation();
-  const m=menu($('#saveBtn'), '#saveMenu', [['png','Picture','PNG, full size'],['video','Video','Opens camera moves'],['ply','3D points','PLY file for Blender, MeshLab']]);
-  if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ m.hidden=true; $('#saveBtn').setAttribute('aria-expanded','false');
-    if (b.dataset.v==='png') savePicture(); else if (b.dataset.v==='ply') savePly(); else setTab('move'); })); });
+  const px = S.adv.exportLong || (MOBILE ? 2048 : 2880);
+  const m=menu($('#saveBtn'), '#saveMenu', [['png','Picture',`PNG, ${px} pixels on the long side`],
+    ['size', `Picture size: ${S.adv.exportLong || 'Auto'}`, 'Tap to change. Videos stop at 1920.'],
+    ['video','Video','Opens camera moves'],['ply','3D points','PLY file for Blender, MeshLab']]);
+  if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',ev=>{
+    if (b.dataset.v==='size'){ ev.stopPropagation(); const i=PIC_SIZES.indexOf(S.adv.exportLong); S.adv.exportLong=PIC_SIZES[(i+1)%PIC_SIZES.length]; persist();
+      m.hidden=true; $('#saveBtn').click(); return; }       // reopen with the new size showing
+    m.hidden=true; $('#saveBtn').setAttribute('aria-expanded','false');
+    if (b.dataset.v==='png') savePicture(); else if (b.dataset.v==='ply') savePly(); else if (S.tab!=='move') setTab('move'); })); });
 document.addEventListener('click', ()=>{ document.querySelectorAll('.menu').forEach(x=>x.hidden=true); document.querySelectorAll('.tb[aria-haspopup]').forEach(b=>b.setAttribute('aria-expanded','false')); });
 $('#infoBtn').addEventListener('click', e=>{ e.stopPropagation(); const i=$('#info'); i.hidden=!i.hidden; $('#infoBtn').setAttribute('aria-expanded', !i.hidden);
   if (!i.hidden){ const text='First Return turns a photo into a lidar style point cloud. Depth is worked out on your device, and the photo never leaves it.';
@@ -604,7 +619,8 @@ $('#file').addEventListener('change', async e=>{
   const g = ++S.gen;
   try { busy('Opening the photo', null); await tick();
     const ph = await decodePhoto(f); if (g!==S.gen) return;
-    const raw = await estimateDepth(ph.canvas); if (g!==S.gen) return;
+    // the finder models start while depth is being worked out
+    const raw = await estimateDepth(ph.canvas, ()=>{ if (S.autoFind) warmFinder().catch(()=>{}); }); if (g!==S.gen) return;
     await setPhoto(ph, normaliseDepth(raw), 'Your photo stayed on this device.');
   } catch(err){ console.error(err); busy(null); notice('Could not read that photo: '+(err.message||err)); }
 });

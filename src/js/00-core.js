@@ -28,7 +28,7 @@ const CONTROLS = [
    stops:[['None',0],['Faint',.12],['Some',.4],['Full',1]]},
   {key:'floor',    name:'Floor',      hint:'A scatter of dots on the ground under the subject.', rebuild:true,
    stops:[['Off',0],['Some',.55],['Full',1.1]]},
-  {key:'hidden',   name:'Hidden parts', hint:'Fills in what the photo could not see: the background behind things, and the backs of people and objects. It shows when you turn the view.', rebuild:true,
+  {key:'hidden',   name:'Hidden parts', hint:'Fills in what the photo could not see: the background behind things, and the backs of people and objects. It shows when you turn or slide the view.', rebuild:true,
    stops:[['Off',0],['Behind',1],['Behind and backs',2]]},
   {key:'edges',    name:'Outlines',   hint:'Dark outlines where near meets far, the way lidar viewers shade a scan.',
    stops:[['Off',0],['Soft',.9],['Strong',2.2]]},
@@ -91,7 +91,14 @@ function gauss(r){ return Math.sqrt(-2*Math.log(r()+1e-9))*Math.cos(6.283185*r()
 const tick = () => new Promise(r=>setTimeout(r,30));
 function busy(text, frac){ const b=$('#busy'); document.body.classList.toggle('locked', text!=null || S.recording); if (text==null){ b.hidden=true; return; } b.hidden=false; $('#busyText').textContent=text; $('#busyBar').style.width = frac==null ? '100%' : (Math.min(1,frac)*100).toFixed(1)+'%'; }
 function banner(text){ const b=$('#banner'); b.hidden=!text; if (text) b.textContent=text; }
-function notice(text){ const b=$('#notice'); b.hidden=!text; if (text) b.textContent=text; }
+// one-off messages carry a read-aloud button, like every other piece of text in the app
+function notice(text){ const b=$('#notice'); S.noticeText=text||''; b.hidden=!text; if (!text) return;
+  b.innerHTML=`<button class="say" aria-label="Read aloud"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg></button><span></span>`;
+  b.querySelector('span').textContent=text; b.querySelector('.say').addEventListener('click', e=>{ e.stopPropagation(); say(text); }); }
+// keeps the phone awake through a long export; quietly does nothing where unsupported
+let wakeLock=null;
+async function stayAwake(on){ try { if (on && !wakeLock && navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen');
+  if (!on && wakeLock){ await wakeLock.release(); wakeLock=null; } } catch(e){ wakeLock=null; } }
 function store(k,v){ try{ localStorage.setItem('firstreturn.'+k, JSON.stringify(v)); }catch(e){} }
 function recall(k){ try{ const v=localStorage.getItem('firstreturn.'+k); return v==null?null:JSON.parse(v); }catch(e){ return null; } }
 function say(text){ try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); u.rate=0.95; speechSynthesis.speak(u); }catch(e){} }

@@ -96,37 +96,60 @@ async function visionFileset(){
   return visionFiles = await Vision.FilesetResolver.forVisionTasks(new URL('mp/wasm', location.href).href);
 }
 // The finder and the outline model share one download (about 23 MB), shown with real progress.
-let visionBuffers = null;
-async function fetchVisionModels(){
-  if (visionBuffers) return visionBuffers;
-  const files = [['mp/wasm/vision_wasm_internal.wasm', 11756954], ['models/efficientdet_lite0.tflite', 4602795], ['models/magic_touch.tflite', 6227884]];
-  const total = files.reduce((s,f)=>s+f[1],0); let got = 0; const out = [];
-  for (const [url] of files){
-    const rd = (await cachedFetch(url)).body.getReader(), chunks=[]; let n=0;
-    for(;;){ const {done,value}=await rd.read(); if (done) break; chunks.push(value); n+=value.length; got+=value.length;
-      busy(`Getting the finder, first time only: ${(got/1e6).toFixed(0)} of ${(total/1e6).toFixed(0)} MB`, got/total); }
-    const buf=new Uint8Array(n); let o=0; for (const c of chunks){ buf.set(c,o); o+=c.length; } out.push(buf);
-  }
-  return visionBuffers = {det:out[1], seg:out[2]};
+let visionBuffers = null, visionP = null;
+const VISION_FILES = [['mp/wasm/vision_wasm_internal.wasm', 11756954], ['models/efficientdet_lite0.tflite', 4602795], ['models/magic_touch.tflite', 6227884]];
+// One shared download, so a quiet early start and a later real request never fetch twice.
+function fetchVisionModels(quiet){
+  if (visionBuffers) return Promise.resolve(visionBuffers);
+  return visionP || (visionP = (async ()=>{
+    const total = VISION_FILES.reduce((s,f)=>s+f[1],0); let got = 0; const out = [];
+    for (const [url] of VISION_FILES){
+      const rd = (await cachedFetch(url)).body.getReader(), chunks=[]; let n=0;
+      for(;;){ const {done,value}=await rd.read(); if (done) break; chunks.push(value); n+=value.length; got+=value.length;
+        if (!quiet) busy(`Getting the finder, first time only: ${(got/1e6).toFixed(0)} of ${(total/1e6).toFixed(0)} MB`, got/total); }
+      const buf=new Uint8Array(n); let o=0; for (const c of chunks){ buf.set(c,o); o+=c.length; } out.push(buf);
+    }
+    return visionBuffers = {det:out[1], seg:out[2]};
+  })().catch(err=>{ visionP=null; throw err; }));
 }
-async function loadSegmenter(){
-  if (segmenter || segFailed) return segmenter;
-  try {
-    const bufs = await fetchVisionModels();
-    busy('Starting the outline finder', null); await tick();
-    const fileset = await visionFileset();
-    segmenter = await Vision.InteractiveSegmenterLegacy.createFromOptions(fileset, {
-      baseOptions:{modelAssetPath:URL.createObjectURL(new Blob([bufs.seg])), delegate:'CPU'},
-      outputCategoryMask:true, outputConfidenceMasks:false});
-  } catch(err){ console.error(err); segFailed = true; segmenter = null; }
-  busy(null);
-  return segmenter;
+// While depth is being worked out, start the finder and outline models too, but only when they are
+// already stored on this device: a first-time download should show its own progress, not run hidden.
+async function warmFinder(){
+  try { const c = await caches.open('first-return-models-v1'); for (const [url] of VISION_FILES) if (!(await c.match(url))) return; } catch(e){ return; }
+  await loadDetector(true); await loadSegmenter(true);
+}
+let segP = null;
+function loadSegmenter(quiet){
+  if (segmenter || segFailed) return Promise.resolve(segmenter);
+  return segP || (segP = (async ()=>{
+    try {
+      const bufs = await fetchVisionModels(quiet);
+      if (!quiet){ busy('Starting the outline finder', null); await tick(); }
+      const fileset = await visionFileset();
+      segmenter = await Vision.InteractiveSegmenterLegacy.createFromOptions(fileset, {
+        baseOptions:{modelAssetPath:URL.createObjectURL(new Blob([bufs.seg])), delegate:'CPU'},
+        outputCategoryMask:true, outputConfidenceMasks:false});
+    } catch(err){ console.error(err); segFailed = true; segmenter = null; }
+    if (!quiet) busy(null);
+    segP = null; return segmenter;
+  })());
+}
+// The outline model gains almost nothing from more than about 1024 pixels (masks agree 99.6% with
+// the full photo) and runs faster on less, so it gets a reduced copy.
+let segInput = null;
+function outlineInput(){
+  const c = S.photoCanvas, L = 1024, s = L/Math.max(c.width, c.height);
+  if (s >= 1) return c;
+  if (segInput && segInput.src===c) return segInput.canvas;
+  const o = document.createElement('canvas'); o.width=Math.round(c.width*s); o.height=Math.round(c.height*s); o.getContext('2d').drawImage(c,0,0,o.width,o.height);
+  segInput = {src:c, canvas:o}; return o;
 }
 async function outlineFor(u, v, stroke){
+  if (!segmenter && segP){ busy('Starting the outline finder', null); }
   const seg = await loadSegmenter(); if (!seg) return null;
   busy('Finding the outline', null); await tick();
   try {
-    const res = seg.segment(S.photoCanvas, stroke ? {scribble:stroke} : {keypoint:{x:u, y:v}});
+    const res = seg.segment(outlineInput(), stroke ? {scribble:stroke} : {keypoint:{x:u, y:v}});
     const m = res.categoryMask, mw = m.width, mh = m.height, a = m.getAsUint8Array();
     // resample to the depth grid; the tapped pixel tells us which value means "selected"
     const at = (x,y) => a[Math.min(mh-1,(y*mh)|0)*mw + Math.min(mw-1,(x*mw)|0)];
@@ -144,22 +167,25 @@ async function outlineFor(u, v, stroke){
 // Depth alone cannot tell that the person behind the dinner table is the point of the photo. A small
 // object detector (EfficientDet Lite0, Apache 2.0) finds people, animals and vehicles; each one is then
 // outlined with Magic Touch using a stroke down its middle, kept inside its box, and checked against depth.
-let detector = null, detFailed = false;
+let detector = null, detFailed = false, detP = null;
 const SKIP = new Set(['dining table','chair','bench','couch','bed','potted plant','tv','toilet','sink','refrigerator','oven','microwave','book','vase','clock','cup','bowl','bottle','wine glass','fork','knife','spoon','cell phone','remote','keyboard','mouse','laptop']);
-async function loadDetector(){
-  if (detector || detFailed) return detector;
-  try {
-    const bufs = await fetchVisionModels();
-    busy('Starting the finder', null); await tick();
-    const fileset = await visionFileset();
-    detector = await Vision.ObjectDetector.createFromOptions(fileset, {
-      baseOptions:{modelAssetPath:URL.createObjectURL(new Blob([bufs.det])), delegate:'CPU'},
-      scoreThreshold:0.35, maxResults:12, runningMode:'IMAGE'});
-  } catch(err){ console.error(err); detFailed = true; detector = null; }
-  busy(null);
-  return detector;
+function loadDetector(quiet){
+  if (detector || detFailed) return Promise.resolve(detector);
+  return detP || (detP = (async ()=>{
+    try {
+      const bufs = await fetchVisionModels(quiet);
+      if (!quiet){ busy('Starting the finder', null); await tick(); }
+      const fileset = await visionFileset();
+      detector = await Vision.ObjectDetector.createFromOptions(fileset, {
+        baseOptions:{modelAssetPath:URL.createObjectURL(new Blob([bufs.det])), delegate:'CPU'},
+        scoreThreshold:0.35, maxResults:12, runningMode:'IMAGE'});
+    } catch(err){ console.error(err); detFailed = true; detector = null; }
+    if (!quiet) busy(null);
+    detP = null; return detector;
+  })());
 }
 async function findThings(){
+  if (!detector && detP) busy('Starting the finder', null);      // an early start is still finishing
   const det = await loadDetector(); if (!det) return null;
   busy('Looking for people and things', null); await tick();
   const W = S.photoCanvas.width, H = S.photoCanvas.height;

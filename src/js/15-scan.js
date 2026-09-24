@@ -115,7 +115,7 @@ function buildScanCloud(cfg){
   for (let i=0;i<n && m<comp.length;i++){
     const r = hash2(i, 5, 71); if (r >= keep) continue;
     const kind = sc.floor[i] ? 1 : 0;
-    if (kind===1 && hash2(i, 9, 3) >= Math.max(cfg.backdrop, 0.05)) continue;   // the scan's own floor follows Backdrop
+    if (kind===1 && hash2(i, 9, 3) >= Math.max(cfg.backdrop, 0.05)) continue;   // the scan's own floor follows Background
     const o=m*10, cr=sc.col[i*3], cg=sc.col[i*3+1], cb=sc.col[i*3+2];
     out[o]=sc.pos[i*3]; out[o+1]=sc.pos[i*3+1]; out[o+2]=sc.pos[i*3+2]; out[o+3]=cr; out[o+4]=cg; out[o+5]=cb;
     out[o+6]=kind; out[o+7]=hash2(i,13,17); out[o+8]=0.299*cr+0.587*cg+0.114*cb; out[o+9]=1; comp[m]=kind===0?0:-1; m++;

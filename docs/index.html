@@ -50,7 +50,9 @@ button{cursor:pointer}
 .pin{position:absolute;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:2px solid var(--accent);background:rgba(114,232,203,.25);pointer-events:none}
 .msgs{position:absolute;left:12px;right:12px;bottom:64px;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none}
 .banner,.notice{max-width:100%;background:rgba(8,10,12,.88);border:1px solid var(--line2);border-radius:18px;padding:7px 14px;font-size:14px;text-align:center}
-.notice{border-color:var(--accent);color:var(--text)}
+.notice{border-color:var(--accent);color:var(--text);display:flex;align-items:center;gap:10px;text-align:left;padding:6px 14px 6px 6px}
+.notice[hidden]{display:none}
+.notice .say{pointer-events:auto}
 .panpill{position:absolute;left:10px;top:10px;border:1px solid var(--accent);background:rgba(8,10,12,.88);color:var(--accent);border-radius:16px;padding:7px 12px;font-size:13px}
 .pin b{position:absolute;left:50%;top:22px;transform:translateX(-50%);white-space:nowrap;font:600 12px var(--ui);color:var(--accent);text-shadow:0 0 4px #000}
 body.locked .side, body.locked .top .tb{pointer-events:none;opacity:.55}
@@ -117,6 +119,7 @@ body.scan .tab[data-tab="subject"], body.scan .tab[data-tab="people"]{opacity:.5
 .lablist{display:flex;flex-direction:column;gap:6px;margin-top:8px}
 .lablist div{display:flex;gap:6px}
 .lablist input{flex:1;min-width:0;background:var(--raise);border:1px solid var(--line2);border-radius:8px;padding:9px 10px}
+.lablist input.fresh{border-color:var(--accent);box-shadow:0 0 0 2px rgba(80,220,190,.25)}
 .menu{position:absolute;z-index:20;background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:4px;min-width:190px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
 .menu button{text-align:left;border:0;background:none;padding:10px 12px;border-radius:6px;font-size:14.5px}
 .menu button:hover,.menu button[aria-pressed="true"]{background:var(--raise)}
@@ -228,7 +231,7 @@ const CONTROLS = [
    stops:[['None',0],['Faint',.12],['Some',.4],['Full',1]]},
   {key:'floor',    name:'Floor',      hint:'A scatter of dots on the ground under the subject.', rebuild:true,
    stops:[['Off',0],['Some',.55],['Full',1.1]]},
-  {key:'hidden',   name:'Hidden parts', hint:'Fills in what the photo could not see: the background behind things, and the backs of people and objects. It shows when you turn the view.', rebuild:true,
+  {key:'hidden',   name:'Hidden parts', hint:'Fills in what the photo could not see: the background behind things, and the backs of people and objects. It shows when you turn or slide the view.', rebuild:true,
    stops:[['Off',0],['Behind',1],['Behind and backs',2]]},
   {key:'edges',    name:'Outlines',   hint:'Dark outlines where near meets far, the way lidar viewers shade a scan.',
    stops:[['Off',0],['Soft',.9],['Strong',2.2]]},
@@ -291,7 +294,14 @@ function gauss(r){ return Math.sqrt(-2*Math.log(r()+1e-9))*Math.cos(6.283185*r()
 const tick = () => new Promise(r=>setTimeout(r,30));
 function busy(text, frac){ const b=$('#busy'); document.body.classList.toggle('locked', text!=null || S.recording); if (text==null){ b.hidden=true; return; } b.hidden=false; $('#busyText').textContent=text; $('#busyBar').style.width = frac==null ? '100%' : (Math.min(1,frac)*100).toFixed(1)+'%'; }
 function banner(text){ const b=$('#banner'); b.hidden=!text; if (text) b.textContent=text; }
-function notice(text){ const b=$('#notice'); b.hidden=!text; if (text) b.textContent=text; }
+// one-off messages carry a read-aloud button, like every other piece of text in the app
+function notice(text){ const b=$('#notice'); S.noticeText=text||''; b.hidden=!text; if (!text) return;
+  b.innerHTML=`<button class="say" aria-label="Read aloud"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6"/></svg></button><span></span>`;
+  b.querySelector('span').textContent=text; b.querySelector('.say').addEventListener('click', e=>{ e.stopPropagation(); say(text); }); }
+// keeps the phone awake through a long export; quietly does nothing where unsupported
+let wakeLock=null;
+async function stayAwake(on){ try { if (on && !wakeLock && navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen');
+  if (!on && wakeLock){ await wakeLock.release(); wakeLock=null; } } catch(e){ wakeLock=null; } }
 function store(k,v){ try{ localStorage.setItem('firstreturn.'+k, JSON.stringify(v)); }catch(e){} }
 function recall(k){ try{ const v=localStorage.getItem('firstreturn.'+k); return v==null?null:JSON.parse(v); }catch(e){ return null; } }
 function say(text){ try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); u.rate=0.95; speechSynthesis.speak(u); }catch(e){} }
@@ -346,8 +356,11 @@ async function decodePhoto(file){
   const buf = await file.arrayBuffer();
   const f35 = readExifFocal35(buf);
   const url = URL.createObjectURL(file);
-  const img = new Image(); img.src = url; await img.decode();
-  const W0 = img.naturalWidth, H0 = img.naturalHeight, LIM = MOBILE ? 1600 : 2000;
+  // createImageBitmap keeps going when the page is in the background (img.decode waits until it is
+  // shown again), and it applies the photo's own rotation
+  let img; try { img = await createImageBitmap(file, {imageOrientation:'from-image'}); }
+  catch(e){ img = new Image(); img.src = url; await img.decode(); }
+  const W0 = img.naturalWidth || img.width, H0 = img.naturalHeight || img.height, LIM = MOBILE ? 1600 : 2000;
   const s = Math.min(1, LIM/Math.max(W0,H0)), w = Math.round(W0*s), h = Math.round(H0*s);
   const c = document.createElement('canvas'); c.width=w; c.height=h; const x = c.getContext('2d', {willReadFrequently:true});
   x.drawImage(img, 0, 0, w, h);
@@ -388,8 +401,10 @@ async function loadModel(){
   session = await ort.InferenceSession.create(buf, {executionProviders:['wasm']});
   return session;
 }
-async function estimateDepth(photoCanvas){
+// onReady runs once the depth runtime is up: starting another model's runtime at the same moment hangs both
+async function estimateDepth(photoCanvas, onReady){
   const sess = await loadModel();
+  if (onReady) onReady();
   busy('Reading depth from the photo', null); await tick();
   const LONG = MOBILE ? 434 : 518, s = LONG/Math.max(photoCanvas.width, photoCanvas.height);
   const mw = Math.max(14, Math.round(photoCanvas.width*s/14)*14), mh = Math.max(14, Math.round(photoCanvas.height*s/14)*14);
@@ -710,7 +725,7 @@ function buildScanCloud(cfg){
   for (let i=0;i<n && m<comp.length;i++){
     const r = hash2(i, 5, 71); if (r >= keep) continue;
     const kind = sc.floor[i] ? 1 : 0;
-    if (kind===1 && hash2(i, 9, 3) >= Math.max(cfg.backdrop, 0.05)) continue;   // the scan's own floor follows Backdrop
+    if (kind===1 && hash2(i, 9, 3) >= Math.max(cfg.backdrop, 0.05)) continue;   // the scan's own floor follows Background
     const o=m*10, cr=sc.col[i*3], cg=sc.col[i*3+1], cb=sc.col[i*3+2];
     out[o]=sc.pos[i*3]; out[o+1]=sc.pos[i*3+1]; out[o+2]=sc.pos[i*3+2]; out[o+3]=cr; out[o+4]=cg; out[o+5]=cb;
     out[o+6]=kind; out[o+7]=hash2(i,13,17); out[o+8]=0.299*cr+0.587*cg+0.114*cb; out[o+9]=1; comp[m]=kind===0?0:-1; m++;
@@ -837,37 +852,60 @@ async function visionFileset(){
   return visionFiles = await Vision.FilesetResolver.forVisionTasks(new URL('mp/wasm', location.href).href);
 }
 // The finder and the outline model share one download (about 23 MB), shown with real progress.
-let visionBuffers = null;
-async function fetchVisionModels(){
-  if (visionBuffers) return visionBuffers;
-  const files = [['mp/wasm/vision_wasm_internal.wasm', 11756954], ['models/efficientdet_lite0.tflite', 4602795], ['models/magic_touch.tflite', 6227884]];
-  const total = files.reduce((s,f)=>s+f[1],0); let got = 0; const out = [];
-  for (const [url] of files){
-    const rd = (await cachedFetch(url)).body.getReader(), chunks=[]; let n=0;
-    for(;;){ const {done,value}=await rd.read(); if (done) break; chunks.push(value); n+=value.length; got+=value.length;
-      busy(`Getting the finder, first time only: ${(got/1e6).toFixed(0)} of ${(total/1e6).toFixed(0)} MB`, got/total); }
-    const buf=new Uint8Array(n); let o=0; for (const c of chunks){ buf.set(c,o); o+=c.length; } out.push(buf);
-  }
-  return visionBuffers = {det:out[1], seg:out[2]};
+let visionBuffers = null, visionP = null;
+const VISION_FILES = [['mp/wasm/vision_wasm_internal.wasm', 11756954], ['models/efficientdet_lite0.tflite', 4602795], ['models/magic_touch.tflite', 6227884]];
+// One shared download, so a quiet early start and a later real request never fetch twice.
+function fetchVisionModels(quiet){
+  if (visionBuffers) return Promise.resolve(visionBuffers);
+  return visionP || (visionP = (async ()=>{
+    const total = VISION_FILES.reduce((s,f)=>s+f[1],0); let got = 0; const out = [];
+    for (const [url] of VISION_FILES){
+      const rd = (await cachedFetch(url)).body.getReader(), chunks=[]; let n=0;
+      for(;;){ const {done,value}=await rd.read(); if (done) break; chunks.push(value); n+=value.length; got+=value.length;
+        if (!quiet) busy(`Getting the finder, first time only: ${(got/1e6).toFixed(0)} of ${(total/1e6).toFixed(0)} MB`, got/total); }
+      const buf=new Uint8Array(n); let o=0; for (const c of chunks){ buf.set(c,o); o+=c.length; } out.push(buf);
+    }
+    return visionBuffers = {det:out[1], seg:out[2]};
+  })().catch(err=>{ visionP=null; throw err; }));
 }
-async function loadSegmenter(){
-  if (segmenter || segFailed) return segmenter;
-  try {
-    const bufs = await fetchVisionModels();
-    busy('Starting the outline finder', null); await tick();
-    const fileset = await visionFileset();
-    segmenter = await Vision.InteractiveSegmenterLegacy.createFromOptions(fileset, {
-      baseOptions:{modelAssetPath:URL.createObjectURL(new Blob([bufs.seg])), delegate:'CPU'},
-      outputCategoryMask:true, outputConfidenceMasks:false});
-  } catch(err){ console.error(err); segFailed = true; segmenter = null; }
-  busy(null);
-  return segmenter;
+// While depth is being worked out, start the finder and outline models too, but only when they are
+// already stored on this device: a first-time download should show its own progress, not run hidden.
+async function warmFinder(){
+  try { const c = await caches.open('first-return-models-v1'); for (const [url] of VISION_FILES) if (!(await c.match(url))) return; } catch(e){ return; }
+  await loadDetector(true); await loadSegmenter(true);
+}
+let segP = null;
+function loadSegmenter(quiet){
+  if (segmenter || segFailed) return Promise.resolve(segmenter);
+  return segP || (segP = (async ()=>{
+    try {
+      const bufs = await fetchVisionModels(quiet);
+      if (!quiet){ busy('Starting the outline finder', null); await tick(); }
+      const fileset = await visionFileset();
+      segmenter = await Vision.InteractiveSegmenterLegacy.createFromOptions(fileset, {
+        baseOptions:{modelAssetPath:URL.createObjectURL(new Blob([bufs.seg])), delegate:'CPU'},
+        outputCategoryMask:true, outputConfidenceMasks:false});
+    } catch(err){ console.error(err); segFailed = true; segmenter = null; }
+    if (!quiet) busy(null);
+    segP = null; return segmenter;
+  })());
+}
+// The outline model gains almost nothing from more than about 1024 pixels (masks agree 99.6% with
+// the full photo) and runs faster on less, so it gets a reduced copy.
+let segInput = null;
+function outlineInput(){
+  const c = S.photoCanvas, L = 1024, s = L/Math.max(c.width, c.height);
+  if (s >= 1) return c;
+  if (segInput && segInput.src===c) return segInput.canvas;
+  const o = document.createElement('canvas'); o.width=Math.round(c.width*s); o.height=Math.round(c.height*s); o.getContext('2d').drawImage(c,0,0,o.width,o.height);
+  segInput = {src:c, canvas:o}; return o;
 }
 async function outlineFor(u, v, stroke){
+  if (!segmenter && segP){ busy('Starting the outline finder', null); }
   const seg = await loadSegmenter(); if (!seg) return null;
   busy('Finding the outline', null); await tick();
   try {
-    const res = seg.segment(S.photoCanvas, stroke ? {scribble:stroke} : {keypoint:{x:u, y:v}});
+    const res = seg.segment(outlineInput(), stroke ? {scribble:stroke} : {keypoint:{x:u, y:v}});
     const m = res.categoryMask, mw = m.width, mh = m.height, a = m.getAsUint8Array();
     // resample to the depth grid; the tapped pixel tells us which value means "selected"
     const at = (x,y) => a[Math.min(mh-1,(y*mh)|0)*mw + Math.min(mw-1,(x*mw)|0)];
@@ -885,22 +923,25 @@ async function outlineFor(u, v, stroke){
 // Depth alone cannot tell that the person behind the dinner table is the point of the photo. A small
 // object detector (EfficientDet Lite0, Apache 2.0) finds people, animals and vehicles; each one is then
 // outlined with Magic Touch using a stroke down its middle, kept inside its box, and checked against depth.
-let detector = null, detFailed = false;
+let detector = null, detFailed = false, detP = null;
 const SKIP = new Set(['dining table','chair','bench','couch','bed','potted plant','tv','toilet','sink','refrigerator','oven','microwave','book','vase','clock','cup','bowl','bottle','wine glass','fork','knife','spoon','cell phone','remote','keyboard','mouse','laptop']);
-async function loadDetector(){
-  if (detector || detFailed) return detector;
-  try {
-    const bufs = await fetchVisionModels();
-    busy('Starting the finder', null); await tick();
-    const fileset = await visionFileset();
-    detector = await Vision.ObjectDetector.createFromOptions(fileset, {
-      baseOptions:{modelAssetPath:URL.createObjectURL(new Blob([bufs.det])), delegate:'CPU'},
-      scoreThreshold:0.35, maxResults:12, runningMode:'IMAGE'});
-  } catch(err){ console.error(err); detFailed = true; detector = null; }
-  busy(null);
-  return detector;
+function loadDetector(quiet){
+  if (detector || detFailed) return Promise.resolve(detector);
+  return detP || (detP = (async ()=>{
+    try {
+      const bufs = await fetchVisionModels(quiet);
+      if (!quiet){ busy('Starting the finder', null); await tick(); }
+      const fileset = await visionFileset();
+      detector = await Vision.ObjectDetector.createFromOptions(fileset, {
+        baseOptions:{modelAssetPath:URL.createObjectURL(new Blob([bufs.det])), delegate:'CPU'},
+        scoreThreshold:0.35, maxResults:12, runningMode:'IMAGE'});
+    } catch(err){ console.error(err); detFailed = true; detector = null; }
+    if (!quiet) busy(null);
+    detP = null; return detector;
+  })());
 }
 async function findThings(){
+  if (!detector && detP) busy('Starting the finder', null);      // an early start is still finishing
   const det = await loadDetector(); if (!det) return null;
   busy('Looking for people and things', null); await tick();
   const W = S.photoCanvas.width, H = S.photoCanvas.height;
@@ -1152,7 +1193,7 @@ function build(){
     for (let i=0;i<R.n;i+=7) if (R.out[i*10+6]===0) ls.push(R.out[i*10+8]);
     ls.sort((a,b)=>a-b); const med = ls.length ? ls[ls.length>>1] : 0.5;
     P.light = S.lightAuto = med < 0.16 ? 2 : med < 0.26 ? 1 : 0;
-    if (P.light){ const cur=$('#notice'); notice((cur.hidden ? '' : cur.textContent+' ') + (P.light===2 ? 'The subject was in shadow, so its light is evened out (Adjust, Shadows).' : 'The subject was dark, so its light is lifted (Adjust, Shadows).')); }
+    if (P.light){ notice((S.noticeText ? S.noticeText+' ' : '') +(P.light===2 ? 'The subject was in shadow, so its light is evened out (Adjust, Shadows).' : 'The subject was dark, so its light is lifted (Adjust, Shadows).')); }
     if (S.tab==='adjust') renderTray();
   }
   if (R.live.length){ const all=R.live.reduce((a,c)=>[a[0]+c.sx, a[1]+(c.minY+c.maxY)/2*c.n, a[2]+c.sz, a[3]+c.n],[0,0,0,0]);
@@ -1398,7 +1439,9 @@ function renderView(W, H, o){
     gl.uniform1f(u.uExposure, o.bright); gl.uniform1f(u.uSat, o.colour==='muted' ? .45 : 1);
     gl.uniform1f(u.uBgTint, L.bgTint); gl.uniform1f(u.uBgGain, L.bgGain); gl.uniform1f(u.uBgSize, L.bgSize);
     gl.uniform1f(u.uSparkle, L.sparkle); gl.uniform1f(u.uFocus, o.focus ? 1 : 0); gl.uniform1f(u.uLight, o.light||0);
-    gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8));
+    // hidden parts show once the view has turned or slid sideways, since either uncovers what the photo could not see
+    const slid = o.thumb ? 0 : Math.hypot(S.pan[0], S.pan[1])/(S.refDist||2);
+    gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8 + slid*8));
     gl.uniform1i(u.uMode, {photo:0,muted:0,range:1,height:2,grey:3,phosphor:4}[o.colour]||0);
     gl.uniform2f(u.uR, S.rng[0], S.rng[1]); gl.uniform2f(u.uY, S.yr[0], S.yr[1]);
     gl.bindVertexArray(o.cloud.vao); gl.drawArrays(gl.POINTS, 0, o.cloud.count); gl.bindVertexArray(null);
@@ -1550,7 +1593,8 @@ function withCanvasSize(W, H, fn){
   if (r && typeof r.then === 'function') return r.finally(restore);
   restore(); return r;
 }
-function exportSize(long){ const a=frameAspect(); const L=Math.min(S.adv.exportLong || long, gl.getParameter(gl.MAX_TEXTURE_SIZE));
+// Picture size applies to pictures; video is capped at 1920, the most phone encoders will take.
+function exportSize(long, cap){ const a=frameAspect(); const L=Math.min(S.adv.exportLong || long, cap || 1e9, gl.getParameter(gl.MAX_TEXTURE_SIZE));
   return a>=1 ? [L&~1, Math.round(L/a)&~1] : [Math.round(L*a)&~1, L&~1]; }
 async function savePicture(){
   if (!S.count) return;
@@ -1561,8 +1605,9 @@ async function savePicture(){
   drawLabels2D(x, W, H);
   c2.toBlob(b=>{ busy(null); showSheet(URL.createObjectURL(b), 'image', 'first-return.png'); }, 'image/png');
 }
-function savePly(){
+async function savePly(){
   if (!S.count) return;
+  busy('Making the 3D file', null); await tick();
   const n=S.count, out=S.cpu;
   const head = `ply\nformat binary_little_endian 1.0\ncomment First Return point cloud, units are relative\nelement vertex ${n}\nproperty float x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n`;
   const hb = new TextEncoder().encode(head), buf = new ArrayBuffer(hb.length + n*15); new Uint8Array(buf).set(hb); const dv=new DataView(buf);
@@ -1571,7 +1616,7 @@ function savePly(){
     dv.setUint8(p+12,Math.min(255,out[o+3]*255*g)); dv.setUint8(p+13,Math.min(255,out[o+4]*255*g)); dv.setUint8(p+14,Math.min(255,out[o+5]*255*g)); }
   const url = URL.createObjectURL(new Blob([buf],{type:'application/octet-stream'}));
   const a = document.createElement('a'); a.href=url; a.download='first-return.ply'; document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url), 30000);
+  setTimeout(()=>URL.revokeObjectURL(url), 30000); busy(null);
   notice(`Saved first-return.ply, ${(buf.byteLength/1e6).toFixed(1)} MB. It opens in Blender, MeshLab or CloudCompare.`);
 }
 
@@ -1589,11 +1634,11 @@ function poseAt(base, move, t){ const m=MOVES[move](ease(Math.min(1,Math.max(0,t
 async function previewMove(move, secs){
   if (S.recording || !S.count) return;
   const base={yaw:S.yaw,pitch:S.pitch,zoom:S.zoom}, dur=secs*1000;
-  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; banner('Playing the move');
+  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked'); banner('Playing the move');
   await new Promise(res=>{ const t0=performance.now(); const step=()=>{ const el=performance.now()-t0;
     Object.assign(S, poseAt(base, move, el/dur)); draw(); renderLabels(); renderPins();
     $('#recfill').style.width=(Math.min(1,el/dur)*100)+'%'; if (el<dur) requestAnimationFrame(step); else res(); }; requestAnimationFrame(step); });
-  S.recording=false; $('#recbar').hidden=true; Object.assign(S, base); S.dirtyDraw=true; banner(modeText());
+  S.recording=false; $('#recbar').hidden=true; document.body.classList.remove('locked'); Object.assign(S, base); S.dirtyDraw=true; banner(modeText());
 }
 
 // Frame by frame with WebCodecs: every frame is rendered at its exact time, so a slow phone makes a
@@ -1601,10 +1646,10 @@ async function previewMove(move, secs){
 async function recordMove(move, secs){
   if (S.recording || !S.count) return;
   const base={yaw:S.yaw,pitch:S.pitch,zoom:S.zoom}, fps=30, hold=Math.round(fps*0.4), frames=Math.round(secs*fps)+2*hold;
-  const [W,H] = exportSize(MOBILE ? 1280 : 1920);
+  const [W,H] = exportSize(MOBILE ? 1280 : 1920, 1920);
   const rc=document.createElement('canvas'); rc.width=W; rc.height=H; const rx=rc.getContext('2d');
   const frameAt = i => { const t=(i-hold)/(frames-2*hold-1); Object.assign(S, poseAt(base, move, t)); draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
-  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked');
+  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked'); stayAwake(true);
   let blob=null, ext='mp4';
   try {
     let config=null;
@@ -1648,7 +1693,7 @@ async function recordMove(move, secs){
       blob = new Blob(chunks, {type:mime.split(';')[0]});
     }
   } catch(err){ console.error(err); banner(String(err.message||err)); }
-  S.recording=false; $('#recbar').hidden=true; document.body.classList.remove('locked'); Object.assign(S, base); S.dirtyDraw=true;
+  S.recording=false; $('#recbar').hidden=true; document.body.classList.remove('locked'); stayAwake(false); Object.assign(S, base); S.dirtyDraw=true;
   if (blob){ banner(modeText()); showSheet(URL.createObjectURL(blob), 'video', 'first-return.'+ext); }
 }
 
@@ -1675,7 +1720,7 @@ function undo(){
   if (s.level!==S.level){ S.level=s.level; S.roll = S.level ? S.rollAuto : 0; }
   S.dirtyBuild=true; undoArmed=true; persist(); renderTray(); banner(modeText());
 }
-function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine}); }
+function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine, move:S.move, moveLen:S.moveLen, exportLong:S.adv.exportLong}); }
 // ---------------------------------------------------------------- my looks: save, apply, share
 function myLooks(){ const v=recall('myLooks'); return Array.isArray(v) ? v : []; }
 function saveMyLooks(list){ store('myLooks', list); }
@@ -1754,7 +1799,7 @@ function renderTray(){
     tr.innerHTML = `<h3>Look ${custom?'<span class="chip" style="padding:3px 8px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent);border-color:var(--accent)">Changed</span>':''}<span class="sp"></span></h3>
       <div class="looks">${Object.entries(LOOKS).map(([k,L])=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${L.name}</b></button>`).join('')}</div>
       <h3 style="margin-top:12px">Dot pattern</h3>
-      <div class="scroller pats">${CTRL.pattern.chips.map(([v,n])=>`<button class="chip pat" data-pat="${v}" aria-pressed="${P.pattern===v}">${PAT_ICON[v]}${n}</button>`).join('')}</div>
+      <div class="scroller pats">${CTRL.pattern.chips.map(([v,n])=>`<button class="chip pat" data-pat="${v}" aria-pressed="${P.pattern===v}" ${S.scan?'disabled':''}>${PAT_ICON[v]}${n}</button>`).join('')}</div>${S.scan?'<p class="hint" style="margin:4px 0 0">A 3D scan keeps the points it measured, so the pattern applies to photos only.</p>':''}
       <div class="sect row"><button class="chip" id="resetLook" ${custom?'':'disabled'}>Reset look</button>${undoBtn}</div>
       <div class="sect"><h3>My looks</h3>
         ${mine.length ? `<div class="looks">${mine.map(m=>`<div class="look mine" aria-pressed="${S.activeMine===m.id}"><button class="lookpick" data-mine="${m.id}" aria-label="Use ${esc(m.name)}"><canvas id="thumb-${m.id}" width="208" height="156"></canvas><b>${esc(m.name)}</b></button><button class="lookdel" data-delmine="${m.id}" aria-label="Remove ${esc(m.name)}">&#x2715;</button></div>`).join('')}</div>` : '<p class="hint" style="margin:0 0 8px">Change anything, then save it here to use again on other photos.</p>'}
@@ -1795,10 +1840,11 @@ function renderTray(){
     }
     const note = c.key==='floor' && !S.hasFloor && !S.scan ? ' This photo has no floor, so moving this adds one.' : '';
     tr.innerHTML = `${groupRow()}
-      ${keys.length>1 ? `<div class="scroller" style="margin-top:8px">${keys.map(k=>`<button class="chip" data-ctrl="${k}" aria-pressed="${k===S.ctrl}">${CTRL[k].name}</button>`).join('')}</div>` : ''}
+      ${keys.length>1 ? `<div class="scroller" style="margin-top:8px">${keys.map(k=>`<button class="chip" data-ctrl="${k}" aria-pressed="${k===S.ctrl}">${CTRL[k].name}</button>`).join('')}${S.group==='scene' && S.rollAuto && !S.scan ? `<button class="chip" id="levelChip" aria-pressed="${S.level}">Straighten ${(Math.abs(S.rollAuto)*180/Math.PI).toFixed(1)}°</button>` : ''}</div>` : ''}
       ${body}<p class="hint">${sayBtn(c.hint+note)}<span>${c.hint}${note}</span></p>
       <div class="sect row">${undoBtn}</div>`;
     tr.querySelectorAll('[data-ctrl]').forEach(b=>b.addEventListener('click',()=>{ S.ctrl=b.dataset.ctrl; renderTray(); }));
+    if ($('#levelChip')) $('#levelChip').addEventListener('click',()=>{ pushUndo(); S.level=!S.level; S.roll = S.level ? S.rollAuto : 0; S.adv.roll=null; S.dirtyDraw=true; commit(); });
     tr.querySelectorAll('[data-choice]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); P[c.key]=b.dataset.choice; if (c.rebuild) S.dirtyBuild=true; S.dirtyDraw=true; commit(); }));
     wireGroupRow(tr);
     const r = $('#ctl');
@@ -1809,7 +1855,7 @@ function renderTray(){
     }
   }
   else if (S.tab==='subject' && S.scan){
-    tr.innerHTML = `<p class="hint" style="margin:0">${sayBtn('A scan keeps every point it measured, so there is no subject to pick. Use Backdrop under Adjust to thin out its floor.')}<span>A scan keeps every point it measured, so there is no subject to pick. Use Backdrop under Adjust to thin out its floor.</span></p>`;
+    tr.innerHTML = `<p class="hint" style="margin:0">${sayBtn('A scan keeps every point it measured, so there is no subject to pick. Use Background under Adjust, Scene to thin out its floor.')}<span>A scan keeps every point it measured, so there is no subject to pick. Use Background under Adjust, Scene to thin out its floor.</span></p>`;
   }
   else if (S.tab==='subject'){
     const outlined = S.sharp || S.picks.some(p=>p.seg);
@@ -1841,8 +1887,8 @@ function renderTray(){
       <div class="scroller" style="margin-top:8px">${[4,6,10].map(s=>`<button class="chip" data-len="${s}" aria-pressed="${len===s}">${s} seconds</button>`).join('')}</div>
       <div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button></div>
       <p class="hint">${sayBtn('The move starts from the view on screen, so line it up first.')}<span>Starts from the view on screen, so line it up first.</span></p>`;
-    tr.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>{ S.move=b.dataset.move; renderTray(); previewMove(S.move, Math.min(4,S.moveLen||6)); }));
-    tr.querySelectorAll('[data-len]').forEach(b=>b.addEventListener('click',()=>{ S.moveLen=+b.dataset.len; renderTray(); }));
+    tr.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>{ S.move=b.dataset.move; persist(); renderTray(); previewMove(S.move, Math.min(4,S.moveLen||6)); }));
+    tr.querySelectorAll('[data-len]').forEach(b=>b.addEventListener('click',()=>{ S.moveLen=+b.dataset.len; persist(); renderTray(); }));
     $('#playMove').addEventListener('click',()=>previewMove(S.move||'push', S.moveLen||6));
     $('#recMove').addEventListener('click',()=>recordMove(S.move||'push', S.moveLen||6));
   }
@@ -1859,9 +1905,9 @@ function renderTray(){
       <div class="lablist">${S.labels.map((L,i)=>`<div><input id="label-${i}" value="${esc(L.text)}" placeholder="Name" aria-label="Name"><button class="chip" data-del="${i}">Remove</button></div>`).join('')}</div></div>`;
     if ($('#anon')) $('#anon').addEventListener('click', async ()=>{ S.anon=!S.anon; if (S.anon && !S.facesFound) await findFaces(); applyAnon(); invalidateCompare(); renderTray(); });
     tr.querySelectorAll('[data-level]').forEach(b=>b.addEventListener('click', async ()=>{ S.anonLevel=+b.dataset.level; if (!S.anon){ S.anon=true; if (!S.facesFound) await findFaces(); } applyAnon(); invalidateCompare(); renderTray(); }));
-    if ($('#addFace')) $('#addFace').addEventListener('click',()=>{ S.placing = S.placing==='face' ? false : 'face'; setTab('people'); });
+    if ($('#addFace')) $('#addFace').addEventListener('click',()=>setPlacing('face'));
     const cf=$('#clearFaces'); if (cf) cf.addEventListener('click',()=>{ S.faces=[]; S.facesFound=false; S.anon=false; applyAnon(); invalidateCompare(); renderTray(); });
-    $('#addLabel').addEventListener('click',()=>{ S.placing = S.placing==='label' ? false : 'label'; setTab('people'); });
+    $('#addLabel').addEventListener('click',()=>setPlacing('label'));
     S.labels.forEach((L,i)=>{ $('#label-'+i).addEventListener('input',e=>{ L.text=e.target.value; S.dirtyDraw=true; }); });
     tr.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{ S.labels.splice(+b.dataset.del,1); renderTray(); S.dirtyDraw=true; }));
   }
@@ -1869,7 +1915,12 @@ function renderTray(){
   const u=$('#undoBtn'); if (u) u.addEventListener('click', undo);
   tr.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say)));
 }
-function groupKeys(g){ const G=GROUPS.find(x=>x.id===g)||GROUPS[0]; return G.keys.filter(k=>!(S.scan && (k==='depth3d'||k==='light'||k==='hidden'))); }
+// Waiting for a tap on the picture. This must not go through setTab: on a phone, re-selecting the open
+// tab closes it, and closing People cancels the placing, so the tap would do nothing.
+function afterPlacing(){ if (S.tab!=='people') setTab('people'); else { $('#stage').classList.remove('picking'); renderTray(); banner(modeText()); } }
+function setPlacing(kind){ S.placing = S.placing===kind ? false : kind; $('#stage').classList.toggle('picking', !!S.placing || S.tab==='subject');
+  renderTray(); banner(modeText()); renderPins(); }
+function groupKeys(g){ const G=GROUPS.find(x=>x.id===g)||GROUPS[0]; return G.keys.filter(k=>!(S.scan && (k==='depth3d'||k==='light'||k==='hidden'||k==='floor'))); }
 function groupRow(){ return `<div class="seg" role="tablist">${GROUPS.map(g=>`<button class="segb" data-group="${g.id}" aria-selected="${S.group===g.id}">${g.name}</button>`).join('')}</div>`; }
 function wireGroupRow(tr){ tr.querySelectorAll('[data-group]').forEach(b=>b.addEventListener('click',()=>{ S.group=b.dataset.group; if (S.group!=='advanced') S.ctrl=groupKeys(S.group)[0]; store('group', S.group); renderTray(); showDebug(); })); }
 // ---------------------------------------------------------------- Advanced: diagnostic views and direct settings
@@ -1888,15 +1939,13 @@ function renderAdvanced(tr){
       ${S.scan?'':row('advRatio','Far vs near',0,100,1,ratioPos.toFixed(0),ratio.toFixed(1)+'x',!!A.ratio)}
       ${S.scan?'':row('advRoll','Tilt',-12,12,0.1,roll.toFixed(1),roll.toFixed(1)+'°',A.roll!=null)}
     </div>
-    <div class="sect"><h3>Scanner</h3>
-      ${row('advBeams','Beams',16,256,1,beams,beams,!!A.beams)}
+    ${S.scan ? '' : `<div class="sect"><h3>Scanner</h3>
+      ${P.pattern==='rings' ? row('advBeams','Beams',16,256,1,beams,beams,!!A.beams) : '<p class="hint">Beams applies to the Scan rings pattern (Look tab).</p>'}
       ${row('advNoise','Range noise',0,4,0.1,A.noise,A.noise.toFixed(1)+'x',A.noise!==1)}
-    </div>
-    <div class="sect"><h3>Picture size</h3><div class="scroller">${[[null,'Auto'],[1080,'1080'],[2048,'2048'],[2880,'2880'],[4096,'4096']].map(([v,n])=>`<button class="chip" data-size="${v}" aria-pressed="${A.exportLong===v}">${n}</button>`).join('')}</div>
-      <p class="hint">Pixels along the long side of saved pictures.</p></div>`;
+    </div>`}
+    <p class="hint">Picture size is in the Save menu.</p>`;
   wireGroupRow(tr);
   tr.querySelectorAll('[data-dbg]').forEach(b=>b.addEventListener('click',()=>{ S.dbg=b.dataset.dbg; renderTray(); showDebug(); }));
-  tr.querySelectorAll('[data-size]').forEach(b=>b.addEventListener('click',()=>{ A.exportLong = b.dataset.size==='null' ? null : +b.dataset.size; renderTray(); }));
   const on = (id, fn) => { const el=$('#'+id); if (el) el.addEventListener('input', ()=>fn(+el.value, $('#'+id+'Out'))); };
   on('advFov', (v,o)=>{ A.fov=v; S.tanV=Math.tan(v*Math.PI/360); o.textContent=v+'°'; S.dirtyBuild=true; });
   on('advRatio', (v,o)=>{ const r=1.1*Math.pow(60/1.1, v/100); A.ratio=r; o.textContent=r.toFixed(1)+'x'; S.lowDetail=true; S.dirtyBuild=true; });
@@ -2034,16 +2083,20 @@ async function onTap(cx, cy){
     }
     S.dirtyBuild=true; S.reframe=true; commit(); banner(modeText()); return;
   }
-  if (S.placing==='face'){ const p=pickPoint(cx,cy); if (!p) return; addFaceAt(p.u, p.v, p.comp); invalidateCompare(); S.placing=false; setTab('people'); return; }
+  if (S.placing==='face'){ const p=pickPoint(cx,cy); if (!p) return; addFaceAt(p.u, p.v, p.comp); invalidateCompare(); S.placing=false; afterPlacing(); return; }
   if (S.placing==='label'){ const p=pickPoint(cx,cy); if (!p) return;
-    if (S.scan){ const L={fixed:[p.p[0], p.p[1]+0.06*S.refDist, p.p[2]], text:''}; L.pos=L.fixed; S.labels.push(L); S.placing=false; setTab('people');
-      const inp=$('#label-'+(S.labels.length-1)); if (inp) inp.focus(); S.dirtyDraw=true; return; }
+    if (S.scan){ const L={fixed:[p.p[0], p.p[1]+0.06*S.refDist, p.p[2]], text:''}; L.pos=L.fixed; S.labels.push(L); S.placing=false; afterPlacing();
+      markNewName(); S.dirtyDraw=true; return; }
     const c=S.comps.find(k=>k.id===p.comp);
     const L = c ? {u:c.topUV[0], v:c.topUV[1], lift:(c.maxY-c.minY)*0.07, text:''} : {u:p.u, v:p.v, lift:0.06, text:''};
-    L.pos=labelWorld(L); S.labels.push(L); S.placing=false; setTab('people');
-    const inp=$('#label-'+(S.labels.length-1)); if (inp) inp.focus(); S.dirtyDraw=true; }
+    L.pos=labelWorld(L); S.labels.push(L); S.placing=false; afterPlacing();
+    markNewName(); S.dirtyDraw=true; }
 }
 
+// A new name box is marked rather than focused: focusing opens the phone keyboard, which hides the
+// picture just when you want to see where the name landed.
+function markNewName(){ const inp=$('#label-'+(S.labels.length-1)); if (!inp) return; inp.classList.add('fresh'); inp.placeholder='Tap here to type the name';
+  inp.addEventListener('focus',()=>inp.classList.remove('fresh'),{once:true}); inp.scrollIntoView({block:'nearest'}); }
 // ---------------------------------------------------------------- gestures
 // ---------------------------------------------------------------- panning and the centre of turning
 function rotOnly(){ return M4.mul(M4.rx(S.pitch*Math.PI/180), M4.mul(M4.ry(S.yaw*Math.PI/180), M4.rz(S.roll))); }
@@ -2174,10 +2227,17 @@ $('#shapeBtn').addEventListener('click', e=>{ e.stopPropagation();
   if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ m.hidden=true; $('#shapeBtn').setAttribute('aria-expanded','false');
     if (b.dataset.v==='level'){ pushUndo(); S.level=!S.level; S.roll = S.level ? S.rollAuto : 0; S.dirtyDraw=true; commit(); return; }
     pushUndo(); S.shape=b.dataset.v; commit(); layout(); })); });
+const PIC_SIZES = [null, 1080, 2048, 2880, 4096];
 $('#saveBtn').addEventListener('click', e=>{ e.stopPropagation();
-  const m=menu($('#saveBtn'), '#saveMenu', [['png','Picture','PNG, full size'],['video','Video','Opens camera moves'],['ply','3D points','PLY file for Blender, MeshLab']]);
-  if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ m.hidden=true; $('#saveBtn').setAttribute('aria-expanded','false');
-    if (b.dataset.v==='png') savePicture(); else if (b.dataset.v==='ply') savePly(); else setTab('move'); })); });
+  const px = S.adv.exportLong || (MOBILE ? 2048 : 2880);
+  const m=menu($('#saveBtn'), '#saveMenu', [['png','Picture',`PNG, ${px} pixels on the long side`],
+    ['size', `Picture size: ${S.adv.exportLong || 'Auto'}`, 'Tap to change. Videos stop at 1920.'],
+    ['video','Video','Opens camera moves'],['ply','3D points','PLY file for Blender, MeshLab']]);
+  if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',ev=>{
+    if (b.dataset.v==='size'){ ev.stopPropagation(); const i=PIC_SIZES.indexOf(S.adv.exportLong); S.adv.exportLong=PIC_SIZES[(i+1)%PIC_SIZES.length]; persist();
+      m.hidden=true; $('#saveBtn').click(); return; }       // reopen with the new size showing
+    m.hidden=true; $('#saveBtn').setAttribute('aria-expanded','false');
+    if (b.dataset.v==='png') savePicture(); else if (b.dataset.v==='ply') savePly(); else if (S.tab!=='move') setTab('move'); })); });
 document.addEventListener('click', ()=>{ document.querySelectorAll('.menu').forEach(x=>x.hidden=true); document.querySelectorAll('.tb[aria-haspopup]').forEach(b=>b.setAttribute('aria-expanded','false')); });
 $('#infoBtn').addEventListener('click', e=>{ e.stopPropagation(); const i=$('#info'); i.hidden=!i.hidden; $('#infoBtn').setAttribute('aria-expanded', !i.hidden);
   if (!i.hidden){ const text='First Return turns a photo into a lidar style point cloud. Depth is worked out on your device, and the photo never leaves it.';
@@ -2258,7 +2318,8 @@ $('#file').addEventListener('change', async e=>{
   const g = ++S.gen;
   try { busy('Opening the photo', null); await tick();
     const ph = await decodePhoto(f); if (g!==S.gen) return;
-    const raw = await estimateDepth(ph.canvas); if (g!==S.gen) return;
+    // the finder models start while depth is being worked out
+    const raw = await estimateDepth(ph.canvas, ()=>{ if (S.autoFind) warmFinder().catch(()=>{}); }); if (g!==S.gen) return;
     await setPhoto(ph, normaliseDepth(raw), 'Your photo stayed on this device.');
   } catch(err){ console.error(err); busy(null); notice('Could not read that photo: '+(err.message||err)); }
 });
@@ -2287,6 +2348,9 @@ async function boot(){
   S.shape = saved && saved.shape ? saved.shape : (MOBILE ? 'photo' : 'wide');
   if (saved && typeof saved.level==='boolean') S.level = saved.level;
   if (saved && saved.activeMine && myLooks().some(m=>m.id===saved.activeMine)) S.activeMine = saved.activeMine;
+  if (saved && MOVES[saved.move]) S.move = saved.move;
+  if (saved && [4,6,10].includes(saved.moveLen)) S.moveLen = saved.moveLen;
+  if (saved && PIC_SIZES.includes(saved.exportLong)) S.adv.exportLong = saved.exportLong;
   { const g = recall('group'); if (GROUPS.some(x=>x.id===g)) S.group = g; }
   $('#fileLooks').addEventListener('change', e=>{ const f=e.target.files[0]; e.target.value=''; if (f) importLooks(f); });
   const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom;
