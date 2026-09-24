@@ -7,7 +7,7 @@
 const SPLAT_VS = `#version 300 es
 precision highp float; precision highp int;
 uniform highp usampler2D uData; uniform mat4 uProj, uView; uniform vec2 uFocal, uVp, uR;
-uniform float uCovK, uExposure, uOrbit, uFxT, uTime, uLin, uFxK, uFocus; uniform int uFx, uMix;
+uniform float uCovK, uExposure, uOrbit, uFxT, uTime, uLin, uFxK, uFocus, uDof, uFocusD; uniform int uFx, uMix;
 layout(location=0) in vec2 aCorner; layout(location=1) in uint aIndex;
 out vec4 vCol; out vec2 vPos;
 float hsh(float n){ return fract(sin(n*12.9898+4.1)*43758.5453); }
@@ -43,6 +43,7 @@ void main(){
   mat3 T = J*mat3(uView);
   mat3 c2 = T*Vrk*transpose(T);
   float a = c2[0][0]+.3, b = c2[0][1], c = c2[1][1]+.3;
+  if(uDof > 0.){ float coc = uDof*abs(-iz - 1./uFocusD)*uFocusD*uVp.y*.012, det0 = a*c-b*b; a += coc*coc; c += coc*coc; col.a *= sqrt(max(det0,1e-6)/(a*c-b*b)); }
   float mid = .5*(a+c), rad = length(vec2(.5*(a-c), b)), l1 = mid+rad, l2 = max(mid-rad, .1);
   vec2 d1 = abs(b) < 1e-7 ? (a >= c ? vec2(1.,0.) : vec2(0.,1.)) : normalize(vec2(b, l1-a));
   vec2 e1 = min(3.*sqrt(l1), 1024.)*d1, e2 = min(3.*sqrt(l2), 1024.)*vec2(d1.y,-d1.x);
@@ -147,7 +148,7 @@ function drawSplats(W, H, V, Pm, o, lin, fxK=1){
   
   const slid = o.thumb ? 0 : Math.hypot(S.pan[0], S.pan[1])/(S.refDist||2);
   gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8 + slid*8));
-  gl.uniform1i(u.uFx, o.splatFx||0); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, o.mix||0); gl.uniform1f(u.uFocus, o.focus && !S.scan ? 1 : 0);
+  gl.uniform1i(u.uFx, o.splatFx||0); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, o.mix||0); gl.uniform1f(u.uFocus, o.focus && !S.scan ? 1 : 0); gl.uniform1f(u.uDof, o.dof||0); gl.uniform1f(u.uFocusD, o.focusD||2);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, Sg.tex); gl.uniform1i(u.uData, 0);
   gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   gl.bindVertexArray(Sg.vao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, Sg.n); gl.bindVertexArray(null);

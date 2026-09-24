@@ -100,12 +100,11 @@ function renderTray(){
   const undoBtn = `<button class="chip" id="undoBtn" ${S.undo.length?'':'disabled'}>Undo</button>`;
   if (S.tab==='look'){
     const mine = myLooks(), custom = isCustom();
-    tr.innerHTML = `<h3>Look ${custom?'<span class="chip" style="padding:3px 8px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent);border-color:var(--accent)">Changed</span>':''}<span class="sp"></span></h3>
+    tr.innerHTML = `<h3>Look ${custom?'<span class="chip" style="padding:3px 8px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent);border-color:var(--accent)">Changed</span>':''}<span class="sp"></span><button class="chip small" id="resetLook" ${custom?'':'disabled'}>Reset look</button>${undoBtn.replace('class="chip"','class="chip small"')}</h3>
       ${[['Dots', k=>!LOOKS[k].splat], ['Photo', k=>LOOKS[k].splat]].map(([title, test])=>{ const ks=Object.keys(LOOKS).filter(k=>test(k) && lookAvailable(k)); return ks.length ? `<p class="rowlabel">${title}</p><div class="looks">${ks.map(k=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${LOOKS[k].name}</b></button>`).join('')}</div>` : ''; }).join('')}
       <p class="hint">${sayBtn(LOOK_HINT[look]||'')}<span>${LOOK_HINT[look]||''}</span></p>
       ${(LOOKS[look].splat && !LOOKS[look].mix) || S.scan ? '' : `<h3 style="margin-top:12px">Dot pattern</h3>
       <div class="scroller pats">${CTRL.pattern.chips.map(([v,n])=>`<button class="chip pat" data-pat="${v}" aria-pressed="${P.pattern===v}">${PAT_ICON[v]}${n}</button>`).join('')}</div>`}
-      <div class="sect row"><button class="chip" id="resetLook" ${custom?'':'disabled'}>Reset look</button>${undoBtn}</div>
       <div class="sect"><h3>My looks</h3>
         ${mine.length ? `<div class="looks">${mine.map(m=>`<div class="look mine" aria-pressed="${S.activeMine===m.id}"><button class="lookpick" data-mine="${m.id}" aria-label="Use ${esc(m.name)}" ${lookAvailable(m.base)?'':'disabled'}><canvas id="thumb-${m.id}" width="208" height="156"></canvas><b>${esc(m.name)}</b>${lookAvailable(m.base)?'':'<small>Needs a photo</small>'}</button><button class="lookdel" data-delmine="${m.id}" aria-label="Remove ${esc(m.name)}">&#x2715;</button></div>`).join('')}</div>` : `<p class="hint" style="margin:0 0 8px">${sayBtn('Change anything, then save it here to use again on other photos.')}<span>Change anything, then save it here to use again on other photos.</span></p>`}
         ${S.savingLook ? `<div class="row" style="margin-top:8px"><input id="lookName" class="nameinput" value="My look ${mine.length+1}" aria-label="Name for this look" maxlength="40"><button class="btn primary" id="saveLookOk">Save</button><button class="btn" id="saveLookNo">Cancel</button></div>`
@@ -242,7 +241,7 @@ function renderTray(){
 function afterPlacing(){ if (S.tab!=='people') setTab('people'); else { $('#stage').classList.remove('picking'); renderTray(); banner(modeText()); } }
 function setPlacing(kind){ S.placing = S.placing===kind ? false : kind; $('#stage').classList.toggle('picking', !!S.placing || S.tab==='subject');
   renderTray(); banner(modeText()); renderPins(); }
-const SPLAT_KEYS = ['bright','glow','depth3d','hidden'];
+const SPLAT_KEYS = ['bright','glow','depth3d','hidden','focus'];
 const LOOK_HINT = {
   void:'Void: the subject in true colour on a black stage, with a faint backdrop and floor.',
   sparse:'Sparse: fewer, bigger, glowing dots, muted colour.',
@@ -328,7 +327,7 @@ function makeThumbs(job){
     const tw=208, th=156;
     if (cv.width>=tw && cv.height>=th){
       renderView(tw, th, {cloud:G.clouds.thumb, look:lk, colour:L.colour, size:val2('size',L.size)*1.3, bright:val2('bright',L.bright)*1.5,
-        glow:val2('glow',L.glow), edges:val2('edges',L.edges), light:val('light'), yaw:L.yaw, pitch:L.pitch, zoom:Math.max(1, L.zoom*0.78), thumb:true, sync:true, targetKey:'thumb'});
+        glow:val2('glow',L.glow), edges:val2('edges',L.edges), light:val('light'), yaw:L.yaw, pitch:L.pitch, zoom:Math.max(1, L.zoom*0.78), thumb:true, sync:true, dof:val2('focus',L.focus||0), targetKey:'thumb'});
       if (G.splat) G.splat.sortedFor = null;       // the main view needs its own order again
       const c=document.createElement('canvas'); c.width=tw; c.height=th; c.getContext('2d').drawImage(cv, 0, cv.height-th, tw, th, 0, 0, tw, th);
       out[k]=c; S.dirtyDraw=true;
@@ -482,7 +481,8 @@ cv.addEventListener('pointermove', e=>{ const p=ptrs.get(e.pointerId); if(!p || 
   S.dirtyDraw=true; viewButton(); });
 cv.addEventListener('pointerup', e=>{
   if (ptrs.size===1 && moved<8){ const r=cv.getBoundingClientRect(), now=performance.now(), cx=e.clientX-r.left, cy=e.clientY-r.top;
-    if (S.tab!=='subject' && !S.placing && now-lastTap<320){ const hit=pickPoint(cx,cy); if (hit) centreOn(hit.p); lastTap=0; }
+    if (S.panMode && S.tab!=='subject' && !S.placing){ const hit=pickPoint(cx,cy); if (hit) centreOn(hit.p); }      // no timing needed
+    else if (S.tab!=='subject' && !S.placing && now-lastTap<320){ const hit=pickPoint(cx,cy); if (hit) centreOn(hit.p); lastTap=0; }
     else { lastTap=now; onTap(cx, cy); } }
   ptrs.delete(e.pointerId); pinch0=0; mid0 = ptrs.size===2 ? midOf() : null;
   if (didPan && ptrs.size===0){ recentrePivot(); didPan=false; } });
@@ -571,6 +571,7 @@ const FX = [['none','None','Just the move.'],
   ['build','Build up','The picture gathers slowly, dot by dot, from nothing.'],
   ['dissolve','Dissolve','The dots quietly give way to the real photo, a little at a time.'],
   ['dust','Dust','Everything drifts very slightly, like dust in still air.'],
+  ['focuspull','Focus pull','Focus starts close to the camera and slowly settles on the subject.'],
   ['sweep','Sweep','A scanning beam moves outward and the picture appears behind it.'],
   ['resolve','Resolve','The beam moves outward and turns the dots into the real photo as it passes.'],
   ['decay','Decay','The picture comes apart: pieces let go one after another and drift away.'],

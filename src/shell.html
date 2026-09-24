@@ -89,7 +89,7 @@ body.scan .tab[data-tab="subject"]{opacity:.5}
 .say svg{width:16px;height:16px;stroke:var(--text);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .looks{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px}
 .look{flex:none;width:104px;border:1px solid var(--line2);background:var(--raise);border-radius:8px;padding:5px;display:flex;flex-direction:column;gap:5px;text-align:left}
-.look canvas{width:100%;height:78px;border-radius:5px;background:#000;display:block;object-fit:cover}
+.look canvas{width:100%;height:64px;border-radius:5px;background:#000;display:block;object-fit:cover}
 .look b{font-size:13.5px;font-weight:620;padding:0 3px}
 .look[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 .look[aria-pressed="true"] b{color:var(--accent)}
@@ -161,7 +161,7 @@ body.scan .tab[data-tab="subject"]{opacity:.5}
     <div class="overlay" id="labels"></div>
     <div class="msgs"><div class="notice" id="notice" role="status" aria-live="polite" hidden></div><div class="banner" id="banner" role="status" aria-live="polite" hidden></div></div>
     <button class="btn stop" id="stopBtn" hidden>Stop</button>
-    <button class="panpill" id="panPill" hidden>Pan on. Tap to turn off</button>
+    <button class="panpill" id="panPill" hidden>Pan: drag to slide, tap a spot to centre it. Tap here to stop.</button>
     <div class="recbar" id="recbar" hidden><i id="recfill"></i></div>
     <div class="float">
       <button class="fb" id="photoView" aria-label="Line up with the photo" title="Line up with the photo" hidden><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4"/></svg></button>

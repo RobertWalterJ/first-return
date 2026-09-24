@@ -30,6 +30,8 @@ const CONTROLS = [
    stops:[['Off',0],['Some',.55],['Full',1.1]]},
   {key:'hidden',   name:'Hidden parts', hint:'Fills in what the photo could not see: the background behind things, and the backs of people and objects. It shows when you turn or slide the view.', rebuild:true,
    stops:[['Off',0],['Behind',1],['Behind and backs',2]]},
+  {key:'focus',    name:'Focus',      hint:'Softens what is nearer or farther than the subject, like a lens wide open. Lovely in slow moves.',
+   stops:[['Sharp',0],['Soft',.45],['Dreamy',1.1]]},
   {key:'edges',    name:'Outlines',   hint:'Dark outlines where near meets far, the way lidar viewers shade a scan.',
    stops:[['Off',0],['Soft',.9],['Strong',2.2]]},
 ];
@@ -38,31 +40,31 @@ const CTRL = Object.fromEntries(CONTROLS.map(c=>[c.key,c]));
 const GROUPS = [
   {id:'dots',  name:'Dots',             keys:['dots','size']},     // Pattern is a style, so it sits on the Look tab
   {id:'light', name:'Light and colour', keys:['bright','glow','light','colour','edges']},
-  {id:'scene', name:'Scene',            keys:['depth3d','backdrop','floor','hidden']},
+  {id:'scene', name:'Scene',            keys:['depth3d','focus','backdrop','floor','hidden']},
   {id:'advanced', name:'Advanced',      keys:[]},
 ];
 
 // Looks set every control plus a few things that are part of the style itself.
 // Control values are positions on the stops (0 = first stop, 1 = second, fractions in between).
 const LOOKS = {
-  void:    {name:'Void',    dots:3.05, size:1.9, glow:1.9, bright:2.3, colour:'photo',  depth3d:2, backdrop:1.05, floor:1.3, edges:0, hidden:2,
+  void:    {name:'Void', focus:0,    dots:3.05, size:1.9, glow:1.9, bright:2.3, colour:'photo',  depth3d:2, backdrop:1.05, floor:1.3, edges:0, hidden:2,
             pattern:'scatter', bgTint:1, bgGain:.45, bgSize:2.4, sparkle:0, yaw:0, pitch:0, zoom:1.3},
-  sparse:  {name:'Sparse',  dots:1.45, size:2.7, glow:2.4, bright:3.1, colour:'muted',  depth3d:2, backdrop:0,    floor:1.55, edges:0, hidden:2,
+  sparse:  {name:'Sparse', focus:0,  dots:1.45, size:2.7, glow:2.4, bright:3.1, colour:'muted',  depth3d:2, backdrop:0,    floor:1.55, edges:0, hidden:2,
             pattern:'scatter', bgTint:1, bgGain:.4, bgSize:2, sparkle:1, yaw:0, pitch:0, zoom:1.3},
-  scanner: {name:'Scanner', dots:1.8,  size:1.4, glow:1.0, bright:1.7, colour:'range',  depth3d:2, backdrop:3,    floor:0,   edges:1, hidden:0,
+  scanner: {name:'Scanner', focus:0, dots:1.8,  size:1.4, glow:1.0, bright:1.7, colour:'range',  depth3d:2, backdrop:3,    floor:0,   edges:1, hidden:0,
             pattern:'rings',   bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:24, pitch:14, zoom:2.2},
-  survey:  {name:'Survey',  dots:2.85, size:1.2, glow:.55, bright:1.4, colour:'height', depth3d:2, backdrop:3,    floor:0,   edges:1.6, hidden:2,
+  survey:  {name:'Survey', focus:0,  dots:2.85, size:1.2, glow:.55, bright:1.4, colour:'height', depth3d:2, backdrop:3,    floor:0,   edges:1.6, hidden:2,
             pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:18, pitch:10, zoom:1.6},
   // the photo itself as Gaussian splats (or a splat scan as it was captured); the dot controls do not apply
-  real:    {name:'Photoreal', dots:3.05, size:1.9, glow:1, bright:2, colour:'photo', depth3d:2, backdrop:1.05, floor:0, edges:0, hidden:1,
+  real:    {name:'Photoreal', focus:0, dots:3.05, size:1.9, glow:1, bright:2, colour:'photo', depth3d:2, backdrop:1.05, floor:0, edges:0, hidden:1,
             pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:0, pitch:0, zoom:1, splat:1},
   // mixed: the subject as the photo on the Void stage of dots, or the world as the photo around a subject of dots
-  psub:    {name:'Real subject', dots:3.05, size:1.9, glow:1.0, bright:2.3, colour:'photo', depth3d:2, backdrop:1.05, floor:1.3, edges:0, hidden:1,
+  psub:    {name:'Real subject', focus:0, dots:3.05, size:1.9, glow:1.0, bright:2.3, colour:'photo', depth3d:2, backdrop:1.05, floor:1.3, edges:0, hidden:1,
             pattern:'scatter', bgTint:1, bgGain:.45, bgSize:2.4, sparkle:0, yaw:0, pitch:0, zoom:1.3, splat:1, mix:1},
-  pworld:  {name:'Real setting', dots:3.05, size:1.4, glow:.5, bright:2.4, colour:'photo', depth3d:2, backdrop:1.05, floor:0, edges:0, hidden:1,
+  pworld:  {name:'Real setting', focus:0, dots:3.05, size:1.4, glow:.5, bright:2.4, colour:'photo', depth3d:2, backdrop:1.05, floor:0, edges:0, hidden:1,
             pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:0, pitch:0, zoom:1, splat:1, mix:2},
 };
-const LOOK_KEYS = ['dots','size','glow','bright','colour','depth3d','backdrop','floor','edges','hidden','pattern'];
+const LOOK_KEYS = ['dots','size','glow','bright','colour','depth3d','backdrop','floor','edges','hidden','pattern','focus'];
 
 const P = {};            // the live settings
 let look = 'void';

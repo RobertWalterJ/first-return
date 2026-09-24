@@ -248,7 +248,8 @@ Everything before RF-DETR adds about 8 KB and no models.
   - Each name box and Remove button has its own label.
   - Headings are 13.5 px in sentence case. Tab and top-bar labels are larger. Disabled chips have more contrast.
 
-## Still open
-- The Look tray scrolls on a phone: two rows of looks plus My looks.
-- Double tap to centre still needs two quick taps. A tap-to-centre mode would remove the timing.
-- The page is 225 KB, over the 200 KB budget. The looks and effects tables are the easiest trims.
+## Still open, then closed in round six
+- Look tray: Reset and Undo moved into the heading and the cards are shorter, so the tray is 478 px tall, down from 548. A short scroll reaches My looks.
+- Tap to centre: with Pan on, a single tap centres on a spot, so there is no timing.
+- Weight: the built page drops full-line comments and indentation, so it is 194 KB, down from 225 KB (the sources keep them).
+- New: Focus (depth of field for dots and splats) and the Focus pull effect.

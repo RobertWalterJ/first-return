@@ -6,7 +6,7 @@ let gl = null, G = null;          // G holds every GL object so it can be rebuil
 
 const PTS_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aCol; layout(location=2) in vec4 aMeta;
-uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight, uOrbit, uFxT, uTime, uFxK; uniform int uMode, uFx, uMix;
+uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight, uOrbit, uFxT, uTime, uFxK, uDof, uFocusD; uniform int uMode, uFx, uMix;
 uniform vec2 uR, uY;
 float hsh(float n){ return fract(sin(n*12.9898+4.1)*43758.5453); }
 out vec3 vCol; flat out float vRound;
@@ -68,6 +68,8 @@ void main(){
     c = mix(c, lin(vec3(.55,1.,.9))*2.2*uExposure, e*min(.85,.7*uFxK)); }
   if(fade < .004) gl_Position=vec4(2.,2.,2.,1.);
   c *= fade;
+  // depth of field: the blur circle grows with distance from the focus plane, and its light spreads out
+  if(uDof>0.){ float coc = 1. + uDof*abs(1./dist - 1./uFocusD)*uFocusD*9.; size *= coc; c /= coc*coc; round_ = 1.; }
   // points smaller than a pixel still draw one pixel, so dim them to keep brightness honest
   if(size < 1.) c *= size*size;
   vCol = c; vRound = (size >= 3. ? round_ : 0.);
@@ -196,6 +198,10 @@ function renderView(W, H, o){
   const ptFx = {sweep:1, decay:2, glitch:3, resolve: both?4:1, build:5, dissolve: both?6:5, dust:7}[fx]||0;
   o.splatFx = {sweep:1, resolve:1, decay:2, glitch:3, build:5, dissolve:5, dust:7}[fx]||0; o.mix = mix;
   const fxK = o.fxK!=null ? o.fxK : strength();
+  // focus on the subject; Focus pull starts close to the camera and settles on it
+  const tv = M4.xf(V, S.target||[0,0,-2]); let focusD = Math.max(0.1, -tv[2]); o.dof = o.dof!=null ? o.dof : val('focus');
+  if (fx==='focuspull'){ const e=(o.fxT||0), s=e*e*e*(e*(6*e-15)+10); focusD = focusD*(0.35+0.65*s); o.dof = Math.max(o.dof, 0.35+0.45*fxK); }
+  o.focusD = focusD;
   if (o.cloud.count && (!splatLook || both)){
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
     gl.useProgram(G.P.p); const u=G.P.u;
@@ -211,7 +217,7 @@ function renderView(W, H, o){
     gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8 + slid*8));
     gl.uniform1i(u.uMode, {photo:0,muted:0,range:1,height:2,grey:3,phosphor:4}[o.colour]||0);
     gl.uniform2f(u.uR, S.rng[0], S.rng[1]); gl.uniform2f(u.uY, S.yr[0], S.yr[1]);
-    gl.uniform1i(u.uFx, ptFx); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, both ? mix : 0);
+    gl.uniform1i(u.uFx, ptFx); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, both ? mix : 0); gl.uniform1f(u.uDof, o.dof); gl.uniform1f(u.uFocusD, focusD);
     gl.bindVertexArray(o.cloud.vao); gl.drawArrays(gl.POINTS, 0, o.cloud.count); gl.bindVertexArray(null);
     gl.disable(gl.DEPTH_TEST);
   }
