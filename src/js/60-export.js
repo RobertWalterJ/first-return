@@ -1,15 +1,27 @@
 // ---------------------------------------------------------------- saving: picture, 3D file, video
-let sheetURL = null;
-function showSheet(url, kind, name){
+let sheetURL = null, sheetFile = null;
+// The phone's own share sheet (WhatsApp, Instagram, Photos...). Chrome accepts pictures and videos;
+// anything it will not take is downloaded instead.
+function canShareFile(file){ try { return !!(navigator.canShare && navigator.canShare({files:[file]})); } catch(e){ return false; } }
+function shareFile(blob, name){ const file = blob instanceof File ? blob : new File([blob], name, {type:blob.type});
+  if (!canShareFile(file)) return false;
+  navigator.share({files:[file], title:'First Return'}).catch(err=>{ if (err.name!=='AbortError') notice('Could not share: '+(err.message||err)); });
+  return true; }
+function showSheet(url, kind, name, blob){
   if (sheetURL && sheetURL !== url) URL.revokeObjectURL(sheetURL);
   sheetURL = url;
   const img=$('#sheetImg'), vid=$('#sheetVid');
   img.hidden = kind!=='image'; vid.hidden = kind!=='video';
   if (kind==='image') img.src=url; else { vid.src=url; vid.play().catch(()=>{}); }
   $('#sheetDl').href=url; $('#sheetDl').download=name;
-  $('#sheetNote').textContent = kind==='image' ? 'Tap Download, or press and hold the picture to save it.' : 'Tap Download to save the video.';
+  sheetFile = blob ? new File([blob], name, {type:blob.type}) : null;
+  $('#sheetShare').hidden = !(sheetFile && canShareFile(sheetFile));
+  const how = $('#sheetShare').hidden ? 'Tap Download' : 'Tap Share to send it, or Download to keep it';
+  $('#sheetNote').textContent = kind==='image' ? how+'. You can also press and hold the picture.' : how+'.';
   $('#sheet').hidden=false;
 }
+$('#sheetShare').addEventListener('click', ()=>{ if (!sheetFile) return;
+  navigator.share({files:[sheetFile], title:'First Return'}).catch(err=>{ if (err.name!=='AbortError') $('#sheetNote').textContent='Could not share: '+(err.message||err)+'. Use Download instead.'; }); });
 $('#sheetClose').addEventListener('click', ()=>{ $('#sheet').hidden=true; $('#sheetVid').pause(); $('#sheetVid').removeAttribute('src'); $('#sheetImg').removeAttribute('src');
   if (sheetURL){ URL.revokeObjectURL(sheetURL); sheetURL=null; } });
 
@@ -36,7 +48,7 @@ async function savePicture(){
   const c2 = document.createElement('canvas'); c2.width=W; c2.height=H; const x=c2.getContext('2d');
   withCanvasSize(W, H, ()=>{ draw(W,H); x.drawImage(cv,0,0); });
   drawLabels2D(x, W, H);
-  c2.toBlob(b=>{ busy(null); showSheet(URL.createObjectURL(b), 'image', 'first-return.png'); }, 'image/png');
+  c2.toBlob(b=>{ busy(null); showSheet(URL.createObjectURL(b), 'image', 'first-return.png', b); }, 'image/png');
 }
 async function savePly(){
   if (!S.count) return;
@@ -127,5 +139,5 @@ async function recordMove(move, secs){
     }
   } catch(err){ console.error(err); banner(String(err.message||err)); }
   S.recording=false; $('#recbar').hidden=true; document.body.classList.remove('locked'); stayAwake(false); Object.assign(S, base); S.dirtyDraw=true;
-  if (blob){ banner(modeText()); showSheet(URL.createObjectURL(blob), 'video', 'first-return.'+ext); }
+  if (blob){ banner(modeText()); showSheet(URL.createObjectURL(blob), 'video', 'first-return.'+ext, blob); }
 }

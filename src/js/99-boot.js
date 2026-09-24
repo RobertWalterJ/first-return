@@ -16,6 +16,8 @@ async function boot(){
   const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom;
   setTab(recall('tab') || 'look');
   layout(); requestAnimationFrame(frame);
+  // coming back after the phone dropped the page: pick up the earlier work instead of the sample
+  if (await restoreSession()) return;
   try {
     const [pi, db] = await Promise.all([
       new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=()=>rej(new Error('sample')); im.src='sample.jpg'; }),

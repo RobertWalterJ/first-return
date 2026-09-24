@@ -16,6 +16,8 @@ Turns a photo into a lidar-style point cloud. Personal tool, not GPA. Live at ht
 - **Move:** camera moves as an MP4 video.
 - **People:** hide faces (Light, Medium or Strong, or tap to cover a face) and add floating names.
 - Hold the split-square button on the picture to compare with the photo.
+- **Share:** saved pictures and videos have a Share button that opens the phone's share sheet (WhatsApp, Instagram, Photos). Where a file type can't be shared, it downloads instead.
+- **Picks up where you left off:** if the phone drops the page while you're in another app, reopening brings back the photo (or scan), what was picked, names, hidden faces, settings and the view. It is kept on the device only (IndexedDB) and replaced when you open something new.
 - **Moving around:** drag to turn, pinch or scroll to zoom. Drag with two fingers to slide the view; on a computer right-drag, middle-drag or Shift+drag (Shift+arrow keys too). The Pan button (four arrows) makes a one-finger drag slide instead of turn. After a slide, turning centres on whatever is in the middle of the screen. Double tap a spot to glide it to the centre and turn around it. The circular-arrow button lines everything back up with the photo.
 
 See `AUDIT.md` for the design, science and capabilities review behind this version.

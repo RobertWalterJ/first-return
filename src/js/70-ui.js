@@ -21,7 +21,7 @@ function undo(){
   if (s.level!==S.level){ S.level=s.level; S.roll = S.level ? S.rollAuto : 0; }
   S.dirtyBuild=true; undoArmed=true; persist(); renderTray(); banner(modeText());
 }
-function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine, move:S.move, moveLen:S.moveLen, exportLong:S.adv.exportLong}); }
+function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine, move:S.move, moveLen:S.moveLen, exportLong:S.adv.exportLong}); queueSessionSave(); }
 // ---------------------------------------------------------------- my looks: save, apply, share
 function myLooks(){ const v=recall('myLooks'); return Array.isArray(v) ? v : []; }
 function saveMyLooks(list){ store('myLooks', list); }
@@ -41,7 +41,9 @@ function saveCurrentLook(name){
 }
 function exportLooks(){
   const list=myLooks(); if (!list.length){ notice('Save a look first, then you can share it.'); return; }
-  const url=URL.createObjectURL(new Blob([JSON.stringify({app:'First Return', kind:'looks', version:1, looks:list}, null, 1)], {type:'application/json'}));
+  const blob=new Blob([JSON.stringify({app:'First Return', kind:'looks', version:1, looks:list}, null, 1)], {type:'application/json'});
+  if (shareFile(blob, 'first-return-looks.json')) return;
+  const url=URL.createObjectURL(blob);
   const a=document.createElement('a'); a.href=url; a.download='first-return-looks.json'; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 30000);
   notice(`Saved ${list.length} look${list.length===1?'':'s'} to first-return-looks.json. Open it with Load looks on another device.`);
@@ -570,8 +572,10 @@ function protectFound(picks){
 // ---------------------------------------------------------------- opening a photo
 // Everything after a wait checks S.gen, so a result that arrives after another photo or scan was
 // opened is dropped instead of landing on the wrong picture.
-async function setPhoto(ph, D, credit){
+// restore: {picks} when coming back to earlier work, so the finder does not run again
+async function setPhoto(ph, D, credit, restore){
   const g = S.gen;
+  if (!restore) mediaId = null;      // until this photo is saved, nothing is paired with the previous one
   S.scan=null; document.body.classList.remove('scan'); $('#compareBtn').hidden=false; S.roll=0; S.rollAuto=0; S.pitchTan=0;
   if (S.colourBeforeScan){ P.colour=S.colourBeforeScan; S.colourBeforeScan=null; }
   S.photoCanvas=ph.canvas; S.photoSrc=S.photo={w:ph.w,h:ph.h,data:ph.data}; S.tanV=S.tanVAuto=ph.fov.tanV; S.fovSource=ph.fov.src; S.credit=credit||'';
@@ -591,7 +595,9 @@ async function setPhoto(ph, D, credit){
   // Find people and things before looking for floors: a close-up body is a big surface facing the
   // camera, and without this it could be fitted as a "floor" and wiped out along with everything behind it.
   let found = null;
-  if (S.autoFind){ found = await findThings(); if (g!==S.gen) return; if (found && found.length) S.picks = found; }
+  if (restore) found = restore.picks;
+  else if (S.autoFind){ found = await findThings(); if (g!==S.gen) return; }
+  if (found && found.length) S.picks = found;
   S.planes=fitFloors(S.depth).filter(pl=>!mostlyOnFound(pl, S.picks)); S.plane=S.planes[0]||null; S.shiftAuto=estimateShift(S.plane, vh);
   // level surfaces vanish on one horizon, so floors 2 and 3 must share the main floor's
   if (S.planes.length>1){ const t=S.shiftAuto, hz=p=>(-t-p.ga-p.al*0.5)/p.be, h0=hz(S.planes[0]); S.planes=S.planes.filter((p,k)=>k===0 || Math.abs(hz(p)-h0)<0.2); }
@@ -609,6 +615,7 @@ async function setPhoto(ph, D, credit){
   const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pan=[0,0,0]; S.userMoved=false;
   S.autoFrame = L.bgTint > 0 && !S.isSample;       // the stage looks frame the subject
   busy(null); layout(); S.dirtyBuild=true; renderTray(); queueThumbs(); viewButton();
+  if (restore) return;
   const notes = [];
   if (S.autoFind) notes.push(found && found.length ? 'Found '+describePicks(found)+'. Change it under Subject.' : found===null ? 'The finder could not start, so the nearest things are the subject.' : 'Nothing found, so the nearest things are the subject.');
   if (S.roll) notes.push(`Straightened ${(Math.abs(S.roll)*180/Math.PI).toFixed(1)}°.`);
@@ -621,12 +628,15 @@ $('#file').addEventListener('change', async e=>{
     const ph = await decodePhoto(f); if (g!==S.gen) return;
     // the finder models start while depth is being worked out
     const raw = await estimateDepth(ph.canvas, ()=>{ if (S.autoFind) warmFinder().catch(()=>{}); }); if (g!==S.gen) return;
-    await setPhoto(ph, normaliseDepth(raw), 'Your photo stayed on this device.');
+    const D = normaliseDepth(raw);
+    await setPhoto(ph, D, 'Your photo stayed on this device.');
+    if (g===S.gen) saveMedia({kind:'photo', blob: await canvasBlob(ph.canvas), depth:D, fov:ph.fov, credit:'Your photo stayed on this device.'});
   } catch(err){ console.error(err); busy(null); notice('Could not read that photo: '+(err.message||err)); }
 });
 $('#fileScan').addEventListener('change', async e=>{
   const f=e.target.files[0]; if (!f) return; e.target.value='';
-  try { await openScan(f); } catch(err){ console.error(err); busy(null); notice('Could not read that scan: '+(err.message||err)); }
+  mediaId = null;
+  try { await openScan(f); if (f.size < 200e6) saveMedia({kind:'scan', file:f}); } catch(err){ console.error(err); busy(null); notice('Could not read that scan: '+(err.message||err)); }
 });
 
 // ---------------------------------------------------------------- main loop

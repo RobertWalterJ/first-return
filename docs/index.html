@@ -195,7 +195,7 @@ body.scan .tab[data-tab="subject"], body.scan .tab[data-tab="people"]{opacity:.5
   <img id="sheetImg" alt="Your picture">
   <video id="sheetVid" controls loop muted playsinline hidden></video>
   <p id="sheetNote"></p>
-  <div class="row"><a class="btn primary" id="sheetDl" href="#">Download</a><button class="btn" id="sheetClose">Close</button></div>
+  <div class="row"><button class="btn primary" id="sheetShare" hidden>Share</button><a class="btn" id="sheetDl" href="#">Download</a><button class="btn" id="sheetClose">Close</button></div>
 </div>
 
 <script>
@@ -1566,17 +1566,29 @@ function addFaceAt(u, v, comp){
 }
 
 // ---------------------------------------------------------------- saving: picture, 3D file, video
-let sheetURL = null;
-function showSheet(url, kind, name){
+let sheetURL = null, sheetFile = null;
+// The phone's own share sheet (WhatsApp, Instagram, Photos...). Chrome accepts pictures and videos;
+// anything it will not take is downloaded instead.
+function canShareFile(file){ try { return !!(navigator.canShare && navigator.canShare({files:[file]})); } catch(e){ return false; } }
+function shareFile(blob, name){ const file = blob instanceof File ? blob : new File([blob], name, {type:blob.type});
+  if (!canShareFile(file)) return false;
+  navigator.share({files:[file], title:'First Return'}).catch(err=>{ if (err.name!=='AbortError') notice('Could not share: '+(err.message||err)); });
+  return true; }
+function showSheet(url, kind, name, blob){
   if (sheetURL && sheetURL !== url) URL.revokeObjectURL(sheetURL);
   sheetURL = url;
   const img=$('#sheetImg'), vid=$('#sheetVid');
   img.hidden = kind!=='image'; vid.hidden = kind!=='video';
   if (kind==='image') img.src=url; else { vid.src=url; vid.play().catch(()=>{}); }
   $('#sheetDl').href=url; $('#sheetDl').download=name;
-  $('#sheetNote').textContent = kind==='image' ? 'Tap Download, or press and hold the picture to save it.' : 'Tap Download to save the video.';
+  sheetFile = blob ? new File([blob], name, {type:blob.type}) : null;
+  $('#sheetShare').hidden = !(sheetFile && canShareFile(sheetFile));
+  const how = $('#sheetShare').hidden ? 'Tap Download' : 'Tap Share to send it, or Download to keep it';
+  $('#sheetNote').textContent = kind==='image' ? how+'. You can also press and hold the picture.' : how+'.';
   $('#sheet').hidden=false;
 }
+$('#sheetShare').addEventListener('click', ()=>{ if (!sheetFile) return;
+  navigator.share({files:[sheetFile], title:'First Return'}).catch(err=>{ if (err.name!=='AbortError') $('#sheetNote').textContent='Could not share: '+(err.message||err)+'. Use Download instead.'; }); });
 $('#sheetClose').addEventListener('click', ()=>{ $('#sheet').hidden=true; $('#sheetVid').pause(); $('#sheetVid').removeAttribute('src'); $('#sheetImg').removeAttribute('src');
   if (sheetURL){ URL.revokeObjectURL(sheetURL); sheetURL=null; } });
 
@@ -1603,7 +1615,7 @@ async function savePicture(){
   const c2 = document.createElement('canvas'); c2.width=W; c2.height=H; const x=c2.getContext('2d');
   withCanvasSize(W, H, ()=>{ draw(W,H); x.drawImage(cv,0,0); });
   drawLabels2D(x, W, H);
-  c2.toBlob(b=>{ busy(null); showSheet(URL.createObjectURL(b), 'image', 'first-return.png'); }, 'image/png');
+  c2.toBlob(b=>{ busy(null); showSheet(URL.createObjectURL(b), 'image', 'first-return.png', b); }, 'image/png');
 }
 async function savePly(){
   if (!S.count) return;
@@ -1694,7 +1706,89 @@ async function recordMove(move, secs){
     }
   } catch(err){ console.error(err); banner(String(err.message||err)); }
   S.recording=false; $('#recbar').hidden=true; document.body.classList.remove('locked'); stayAwake(false); Object.assign(S, base); S.dirtyDraw=true;
-  if (blob){ banner(modeText()); showSheet(URL.createObjectURL(blob), 'video', 'first-return.'+ext); }
+  if (blob){ banner(modeText()); showSheet(URL.createObjectURL(blob), 'video', 'first-return.'+ext, blob); }
+}
+
+// ---------------------------------------------------------------- picking up where you left off
+// A phone often throws a page away while you are in another app, and coming back reloads it. The work
+// in progress is kept on this device (IndexedDB, never uploaded) so it comes back as it was: the photo
+// and its depth (or the scan file), what was picked, names, hidden faces, settings and the view.
+// The photo is saved once per photo; the rest after each change and whenever the page goes to the back.
+const SESSION_DB = 'first-return-session';
+function sessionDb(){
+  return new Promise((res, rej)=>{ const r = indexedDB.open(SESSION_DB, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+}
+async function sessionPut(key, value){
+  try { const db = await sessionDb(); await new Promise((res, rej)=>{ const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(value, key);
+    t.oncomplete = res; t.onerror = () => rej(t.error); }); db.close(); } catch(e){ console.warn('could not keep the work for later', e); }
+}
+async function sessionGet(key){
+  try { const db = await sessionDb(); const v = await new Promise((res, rej)=>{ const r = db.transaction('kv').objectStore('kv').get(key);
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); db.close(); return v; } catch(e){ return null; }
+}
+const canvasBlob = c => new Promise(r=>c.toBlob(r, 'image/jpeg', 0.92));
+
+let mediaId = null;
+async function saveMedia(m){
+  mediaId = 'm' + Date.now().toString(36); m.id = mediaId;
+  await sessionPut('media', m); saveSessionNow();
+}
+// What is needed to rebuild the work on top of the saved photo or scan.
+function sessionState(){
+  return {v:1, media:mediaId, savedAt:Date.now(),
+    picks: S.picks.map(p=>({u:p.u, v:p.v, name:p.name, box:p.box, seg:p.seg||null})), band:S.band, sharp:!!S.sharp,
+    labels: S.labels.map(L=>({u:L.u, v:L.v, lift:L.lift, fixed:L.fixed, text:L.text})),
+    faces: S.faces.map(f=>({...f})), facesFound:S.facesFound, anon:S.anon, anonLevel:S.anonLevel,
+    view: {yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, pan:S.pan.slice(), pivot:S.pivot.slice(), home:S.home, userMoved:S.userMoved, refDist:S.refDist},
+    adv: {fov:S.adv.fov, ratio:S.adv.ratio, roll:S.adv.roll, beams:S.adv.beams, noise:S.adv.noise},
+    light:P.light, lightAuto:S.lightAuto};
+}
+function saveSessionNow(){ if (!mediaId || S.isSample || S.restoring) return; sessionPut('state', sessionState()); }
+let sessionQueued = false;
+function queueSessionSave(){ if (sessionQueued) return; sessionQueued = true;
+  window.requestIdleCallback ? requestIdleCallback(()=>{ sessionQueued=false; saveSessionNow(); }, {timeout:2000}) : setTimeout(()=>{ sessionQueued=false; saveSessionNow(); }, 800); }
+// going to the back is the moment that matters: the page may not get another chance
+document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState==='hidden') saveSessionNow(); });
+addEventListener('pagehide', saveSessionNow);
+
+async function restoreSession(){
+  const m = await sessionGet('media'); if (!m) return false;
+  const st = await sessionGet('state'); const ok = st && st.media===m.id ? st : null;
+  const g = ++S.gen; S.restoring = true;
+  try {
+    busy('Picking up where you left off', null); await tick();
+    if (m.kind==='scan'){ await openScan(m.file); if (g!==S.gen) return true; }
+    else {
+      const bmp = await createImageBitmap(m.blob), c = document.createElement('canvas'); c.width=bmp.width; c.height=bmp.height;
+      const x = c.getContext('2d', {willReadFrequently:true}); x.drawImage(bmp, 0, 0);
+      const ph = {canvas:c, w:c.width, h:c.height, data:x.getImageData(0,0,c.width,c.height).data, fov:m.fov, url:URL.createObjectURL(m.blob)};
+      const anon = ok && ok.anon; S.anon = false;               // faces come back from the saved list, not a new search
+      await setPhoto(ph, m.depth, m.credit, {picks: ok ? ok.picks.map(p=>({...p, seg:p.seg||undefined})) : []});
+      if (g!==S.gen) return true;
+      if (ok){
+        S.band = ok.band; S.sharp = ok.sharp;
+        S.faces = ok.faces||[]; S.facesFound = !!ok.facesFound; S.anonLevel = ok.anonLevel; S.anon = !!anon; applyAnon();
+        if (ok.light!=null){ S.autoLight = false; P.light = ok.light; S.lightAuto = ok.lightAuto; }
+      }
+    }
+    mediaId = m.id;
+    if (ok){
+      Object.assign(S.adv, ok.adv);
+      if (S.adv.fov) S.tanV = Math.tan(S.adv.fov*Math.PI/360);
+      if (S.adv.roll!=null) S.roll = S.adv.roll*Math.PI/180;
+      S.labels = (ok.labels||[]).map(L=>{ const o={...L}; if (!o.fixed) delete o.fixed; o.pos = labelWorld(o); return o; });
+      const V = ok.view; S.autoFrame = false; S.reframe = false;
+      Object.assign(S, {yaw:V.yaw, pitch:V.pitch, zoom:V.zoom, pan:V.pan, pivot:V.pivot, home:V.home, userMoved:V.userMoved});
+      if (V.refDist){ S.refDist = V.refDist; S.refFrozen = true; }
+    }
+    S.dirtyBuild = true; busy(null); renderTray(); viewButton();
+    notice('Back where you left off. Open starts something new.');
+    return true;
+  } catch(err){
+    console.error(err); busy(null); sessionPut('media', null); mediaId = null; return false;   // a damaged save is dropped, and the sample loads
+  } finally { S.restoring = false; }
 }
 
 // ---------------------------------------------------------------- interface
@@ -1720,7 +1814,7 @@ function undo(){
   if (s.level!==S.level){ S.level=s.level; S.roll = S.level ? S.rollAuto : 0; }
   S.dirtyBuild=true; undoArmed=true; persist(); renderTray(); banner(modeText());
 }
-function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine, move:S.move, moveLen:S.moveLen, exportLong:S.adv.exportLong}); }
+function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine, move:S.move, moveLen:S.moveLen, exportLong:S.adv.exportLong}); queueSessionSave(); }
 // ---------------------------------------------------------------- my looks: save, apply, share
 function myLooks(){ const v=recall('myLooks'); return Array.isArray(v) ? v : []; }
 function saveMyLooks(list){ store('myLooks', list); }
@@ -1740,7 +1834,9 @@ function saveCurrentLook(name){
 }
 function exportLooks(){
   const list=myLooks(); if (!list.length){ notice('Save a look first, then you can share it.'); return; }
-  const url=URL.createObjectURL(new Blob([JSON.stringify({app:'First Return', kind:'looks', version:1, looks:list}, null, 1)], {type:'application/json'}));
+  const blob=new Blob([JSON.stringify({app:'First Return', kind:'looks', version:1, looks:list}, null, 1)], {type:'application/json'});
+  if (shareFile(blob, 'first-return-looks.json')) return;
+  const url=URL.createObjectURL(blob);
   const a=document.createElement('a'); a.href=url; a.download='first-return-looks.json'; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 30000);
   notice(`Saved ${list.length} look${list.length===1?'':'s'} to first-return-looks.json. Open it with Load looks on another device.`);
@@ -2269,8 +2365,10 @@ function protectFound(picks){
 // ---------------------------------------------------------------- opening a photo
 // Everything after a wait checks S.gen, so a result that arrives after another photo or scan was
 // opened is dropped instead of landing on the wrong picture.
-async function setPhoto(ph, D, credit){
+// restore: {picks} when coming back to earlier work, so the finder does not run again
+async function setPhoto(ph, D, credit, restore){
   const g = S.gen;
+  if (!restore) mediaId = null;      // until this photo is saved, nothing is paired with the previous one
   S.scan=null; document.body.classList.remove('scan'); $('#compareBtn').hidden=false; S.roll=0; S.rollAuto=0; S.pitchTan=0;
   if (S.colourBeforeScan){ P.colour=S.colourBeforeScan; S.colourBeforeScan=null; }
   S.photoCanvas=ph.canvas; S.photoSrc=S.photo={w:ph.w,h:ph.h,data:ph.data}; S.tanV=S.tanVAuto=ph.fov.tanV; S.fovSource=ph.fov.src; S.credit=credit||'';
@@ -2290,7 +2388,9 @@ async function setPhoto(ph, D, credit){
   // Find people and things before looking for floors: a close-up body is a big surface facing the
   // camera, and without this it could be fitted as a "floor" and wiped out along with everything behind it.
   let found = null;
-  if (S.autoFind){ found = await findThings(); if (g!==S.gen) return; if (found && found.length) S.picks = found; }
+  if (restore) found = restore.picks;
+  else if (S.autoFind){ found = await findThings(); if (g!==S.gen) return; }
+  if (found && found.length) S.picks = found;
   S.planes=fitFloors(S.depth).filter(pl=>!mostlyOnFound(pl, S.picks)); S.plane=S.planes[0]||null; S.shiftAuto=estimateShift(S.plane, vh);
   // level surfaces vanish on one horizon, so floors 2 and 3 must share the main floor's
   if (S.planes.length>1){ const t=S.shiftAuto, hz=p=>(-t-p.ga-p.al*0.5)/p.be, h0=hz(S.planes[0]); S.planes=S.planes.filter((p,k)=>k===0 || Math.abs(hz(p)-h0)<0.2); }
@@ -2308,6 +2408,7 @@ async function setPhoto(ph, D, credit){
   const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pan=[0,0,0]; S.userMoved=false;
   S.autoFrame = L.bgTint > 0 && !S.isSample;       // the stage looks frame the subject
   busy(null); layout(); S.dirtyBuild=true; renderTray(); queueThumbs(); viewButton();
+  if (restore) return;
   const notes = [];
   if (S.autoFind) notes.push(found && found.length ? 'Found '+describePicks(found)+'. Change it under Subject.' : found===null ? 'The finder could not start, so the nearest things are the subject.' : 'Nothing found, so the nearest things are the subject.');
   if (S.roll) notes.push(`Straightened ${(Math.abs(S.roll)*180/Math.PI).toFixed(1)}°.`);
@@ -2320,12 +2421,15 @@ $('#file').addEventListener('change', async e=>{
     const ph = await decodePhoto(f); if (g!==S.gen) return;
     // the finder models start while depth is being worked out
     const raw = await estimateDepth(ph.canvas, ()=>{ if (S.autoFind) warmFinder().catch(()=>{}); }); if (g!==S.gen) return;
-    await setPhoto(ph, normaliseDepth(raw), 'Your photo stayed on this device.');
+    const D = normaliseDepth(raw);
+    await setPhoto(ph, D, 'Your photo stayed on this device.');
+    if (g===S.gen) saveMedia({kind:'photo', blob: await canvasBlob(ph.canvas), depth:D, fov:ph.fov, credit:'Your photo stayed on this device.'});
   } catch(err){ console.error(err); busy(null); notice('Could not read that photo: '+(err.message||err)); }
 });
 $('#fileScan').addEventListener('change', async e=>{
   const f=e.target.files[0]; if (!f) return; e.target.value='';
-  try { await openScan(f); } catch(err){ console.error(err); busy(null); notice('Could not read that scan: '+(err.message||err)); }
+  mediaId = null;
+  try { await openScan(f); if (f.size < 200e6) saveMedia({kind:'scan', file:f}); } catch(err){ console.error(err); busy(null); notice('Could not read that scan: '+(err.message||err)); }
 });
 
 // ---------------------------------------------------------------- main loop
@@ -2356,6 +2460,8 @@ async function boot(){
   const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom;
   setTab(recall('tab') || 'look');
   layout(); requestAnimationFrame(frame);
+  // coming back after the phone dropped the page: pick up the earlier work instead of the sample
+  if (await restoreSession()) return;
   try {
     const [pi, db] = await Promise.all([
       new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=()=>rej(new Error('sample')); im.src='sample.jpg'; }),
