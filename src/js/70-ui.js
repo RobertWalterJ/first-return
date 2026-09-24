@@ -15,11 +15,51 @@ function undo(){
   if (s.level!==S.level){ S.level=s.level; S.roll = S.level ? S.rollAuto : 0; }
   S.dirtyBuild=true; undoArmed=true; persist(); renderTray(); banner(modeText());
 }
-function persist(){ store('state', {P, look, shape:S.shape, level:S.level}); }
-function isCustom(){ const L=LOOKS[look]; return LOOK_KEYS.some(k=>typeof L[k]==='number' ? Math.abs(L[k]-P[k])>0.02 : L[k]!==P[k]); }
+function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine}); }
+// ---------------------------------------------------------------- my looks: save, apply, share
+function myLooks(){ const v=recall('myLooks'); return Array.isArray(v) ? v : []; }
+function saveMyLooks(list){ store('myLooks', list); }
+function activePreset(){ const m = S.activeMine && myLooks().find(x=>x.id===S.activeMine); return m ? {...LOOKS[m.base], ...m.values, name:m.name} : LOOKS[look]; }
+function applyMine(id){
+  const m = myLooks().find(x=>x.id===id); if (!m || !LOOKS[m.base]) return;
+  pushUndo(); look=m.base; const L=LOOKS[look];
+  LOOK_KEYS.forEach(k=>{ P[k] = m.values[k]!=null ? m.values[k] : L[k]; });
+  S.activeMine=id; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pan=[0,0,0]; S.userMoved=false; S.home=null; S.reframe = L.bgTint>0 && !S.isSample && !S.scan;
+  S.dirtyBuild=true; commit(); viewButton();
+}
+function saveCurrentLook(name){
+  const list=myLooks(), values={}; LOOK_KEYS.forEach(k=>{ values[k]=P[k]; });
+  const id='m'+Date.now().toString(36);
+  list.push({id, name:(name||'My look').slice(0,40), base:look, values}); saveMyLooks(list);
+  S.activeMine=id; persist(); queueThumbs(); notice('Saved "'+(name||'My look')+'". It is under My looks.');
+}
+function exportLooks(){
+  const list=myLooks(); if (!list.length){ notice('Save a look first, then you can share it.'); return; }
+  const url=URL.createObjectURL(new Blob([JSON.stringify({app:'First Return', kind:'looks', version:1, looks:list}, null, 1)], {type:'application/json'}));
+  const a=document.createElement('a'); a.href=url; a.download='first-return-looks.json'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 30000);
+  notice(`Saved ${list.length} look${list.length===1?'':'s'} to first-return-looks.json. Open it with Load looks on another device.`);
+}
+async function importLooks(file){
+  try {
+    const data=JSON.parse(await file.text()); const incoming=Array.isArray(data) ? data : data.looks;
+    if (!Array.isArray(incoming)) throw new Error('no looks in that file');
+    const list=myLooks(); let added=0;
+    for (const m of incoming){
+      if (!m || typeof m.name!=='string' || !LOOKS[m.base] || typeof m.values!=='object') continue;
+      const values={}; LOOK_KEYS.forEach(k=>{ const v=m.values[k]; if (v!=null && typeof v===typeof LOOKS[m.base][k]) values[k]=v; });
+      if (list.some(x=>x.name===m.name && JSON.stringify(x.values)===JSON.stringify(values))) continue;
+      list.push({id:'m'+Date.now().toString(36)+added, name:m.name.slice(0,40), base:m.base, values}); added++;
+    }
+    saveMyLooks(list); queueThumbs(); renderTray();
+    notice(added ? `Loaded ${added} look${added===1?'':'s'}.` : 'Those looks are already here.');
+  } catch(err){ notice('Could not load that file: '+(err.message||err)); }
+}
+function isCustom(){ const L=activePreset(); return LOOK_KEYS.some(k=>typeof L[k]==='number' ? Math.abs(L[k]-P[k])>0.02 : L[k]!==P[k]); }
 
 function applyLook(name, keepView){
-  pushUndo(); look=name; const L=LOOKS[name];
+  if (keepView && S.activeMine){ applyMine(S.activeMine); P.light = S.lightAuto; S.dirtyBuild=true; commit(); return; }   // Reset look returns to the saved look
+  pushUndo(); look=name; const L=LOOKS[name]; S.activeMine=null;
   LOOK_KEYS.forEach(k=>{ P[k]=L[k]; });
   if (keepView) P.light = S.lightAuto;          // Reset look also returns Light to what the photo needed
   if (!keepView){ S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pan=[0,0,0]; S.userMoved=false; S.home=null; S.reframe = L.bgTint>0 && !S.isSample && !S.scan; }
@@ -50,34 +90,54 @@ function renderTray(){
   const tr=$('#tray'); if (!S.tab){ tr.innerHTML=''; return; }
   const undoBtn = `<button class="chip" id="undoBtn" ${S.undo.length?'':'disabled'}>Undo</button>`;
   if (S.tab==='look'){
-    tr.innerHTML = `<h3>Look ${isCustom()?'<span class="chip" style="padding:3px 8px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent);border-color:var(--accent)">Custom</span>':''}<span class="sp"></span></h3>
-      <div class="looks">${Object.entries(LOOKS).map(([k,L])=>`<button class="look" data-look="${k}" aria-pressed="${k===look}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${L.name}</b></button>`).join('')}</div>
-      <div class="sect"><h3>Dot pattern</h3><div class="scroller">${[['scatter','Scatter'],['rings','Scan rings'],['grid','Grid']].map(([v,n])=>`<button class="chip" data-pattern="${v}" aria-pressed="${P.pattern===v}">${n}</button>`).join('')}</div></div>
-      <div class="sect row"><button class="chip" id="resetLook" ${isCustom()?'':'disabled'}>Reset look</button>${undoBtn}</div>`;
-    tr.querySelectorAll('.look').forEach(b=>b.addEventListener('click',()=>applyLook(b.dataset.look)));
-    tr.querySelectorAll('[data-pattern]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); P.pattern=b.dataset.pattern; S.dirtyBuild=true; commit(); }));
+    const mine = myLooks(), custom = isCustom();
+    tr.innerHTML = `<h3>Look ${custom?'<span class="chip" style="padding:3px 8px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent);border-color:var(--accent)">Changed</span>':''}<span class="sp"></span></h3>
+      <div class="looks">${Object.entries(LOOKS).map(([k,L])=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${L.name}</b></button>`).join('')}</div>
+      <div class="sect row"><button class="chip" id="resetLook" ${custom?'':'disabled'}>Reset look</button>${undoBtn}</div>
+      <div class="sect"><h3>My looks</h3>
+        ${mine.length ? `<div class="looks">${mine.map(m=>`<div class="look mine" aria-pressed="${S.activeMine===m.id}"><button class="lookpick" data-mine="${m.id}" aria-label="Use ${esc(m.name)}"><canvas id="thumb-${m.id}" width="208" height="156"></canvas><b>${esc(m.name)}</b></button><button class="lookdel" data-delmine="${m.id}" aria-label="Remove ${esc(m.name)}">&#x2715;</button></div>`).join('')}</div>` : '<p class="hint" style="margin:0 0 8px">Change anything, then save it here to use again on other photos.</p>'}
+        ${S.savingLook ? `<div class="row" style="margin-top:8px"><input id="lookName" class="nameinput" value="My look ${mine.length+1}" aria-label="Name for this look" maxlength="40"><button class="btn primary" id="saveLookOk">Save</button><button class="btn" id="saveLookNo">Cancel</button></div>`
+          : `<div class="row" style="margin-top:8px"><button class="chip" id="saveLook">Save this look</button><button class="chip" id="shareLooks" ${mine.length?'':'disabled'}>Share looks</button><button class="chip" id="loadLooks">Load looks</button>${S.lastRemoved?`<button class="chip" id="bringBack">Bring back ${esc(S.lastRemoved.m.name)}</button>`:''}</div>`}
+      </div>`;
+    tr.querySelectorAll('[data-look]').forEach(b=>b.addEventListener('click',()=>applyLook(b.dataset.look)));
+    tr.querySelectorAll('[data-mine]').forEach(b=>b.addEventListener('click',()=>applyMine(b.dataset.mine)));
+    tr.querySelectorAll('[data-delmine]').forEach(b=>b.addEventListener('click',()=>{ const id=b.dataset.delmine, m=myLooks().find(x=>x.id===id);
+      const list=myLooks(); S.lastRemoved = m ? {m, at:list.findIndex(x=>x.id===id)} : null;
+      saveMyLooks(list.filter(x=>x.id!==id)); if (S.activeMine===id) S.activeMine=null; persist(); renderTray(); notice('Removed "'+(m?m.name:'look')+'".'); }));
+    if ($('#bringBack')) $('#bringBack').addEventListener('click',()=>{ const r=S.lastRemoved; if (!r) return; const list=myLooks();
+      if (!list.some(x=>x.id===r.m.id)) list.splice(Math.max(0,Math.min(list.length,r.at)),0,r.m); saveMyLooks(list); S.lastRemoved=null; queueThumbs(); renderTray(); notice('"'+r.m.name+'" is back.'); });
     $('#resetLook').addEventListener('click',()=>applyLook(look, true));
+    if ($('#saveLook')) $('#saveLook').addEventListener('click',()=>{ S.savingLook=true; renderTray(); const i=$('#lookName'); if (i){ i.focus(); i.select(); } });
+    if ($('#saveLookOk')) $('#saveLookOk').addEventListener('click',()=>{ const n=$('#lookName').value.trim(); S.savingLook=false; saveCurrentLook(n||'My look'); renderTray(); });
+    if ($('#lookName')) $('#lookName').addEventListener('keydown',e=>{ if (e.key==='Enter') $('#saveLookOk').click(); if (e.key==='Escape') $('#saveLookNo').click(); });
+    if ($('#saveLookNo')) $('#saveLookNo').addEventListener('click',()=>{ S.savingLook=false; renderTray(); });
+    if ($('#shareLooks')) $('#shareLooks').addEventListener('click', exportLooks);
+    if ($('#loadLooks')) $('#loadLooks').addEventListener('click',()=>$('#fileLooks').click());
     paintThumbs();
   }
-  else if (S.tab==='adjust' && S.ctrl==='advanced'){
+  else if (S.tab==='adjust' && S.group==='advanced'){
     renderAdvanced(tr);
   }
   else if (S.tab==='adjust'){
-    if (S.scan && (S.ctrl==='depth3d' || S.ctrl==='light' || S.ctrl==='hidden')) S.ctrl='dots';
+    const keys = groupKeys(S.group);
+    if (!keys.includes(S.ctrl)) S.ctrl = keys[0];
     const c = CTRL[S.ctrl];
     let body;
     if (c.chips){
-      body = `<div class="scroller" style="margin-top:12px">${c.chips.map(([v,n])=>`<button class="chip ${LOOKS[look].colour===v?'def':''}" data-colour="${v}" aria-pressed="${P.colour===v}">${n}</button>`).join('')}</div>`;
+      body = `<div class="scroller" style="margin-top:12px">${c.chips.map(([v,n])=>`<button class="chip ${activePreset()[c.key]===v?'def':''}" data-choice="${v}" aria-pressed="${P[c.key]===v}">${n}</button>`).join('')}</div>`;
     } else {
-      const def = c.key==='light' ? S.lightAuto : Math.round(LOOKS[look][c.key]);
+      const def = c.key==='light' ? S.lightAuto : Math.round(activePreset()[c.key]);
       body = `<div class="stepper"><input type="range" id="ctl" min="0" max="${c.stops.length-1}" step="0.05" value="${P[c.key]}" aria-label="${c.name}">
         <div class="stops">${c.stops.map(([n],i)=>`<button data-stop="${i}" aria-current="${Math.abs(P[c.key]-i)<0.15}" class="${i===def?'def':''}">${n}${i===def?(c.key==='light'?' (auto)':' ·'):''}</button>`).join('')}</div></div>`;
     }
-    tr.innerHTML = `<div class="scroller">${CONTROLS.filter(k=>!(S.scan && (k.key==='depth3d'||k.key==='light'||k.key==='hidden'))).map(k=>`<button class="chip" data-ctrl="${k.key}" aria-pressed="${k.key===S.ctrl}">${k.name}</button>`).join('')}<button class="chip" data-ctrl="advanced" aria-pressed="${S.ctrl==='advanced'}">Advanced</button></div>
-      ${body}<p class="hint">${sayBtn(c.hint)}<span>${c.hint}</span></p>
+    const note = c.key==='floor' && !S.hasFloor && !S.scan ? ' This photo has no floor, so moving this adds one.' : '';
+    tr.innerHTML = `${groupRow()}
+      ${keys.length>1 ? `<div class="scroller" style="margin-top:8px">${keys.map(k=>`<button class="chip" data-ctrl="${k}" aria-pressed="${k===S.ctrl}">${CTRL[k].name}</button>`).join('')}</div>` : ''}
+      ${body}<p class="hint">${sayBtn(c.hint+note)}<span>${c.hint}${note}</span></p>
       <div class="sect row">${undoBtn}</div>`;
     tr.querySelectorAll('[data-ctrl]').forEach(b=>b.addEventListener('click',()=>{ S.ctrl=b.dataset.ctrl; renderTray(); }));
-    tr.querySelectorAll('[data-colour]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); P.colour=b.dataset.colour; S.dirtyDraw=true; commit(); }));
+    tr.querySelectorAll('[data-choice]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); P[c.key]=b.dataset.choice; if (c.rebuild) S.dirtyBuild=true; S.dirtyDraw=true; commit(); }));
+    wireGroupRow(tr);
     const r = $('#ctl');
     if (r){
       r.addEventListener('input', ()=>{ pushUndo(); P[c.key]=+r.value; if (c.key==='floor') S.floorTouched=true; if (c.rebuild){ S.lowDetail=true; S.dirtyBuild=true; } S.dirtyDraw=true; markStops(c); });
@@ -103,7 +163,7 @@ function renderTray(){
       const g=S.gen, picks = await findThings(); if (g!==S.gen) return;
       if (picks===null){ notice('The finder could not start here. Tap what matters instead.'); return; }
       if (!picks.length){ notice('Nothing found. Tap what matters instead.'); return; }
-      pushUndo(); S.picks = picks; S.dirtyBuild = true; S.reframe=true; commit();
+      pushUndo(); S.picks = picks; protectFound(picks); S.dirtyBuild = true; S.reframe=true; commit();
       notice('Found '+describePicks(picks)+'.');
     });
     tr.querySelectorAll('[data-band]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); S.band=+b.dataset.band; S.dirtyBuild=true; commit(); }));
@@ -146,6 +206,9 @@ function renderTray(){
   const u=$('#undoBtn'); if (u) u.addEventListener('click', undo);
   tr.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say)));
 }
+function groupKeys(g){ const G=GROUPS.find(x=>x.id===g)||GROUPS[0]; return G.keys.filter(k=>!(S.scan && (k==='depth3d'||k==='light'||k==='hidden'))); }
+function groupRow(){ return `<div class="seg" role="tablist">${GROUPS.map(g=>`<button class="segb" data-group="${g.id}" aria-selected="${S.group===g.id}">${g.name}</button>`).join('')}</div>`; }
+function wireGroupRow(tr){ tr.querySelectorAll('[data-group]').forEach(b=>b.addEventListener('click',()=>{ S.group=b.dataset.group; if (S.group!=='advanced') S.ctrl=groupKeys(S.group)[0]; store('group', S.group); renderTray(); showDebug(); })); }
 // ---------------------------------------------------------------- Advanced: diagnostic views and direct settings
 function autoRatio(){ return (1+S.shiftAuto)/S.shiftAuto; }
 function renderAdvanced(tr){
@@ -154,7 +217,7 @@ function renderAdvanced(tr){
   const beams = A.beams || Math.round(16 + val('dots')/100*200);
   const ratioPos = Math.log(ratio/1.1)/Math.log(60/1.1)*100;
   const row = (id, label, min, max, step, v, out, auto) => `<div class="advrow"><label for="${id}">${label}</label><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${v}"><output id="${id}Out">${out}</output>${auto?`<button class="chip small" data-auto="${id}">Auto</button>`:'<span></span>'}</div>`;
-  tr.innerHTML = `<div class="scroller">${CONTROLS.filter(k=>!(S.scan && (k.key==='depth3d'||k.key==='light'||k.key==='hidden'))).map(k=>`<button class="chip" data-ctrl="${k.key}" aria-pressed="false">${k.name}</button>`).join('')}<button class="chip" data-ctrl="advanced" aria-pressed="true">Advanced</button></div>
+  tr.innerHTML = `${groupRow()}
     <div class="sect"><h3>Show</h3><div class="scroller">${[['result','The result'],['depth','Depth map'],['masks','Subject and floors']].map(([v,n])=>`<button class="chip" data-dbg="${v}" aria-pressed="${S.dbg===v}" ${S.scan&&v!=='result'?'disabled':''}>${n}</button>`).join('')}</div>
       ${S.dbg==='masks'?'<p class="hint">Yellow is the subject. Blue, cyan and violet are floors that were fitted; green is other ground facing up.</p>':S.dbg==='depth'?'<p class="hint">Light is near, dark is far.</p>':''}</div>
     <div class="sect"><h3>Camera and depth</h3>
@@ -168,7 +231,7 @@ function renderAdvanced(tr){
     </div>
     <div class="sect"><h3>Picture size</h3><div class="scroller">${[[null,'Auto'],[1080,'1080'],[2048,'2048'],[2880,'2880'],[4096,'4096']].map(([v,n])=>`<button class="chip" data-size="${v}" aria-pressed="${A.exportLong===v}">${n}</button>`).join('')}</div>
       <p class="hint">Pixels along the long side of saved pictures.</p></div>`;
-  tr.querySelectorAll('[data-ctrl]').forEach(b=>b.addEventListener('click',()=>{ S.ctrl=b.dataset.ctrl; renderTray(); }));
+  wireGroupRow(tr);
   tr.querySelectorAll('[data-dbg]').forEach(b=>b.addEventListener('click',()=>{ S.dbg=b.dataset.dbg; renderTray(); showDebug(); }));
   tr.querySelectorAll('[data-size]').forEach(b=>b.addEventListener('click',()=>{ A.exportLong = b.dataset.size==='null' ? null : +b.dataset.size; renderTray(); }));
   const on = (id, fn) => { const el=$('#'+id); if (el) el.addEventListener('input', ()=>fn(+el.value, $('#'+id+'Out'))); };
@@ -189,7 +252,7 @@ function renderAdvanced(tr){
 // Diagnostic views drawn over the picture: the depth map, or what counts as subject and floor.
 function showDebug(){
   const c=$('#dbgView');
-  if (S.dbg==='result' || S.scan || !S.depth || S.tab!=='adjust'){ c.hidden=true; return; }
+  if (S.dbg==='result' || S.scan || !S.depth || S.tab!=='adjust' || S.group!=='advanced'){ c.hidden=true; return; }
   const D=S.depth, m=S.compMap, G=S.ground; c.width=D.w; c.height=D.h;
   const x=c.getContext('2d'), im=x.createImageData(D.w,D.h), col={1:[40,120,255],2:[40,220,220],3:[160,80,255],4:[40,200,90],9:[20,40,90]};
   for (let i=0;i<D.w*D.h;i++){ const v=D.d[i]*255; let cc=[v,v,v];
@@ -208,17 +271,17 @@ function queueThumbs(){ thumbsFor = null; const job=++thumbJob; setTimeout(()=>m
 function makeThumbs(job){
   if (job!==thumbJob) return;
   if (!gl || !G || !S.photo || (!S.compMap && !S.scan) || S.dirtyBuild){ setTimeout(()=>makeThumbs(job), 300); return; }
-  const keys = Object.keys(LOOKS); const out = {};
+  const mine = myLooks(), keys = Object.keys(LOOKS).concat(mine.map(m=>m.id)); const out = {};
   const next = i => {
     if (job!==thumbJob) return;
     if (i>=keys.length){ thumbsFor = out; paintThumbs(); return; }
-    const k=keys[i], L=LOOKS[k];
+    const k=keys[i], m=mine.find(x=>x.id===k), L = m ? {...LOOKS[m.base], ...m.values} : LOOKS[k], lk = m ? m.base : k;
     const R = (S.scan ? buildScanCloud : buildCloud)({dots:CTRL.dots.stops[Math.round(Math.min(2,L.dots))][1], backdrop:CTRL.backdrop.stops[Math.round(L.backdrop)][1],
       floor:CTRL.floor.stops[Math.round(L.floor)][1], pattern:L.pattern, bgTint:L.bgTint, cap:60000});
     uploadCloud(R.out, R.n, 'thumb');
     const tw=208, th=156;
     if (cv.width>=tw && cv.height>=th){
-      renderView(tw, th, {cloud:G.clouds.thumb, look:k, colour:L.colour, size:CTRL.size.stops[Math.round(L.size)][1]*1.3, bright:val2('bright',L.bright)*1.5,
+      renderView(tw, th, {cloud:G.clouds.thumb, look:lk, colour:L.colour, size:val2('size',L.size)*1.3, bright:val2('bright',L.bright)*1.5,
         glow:val2('glow',L.glow), edges:val2('edges',L.edges), light:val('light'), yaw:L.yaw, pitch:L.pitch, zoom:Math.max(1, L.zoom*0.78), thumb:true, targetKey:'thumb'});
       const c=document.createElement('canvas'); c.width=tw; c.height=th; c.getContext('2d').drawImage(cv, 0, cv.height-th, tw, th, 0, 0, tw, th);
       out[k]=c; S.dirtyDraw=true;
@@ -463,6 +526,23 @@ $('#infoBtn').addEventListener('click', e=>{ e.stopPropagation(); const i=$('#in
     i.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say))); } });
 $('#info').addEventListener('click', e=>e.stopPropagation());
 
+// A fitted "floor" lying mostly on found people or things is a body or an object, not a floor.
+function mostlyOnFound(pl, picks){
+  const boxes=picks.filter(p=>p.box).map(p=>p.box); if (!boxes.length) return false;
+  const D=S.depth; let on=0, inB=0;
+  for (let y=0;y<D.h;y+=3){ const v=(y+.5)/D.h; for (let x=0;x<D.w;x+=3){ const u=(x+.5)/D.w, e=pl.al*u+pl.be*v+pl.ga;
+    if (e<=0.02 || Math.abs(D.d[y*D.w+x]-e) > 0.015+0.03*e) continue; on++;
+    if (boxes.some(b=>u>=b[0]&&u<=b[2]&&v>=b[1]&&v<=b[3])) inB++; } }
+  return on>0 && inB/on > 0.5;
+}
+// Nothing inside a found person or thing counts as floor (its outline when there is one, else its box).
+function protectFound(picks){
+  const D=S.depth, G=S.ground; if (!G) return;
+  for (const p of picks){ if (!p.box) continue; const [x0,y0,x1,y1]=p.box;
+    for (let y=Math.floor(y0*D.h); y<Math.min(D.h,Math.ceil(y1*D.h)); y++) for (let x=Math.floor(x0*D.w); x<Math.min(D.w,Math.ceil(x1*D.w)); x++){
+      const i=y*D.w+x; if (!p.seg || p.seg[i]) G[i]=0; } }
+  S.compCache=null;
+}
 // ---------------------------------------------------------------- opening a photo
 // Everything after a wait checks S.gen, so a result that arrives after another photo or scan was
 // opened is dropped instead of landing on the wrong picture.
@@ -483,7 +563,12 @@ async function setPhoto(ph, D, credit){
   if (tv && Math.abs(tv.roll) > 0.4*Math.PI/180 && Math.abs(tv.roll) < 12*Math.PI/180) S.rollAuto = tv.roll;
   S.pitchTan = tv ? Math.max(-0.6, Math.min(0.6, tv.pitchTan)) : 0;
   const vh = 0.5 + PITCH_SIGN*S.pitchTan/(2*S.tanV);
-  S.planes=fitFloors(S.depth); S.plane=S.planes[0]||null; S.shiftAuto=estimateShift(S.plane, vh);
+  S.picks=[]; S.labels=[]; S.faces=[]; S.facesFound=false; S.faceMask=null;
+  // Find people and things before looking for floors: a close-up body is a big surface facing the
+  // camera, and without this it could be fitted as a "floor" and wiped out along with everything behind it.
+  let found = null;
+  if (S.autoFind){ found = await findThings(); if (g!==S.gen) return; if (found && found.length) S.picks = found; }
+  S.planes=fitFloors(S.depth).filter(pl=>!mostlyOnFound(pl, S.picks)); S.plane=S.planes[0]||null; S.shiftAuto=estimateShift(S.plane, vh);
   // level surfaces vanish on one horizon, so floors 2 and 3 must share the main floor's
   if (S.planes.length>1){ const t=S.shiftAuto, hz=p=>(-t-p.ga-p.al*0.5)/p.be, h0=hz(S.planes[0]); S.planes=S.planes.filter((p,k)=>k===0 || Math.abs(hz(p)-h0)<0.2); }
   S.ground=groundMask(S.depth, S.planes);
@@ -492,14 +577,11 @@ async function setPhoto(ph, D, credit){
   if (S.plane){ const rnd=seeded(8), rows=[]; for (let k=0;k<20000 && rows.length<1500;k++){ const i=(rnd()*S.ground.length)|0; if (S.ground[i]!==1) continue;
       rows.push(unproject(((i%S.depth.w)+.5)/S.depth.w, (((i/S.depth.w)|0)+.5)/S.depth.h, zOf(S.depth.d[i]))); }
     const fl = rows.length>200 ? lsqFloor(rows) : null; if (fl){ const l=Math.hypot(fl.a,1,fl.c); upv=[-fl.a/l, 1/l, -fl.c/l]; } }
-  upFacingGround(S.depth, S.ground, upv); S.autoCut=otsu(S.depth.d, S.ground); SHIFT=curShift();
+  upFacingGround(S.depth, S.ground, upv); protectFound(S.picks); S.autoCut=otsu(S.depth.d, S.ground); SHIFT=curShift();
+  S.hasFloor = S.planes.length>0 || S.ground.some(v=>v===4);
   S.roll = S.level ? S.rollAuto : 0;
   S.floorTouched=false; S.autoLight=true; S.lightAuto=0;
-  S.picks=[]; S.labels=[]; S.faces=[]; S.facesFound=false; S.faceMask=null;
   if (S.anon){ await findFaces(); if (g!==S.gen) return; applyAnon(); }
-  // look for people and things first; depth alone decides only when nothing is found
-  let found = null;
-  if (S.autoFind){ found = await findThings(); if (g!==S.gen) return; if (found && found.length) S.picks = found; }
   const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pan=[0,0,0]; S.userMoved=false;
   S.autoFrame = L.bgTint > 0 && !S.isSample;       // the stage looks frame the subject
   busy(null); layout(); S.dirtyBuild=true; renderTray(); queueThumbs(); viewButton();

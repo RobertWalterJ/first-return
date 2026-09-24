@@ -8,30 +8,39 @@ const PITCH_SIGN = 1;      // how edge convergence maps to the horizon row (chec
 // Every adjustable setting has named stops. The slider moves smoothly between them and snaps
 // to a stop when you tap its name, so there is always a sensible preset one tap away.
 const CONTROLS = [
-  {key:'dots',     name:'Dots',       hint:'How many dots make up the picture.', rebuild:true,
+  {key:'dots',     name:'Amount',     hint:'How many dots make up the picture.', rebuild:true,
    stops:[['Few',6],['Some',28],['Many',55],['Lots',75],['Max',92]]},
+  {key:'pattern',  name:'Pattern',    hint:'How the dots are laid out: scattered like a handheld scan, in rings like a spinning lidar, or on an even grid.', rebuild:true, chips:[
+     ['scatter','Scatter'],['rings','Scan rings'],['grid','Grid']]},
   {key:'size',     name:'Dot size',   hint:'How big each dot is.',
    stops:[['Fine',.55],['Small',.8],['Medium',1.05],['Big',1.5],['Huge',2.3]]},
   {key:'glow',     name:'Glow',       hint:'Light that spills around the bright dots.',
    stops:[['Off',0],['Soft',.45],['Medium',.9],['Strong',1.4],['Bloom',2.1]]},
   {key:'bright',   name:'Brightness', hint:'How bright the dots are.',
    stops:[['Dim',.6],['Soft',.9],['Normal',1.25],['Bright',1.8],['Blazing',2.7]]},
-  {key:'light',    name:'Light',      hint:'Evens out the photo\'s lighting so dark or backlit subjects still show. Real lidar sees surfaces, not sunlight.',
+  {key:'light',    name:'Shadows',    hint:'Brings dark or backlit subjects out of shadow by evening out the light. Real lidar sees surfaces, not sunlight.',
    stops:[['As shot',0],['Lifted',.5],['Even',1]]},
   {key:'colour',   name:'Colour',     hint:'What decides the colour of each dot.', chips:[
      ['photo','Photo'],['muted','Muted'],['grey','Grey'],['range','Distance'],['height','Height'],['phosphor','Green']]},
-  {key:'depth3d',  name:'3D',         hint:'How far near things stand out from far things. Easiest to see when you turn the view.', rebuild:true,
+  {key:'depth3d',  name:'Depth',      hint:'How far near things stand out from far things. Easiest to see when you turn the view.', rebuild:true,
    stops:[['Flat',.08],['Low',.5],['Normal',1],['Deep',1.6],['Extra',2.4]]},
-  {key:'backdrop', name:'Backdrop',   hint:'Dots behind and around the subject.', rebuild:true,
+  {key:'backdrop', name:'Background', hint:'Dots behind and around the subject. None leaves the subject alone on a black stage.', rebuild:true,
    stops:[['None',0],['Faint',.12],['Some',.4],['Full',1]]},
   {key:'floor',    name:'Floor',      hint:'A scatter of dots on the ground under the subject.', rebuild:true,
-   stops:[['Off',0],['Light',.55],['Full',1.1]]},
+   stops:[['Off',0],['Some',.55],['Full',1.1]]},
   {key:'hidden',   name:'Hidden parts', hint:'Fills in what the photo could not see: the background behind things, and the backs of people and objects. It shows when you turn the view.', rebuild:true,
    stops:[['Off',0],['Behind',1],['Behind and backs',2]]},
-  {key:'edges',    name:'Edges',      hint:'Dark outlines where near meets far, the way lidar viewers shade a scan.',
+  {key:'edges',    name:'Outlines',   hint:'Dark outlines where near meets far, the way lidar viewers shade a scan.',
    stops:[['Off',0],['Soft',.9],['Strong',2.2]]},
 ];
 const CTRL = Object.fromEntries(CONTROLS.map(c=>[c.key,c]));
+// Adjust is organised by what a control changes, so each group stays short.
+const GROUPS = [
+  {id:'dots',  name:'Dots',             keys:['dots','size','pattern']},
+  {id:'light', name:'Light and colour', keys:['bright','glow','light','colour','edges']},
+  {id:'scene', name:'Scene',            keys:['depth3d','backdrop','floor','hidden']},
+  {id:'advanced', name:'Advanced',      keys:[]},
+];
 
 // Looks set every control plus a few things that are part of the style itself.
 // Control values are positions on the stops (0 = first stop, 1 = second, fractions in between).
@@ -69,7 +78,7 @@ const S = {
   pivot:[0,0,-2], pan:[0,0,0], refDist:2, userMoved:false, panMode:false,   // where turning is centred, and how far the view has slid
   count:0, cpu:null, rng:[1,2], yr:[0,1], floor3d:null,
   dirtyBuild:true, dirtyDraw:true, lowDetail:false, recording:false,
-  tab:null, ctrl:'dots', undo:[], shape:'photo'
+  tab:null, ctrl:'dots', group:'dots', undo:[], shape:'photo', activeMine:null, savingLook:false, hasFloor:false
 };
 
 // ---------------------------------------------------------------- small helpers

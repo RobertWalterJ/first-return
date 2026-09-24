@@ -7,6 +7,9 @@ async function boot(){
   if (saved && saved.P) LOOK_KEYS.forEach(k=>{ if (saved.P[k]!=null && typeof saved.P[k]===typeof P[k]) P[k]=saved.P[k]; });
   S.shape = saved && saved.shape ? saved.shape : (MOBILE ? 'photo' : 'wide');
   if (saved && typeof saved.level==='boolean') S.level = saved.level;
+  if (saved && saved.activeMine && myLooks().some(m=>m.id===saved.activeMine)) S.activeMine = saved.activeMine;
+  { const g = recall('group'); if (GROUPS.some(x=>x.id===g)) S.group = g; }
+  $('#fileLooks').addEventListener('change', e=>{ const f=e.target.files[0]; e.target.value=''; if (f) importLooks(f); });
   const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom;
   setTab(recall('tab') || 'look');
   layout(); requestAnimationFrame(frame);
@@ -29,5 +32,5 @@ async function boot(){
       if (c0){ const Lb={u:c0.topUV[0], v:c0.topUV[1], lift:(c0.maxY-c0.minY)*0.07, text:'Standing Lincoln'}; Lb.pos=labelWorld(Lb); S.labels=[Lb]; S.dirtyDraw=true; if (S.tab==='people') renderTray(); } });
   } catch(err){ console.error(err); banner('Tap Open to choose a photo.'); }
 }
-window.__fr = {S, P, LOOKS, build, setTab, queueThumbs, draw, findThings, tiltFromVerticals};   // for testing from the console
+window.__fr = {S, P, LOOKS, build, setTab, queueThumbs, draw, findThings, tiltFromVerticals, outline:outlineFor};   // for testing from the console
 boot();

@@ -77,10 +77,10 @@ void main(){
   if(uEdl>0.){
     // eye-dome lighting: darken a point when its neighbours on screen are nearer than it
     float d=texture(uDepth,vUv).r;
-    if(d<1.){ float zc=lz(d), s=0.; vec2 px=1.4/uRes;
+    if(d<1.){ float zc=lz(d), s=0.; vec2 px=2./uRes;
       for(int i=0;i<8;i++){ float a=float(i)*.785398; vec2 off=vec2(cos(a),sin(a))*px;
         float dn=texture(uDepth,vUv+off).r; float zn = dn<1. ? lz(dn) : zc+8.; s+=max(0.,zc-zn); }
-      c*=exp(-s/8.*uEdl*45.); }
+      c*=exp(-s/8.*uEdl*110.); }
   }
   c += uGlow*(texture(uGlowA,vUv).rgb*.9 + texture(uGlowB,vUv).rgb*1.3);
   vec2 q=(vUv-.5)*vec2(uRes.x/uRes.y,1.); c*=1.-.4*smoothstep(.45,1.2,length(q));

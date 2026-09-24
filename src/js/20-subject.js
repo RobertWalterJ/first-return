@@ -98,7 +98,7 @@ async function loadSegmenter(){
     busy('Starting the outline finder', null); await tick();
     const fileset = await visionFileset();
     segmenter = await Vision.InteractiveSegmenterLegacy.createFromOptions(fileset, {
-      baseOptions:{modelAssetBuffer:bufs.seg, delegate:'CPU'},
+      baseOptions:{modelAssetPath:URL.createObjectURL(new Blob([bufs.seg])), delegate:'CPU'},
       outputCategoryMask:true, outputConfidenceMasks:false});
   } catch(err){ console.error(err); segFailed = true; segmenter = null; }
   busy(null);
@@ -116,7 +116,7 @@ async function outlineFor(u, v, stroke){
     if (stroke){ const votes={}; for (const p of stroke){ const k=at(p.x,p.y); votes[k]=(votes[k]||0)+1; } on = +Object.keys(votes).sort((p,q)=>votes[q]-votes[p])[0]; }
     const D=S.depth, out=new Uint8Array(D.w*D.h); let count=0;
     for (let y=0;y<D.h;y++) for (let x=0;x<D.w;x++){ const s=a[Math.min(mh-1,((y+.5)/D.h*mh)|0)*mw + Math.min(mw-1,((x+.5)/D.w*mw)|0)]; if (s===on){ out[y*D.w+x]=1; count++; } }
-    res.close(); busy(null);
+    res.close(); busy(null); S.lastSeg={count, total:D.w*D.h, on};
     if (count < D.w*D.h*0.001 || count > D.w*D.h*0.9) return null;     // nothing sensible: fall back to depth alone
     return out;
   } catch(err){ console.error(err); busy(null); return null; }
@@ -135,7 +135,7 @@ async function loadDetector(){
     busy('Starting the finder', null); await tick();
     const fileset = await visionFileset();
     detector = await Vision.ObjectDetector.createFromOptions(fileset, {
-      baseOptions:{modelAssetBuffer:bufs.det, delegate:'CPU'},
+      baseOptions:{modelAssetPath:URL.createObjectURL(new Blob([bufs.det])), delegate:'CPU'},
       scoreThreshold:0.35, maxResults:12, runningMode:'IMAGE'});
   } catch(err){ console.error(err); detFailed = true; detector = null; }
   busy(null);
@@ -161,10 +161,15 @@ async function findThings(){
   found = found.slice(0, MOBILE ? 3 : 5);
   const picks = [];
   for (const f of found){
-    const [x0,y0,x1,y1] = f.box, cx=(x0+x1)/2, pad=0.04;
-    const stroke = [0.25,0.4,0.55,0.7].map(t=>({x:cx, y:y0+(y1-y0)*t}));
+    const [x0,y0,x1,y1] = f.box, cx=(x0+x1)/2, pad=0.04, D=S.depth;
+    // The outline is guided by a stroke drawn down the person. A box cut off by the frame edge (a selfie)
+    // has empty background at its centre, so each stroke point goes on the nearest part of the thing in
+    // its row of the box instead.
+    const stroke = [0.25,0.4,0.55,0.7].map(t=>{ const vy=y0+(y1-y0)*t, yi=Math.min(D.h-1,(vy*D.h)|0); let bx=cx, bd=-1;
+      for (let k=0;k<40;k++){ const ux=x0+(x1-x0)*(k+.5)/40, d=D.d[yi*D.w+Math.min(D.w-1,(ux*D.w)|0)]; if (d>bd){ bd=d; bx=ux; } }
+      return {x:bx, y:vy}; });
     const seg = await outlineFor(cx, (y0+y1)/2, stroke);
-    let su=cx, sv=y0+(y1-y0)*0.4, best=-1; const D=S.depth;
+    let su=cx, sv=y0+(y1-y0)*0.4, best=-1;
     for (let k=0;k<200;k++){ const uu=x0+(x1-x0)*(0.3+0.4*hash2(k,1,5)), vv=y0+(y1-y0)*(0.2+0.5*hash2(k,2,5));
       const dd=D.d[Math.min(D.h-1,(vv*D.h)|0)*D.w+Math.min(D.w-1,(uu*D.w)|0)]; if (dd>best){ best=dd; su=uu; sv=vv; } }
     picks.push({u:su, v:sv, seg, name:f.name,

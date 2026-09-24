@@ -7,7 +7,7 @@ function buildCloud(cfg){
   const Ph=S.photo, D=S.depth, aspect=Ph.w/Ph.h, map=S.compMap, tanV=S.tanV, tanH=tanV*aspect;
   const density = cfg.dots;                         // 0..100
   let target = Math.round(2000*Math.pow(10, density/100*2.75)) * (cfg.low ? 0.3 : 1);
-  const floorOK = (S.planes && S.planes.length) || S.floorTouched;     // no made-up floor under a hand held up to the sky
+  const floorOK = S.hasFloor || S.floorTouched;     // no made-up floor under a hand held up to the sky, unless asked for
   const floorN = cfg.floor > 0 && floorOK ? Math.round(cfg.floor * Math.min(90000, 9000 + target*0.08)) : 0;
   target = Math.max(1000, Math.min(target, (cfg.cap||MAXPTS) - floorN - 2000));
   const hid = cfg.hidden||0, hidN = hid>=0.5 && !cfg.cap ? Math.round(target*0.9) : 0;
@@ -212,7 +212,7 @@ function build(){
     for (let i=0;i<R.n;i+=7) if (R.out[i*10+6]===0) ls.push(R.out[i*10+8]);
     ls.sort((a,b)=>a-b); const med = ls.length ? ls[ls.length>>1] : 0.5;
     P.light = S.lightAuto = med < 0.16 ? 2 : med < 0.26 ? 1 : 0;
-    if (P.light){ const cur=$('#notice'); notice((cur.hidden ? '' : cur.textContent+' ') + (P.light===2 ? 'The subject was in shadow, so its light is evened out (Adjust, Light).' : 'The subject was dark, so its light is lifted (Adjust, Light).')); }
+    if (P.light){ const cur=$('#notice'); notice((cur.hidden ? '' : cur.textContent+' ') + (P.light===2 ? 'The subject was in shadow, so its light is evened out (Adjust, Shadows).' : 'The subject was dark, so its light is lifted (Adjust, Shadows).')); }
     if (S.tab==='adjust') renderTray();
   }
   if (R.live.length){ const all=R.live.reduce((a,c)=>[a[0]+c.sx, a[1]+(c.minY+c.maxY)/2*c.n, a[2]+c.sz, a[3]+c.n],[0,0,0,0]);
