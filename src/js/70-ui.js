@@ -1,6 +1,12 @@
 // ---------------------------------------------------------------- interface
 const ICON_SAY = '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M18.5 6.5a8 8 0 0 1 0 11"/></svg>';
 const sayBtn = text => `<button class="say" data-say="${text.replace(/"/g,'&quot;')}" aria-label="Read aloud">${ICON_SAY}</button>`;
+// small pictures of each dot layout, so the choice reads at a glance
+const PAT_ICON = (()=>{ const svg = inner => `<svg class="paticon" viewBox="0 0 24 24" aria-hidden="true">${inner}</svg>`, dot=(x,y)=>`<circle cx="${x}" cy="${y}" r="1.3"/>`;
+  const sc=[[4,6],[9,3],[15,7],[20,4],[6,12],[12,11],[18,13],[3,19],[10,17],[16,20],[21,18],[13,4]];
+  const grid=[]; for (let y=4;y<=20;y+=5.3) for (let x=4;x<=20;x+=5.3) grid.push([x,y]);
+  const rings=[]; for (const r of [5,9]) for (let a=0;a<Math.PI;a+=Math.PI/(r*0.9)) rings.push([12+r*Math.cos(a)*1.05, 20-r*Math.sin(a)*0.55]);
+  return {scatter:svg(sc.map(p=>dot(...p)).join('')), grid:svg(grid.map(p=>dot(...p)).join('')), rings:svg(rings.map(p=>dot(p[0].toFixed(1),p[1].toFixed(1))).join(''))}; })();
 const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 // ---------------------------------------------------------------- undo
@@ -93,6 +99,8 @@ function renderTray(){
     const mine = myLooks(), custom = isCustom();
     tr.innerHTML = `<h3>Look ${custom?'<span class="chip" style="padding:3px 8px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent);border-color:var(--accent)">Changed</span>':''}<span class="sp"></span></h3>
       <div class="looks">${Object.entries(LOOKS).map(([k,L])=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${L.name}</b></button>`).join('')}</div>
+      <h3 style="margin-top:12px">Dot pattern</h3>
+      <div class="scroller pats">${CTRL.pattern.chips.map(([v,n])=>`<button class="chip pat" data-pat="${v}" aria-pressed="${P.pattern===v}">${PAT_ICON[v]}${n}</button>`).join('')}</div>
       <div class="sect row"><button class="chip" id="resetLook" ${custom?'':'disabled'}>Reset look</button>${undoBtn}</div>
       <div class="sect"><h3>My looks</h3>
         ${mine.length ? `<div class="looks">${mine.map(m=>`<div class="look mine" aria-pressed="${S.activeMine===m.id}"><button class="lookpick" data-mine="${m.id}" aria-label="Use ${esc(m.name)}"><canvas id="thumb-${m.id}" width="208" height="156"></canvas><b>${esc(m.name)}</b></button><button class="lookdel" data-delmine="${m.id}" aria-label="Remove ${esc(m.name)}">&#x2715;</button></div>`).join('')}</div>` : '<p class="hint" style="margin:0 0 8px">Change anything, then save it here to use again on other photos.</p>'}
@@ -101,6 +109,7 @@ function renderTray(){
       </div>`;
     tr.querySelectorAll('[data-look]').forEach(b=>b.addEventListener('click',()=>applyLook(b.dataset.look)));
     tr.querySelectorAll('[data-mine]').forEach(b=>b.addEventListener('click',()=>applyMine(b.dataset.mine)));
+    tr.querySelectorAll('[data-pat]').forEach(b=>b.addEventListener('click',()=>{ if (P.pattern===b.dataset.pat) return; pushUndo(); P.pattern=b.dataset.pat; S.dirtyBuild=true; commit(); }));
     tr.querySelectorAll('[data-delmine]').forEach(b=>b.addEventListener('click',()=>{ const id=b.dataset.delmine, m=myLooks().find(x=>x.id===id);
       const list=myLooks(); S.lastRemoved = m ? {m, at:list.findIndex(x=>x.id===id)} : null;
       saveMyLooks(list.filter(x=>x.id!==id)); if (S.activeMine===id) S.activeMine=null; persist(); renderTray(); notice('Removed "'+(m?m.name:'look')+'".'); }));

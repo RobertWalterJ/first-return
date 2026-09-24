@@ -66,6 +66,8 @@ body.scan .tab[data-tab="subject"], body.scan .tab[data-tab="people"]{opacity:.5
 .scroller{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
 .chip{flex:none;border:1px solid var(--line2);background:var(--raise);border-radius:18px;padding:8px 13px;font-size:14px;line-height:1.1;white-space:nowrap;position:relative}
 .chip[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:#0f2621}
+.chip.pat{display:inline-flex;align-items:center;gap:8px;padding:6px 13px 6px 8px}
+.paticon{width:26px;height:26px;fill:currentColor;opacity:.85}
 .chip.def::after{content:"";position:absolute;right:5px;top:5px;width:5px;height:5px;border-radius:50%;background:var(--dim)}
 .chip:disabled{opacity:.4;cursor:default}
 .btn{border:1px solid var(--line2);background:var(--raise);border-radius:8px;padding:10px 14px;font-weight:560;line-height:1.1}

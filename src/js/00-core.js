@@ -36,7 +36,7 @@ const CONTROLS = [
 const CTRL = Object.fromEntries(CONTROLS.map(c=>[c.key,c]));
 // Adjust is organised by what a control changes, so each group stays short.
 const GROUPS = [
-  {id:'dots',  name:'Dots',             keys:['dots','size','pattern']},
+  {id:'dots',  name:'Dots',             keys:['dots','size']},     // Pattern is a style, so it sits on the Look tab
   {id:'light', name:'Light and colour', keys:['bright','glow','light','colour','edges']},
   {id:'scene', name:'Scene',            keys:['depth3d','backdrop','floor','hidden']},
   {id:'advanced', name:'Advanced',      keys:[]},
