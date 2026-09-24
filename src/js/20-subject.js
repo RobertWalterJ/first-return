@@ -45,9 +45,27 @@ function growFrom(pick, id, map){
   const bx = pick.box;                        // a found thing stays inside its own box
   const inBox = j => { if (!bx) return true; const u=(j%W+.5)/W, v=(((j/W)|0)+.5)/D.h; return u>=bx[0] && u<=bx[2] && v>=bx[1] && v<=bx[3]; };
   const ok = j => map[j]===-1 && (allowFloor ? G[j]!==9 && (G[j]===0 || G[j]===4 || !!seg) : !G[j]) && D.d[j]>=lo && D.d[j]<=hi && (!seg || seg[j]) && inBox(j);
-  if (seg){ // take every pixel of the outline that sits in the depth band
-    let area=0; for (let i=0;i<n;i++) if (ok(i)){ map[i]=id; area++; } return area; }
   const q=new Int32Array(n); let head=0, tail=0, area=0;
+  if (seg){
+    // take every pixel of the outline that sits in the depth band...
+    for (let i=0;i<n;i++) if (ok(i)){ map[i]=id; q[tail++]=i; }
+    // ...then let it grow into neighbours whose depth carries on smoothly: the outline model often skips
+    // dark clothing, but a jacket's depth runs straight on from the face and hands. Depth maps blur edges,
+    // so smoothness alone would creep into the background; growth must also stay clearly nearer than the
+    // background inside the box (at least halfway from it to the thing). Where the two are too close to
+    // tell apart, the outline is used as it is.
+    const inside=[], behind=[];
+    for (let i=0;i<n;i+=2){ if (!inBox(i)) continue; (seg[i] ? inside : behind).push(D.d[i]); }
+    inside.sort((a,b)=>a-b); behind.sort((a,b)=>a-b);
+    const thing = inside[inside.length>>1], back = behind.length > 50 ? behind[Math.floor(behind.length*0.25)] : -1;
+    if (!(thing - back > tau)){ area=tail; return area; }
+    const floorD = Math.max(lo, back + 0.5*(thing-back));
+    const okGrow = j => map[j]===-1 && G[j]!==9 && (!G[j] || G[j]===4) && D.d[j]>=floorD && D.d[j]<=hi && inBox(j);
+    while(head<tail){ const i=q[head++]; area++; const x=i%W, di=D.d[i];
+      const tryJ = j => { if (okGrow(j) && Math.abs(D.d[j]-di) < step*0.6){ map[j]=id; q[tail++]=j; } };
+      if (x>0) tryJ(i-1); if (x<W-1) tryJ(i+1); if (i>=W) tryJ(i-W); if (i<n-W) tryJ(i+W); }
+    return area;
+  }
   if (map[seed]!==-1) return 0; map[seed]=id; q[tail++]=seed;
   while(head<tail){ const i=q[head++]; area++; const x=i%W, di=D.d[i];
     const tryJ = j => { if (ok(j) && Math.abs(D.d[j]-di) < step){ map[j]=id; q[tail++]=j; } };
