@@ -10,3 +10,4 @@ tools/mp/
 tools/*.tflite
 tools/first-return.v1.html
 docs/_test/
+tools/coi/

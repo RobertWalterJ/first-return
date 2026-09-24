@@ -273,6 +273,7 @@ function depthAt(u,v){ const D=S.depth; const x=Math.min(D.w-1.001,Math.max(0,u*
   return (d[i]*(1-ax)+d[i+1]*ax)*(1-ay)+(d[i+D.w]*(1-ax)+d[i+D.w+1]*ax)*ay; }
 function curShift(){
   // the 3D control scales the near-to-far ratio found for this photo
+  if (S.adv.ratio) return 1/(Math.max(1.03, S.adv.ratio)-1);        // Advanced: a set near-to-far ratio
   const R0 = (1+S.shiftAuto)/S.shiftAuto, R = Math.max(1.03, Math.min(80, Math.pow(R0, val('depth3d'))));
   return 1/(R-1);
 }

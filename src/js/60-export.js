@@ -26,7 +26,7 @@ function withCanvasSize(W, H, fn){
   if (r && typeof r.then === 'function') return r.finally(restore);
   restore(); return r;
 }
-function exportSize(long){ const a=frameAspect(); const L=Math.min(long, gl.getParameter(gl.MAX_TEXTURE_SIZE));
+function exportSize(long){ const a=frameAspect(); const L=Math.min(S.adv.exportLong || long, gl.getParameter(gl.MAX_TEXTURE_SIZE));
   return a>=1 ? [L&~1, Math.round(L/a)&~1] : [Math.round(L*a)&~1, L&~1]; }
 async function savePicture(){
   if (!S.count) return;
@@ -48,8 +48,7 @@ function savePly(){
   const url = URL.createObjectURL(new Blob([buf],{type:'application/octet-stream'}));
   const a = document.createElement('a'); a.href=url; a.download='first-return.ply'; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 30000);
-  banner(`Saved first-return.ply, ${(buf.byteLength/1e6).toFixed(1)} MB. It opens in Blender, MeshLab or CloudCompare.`);
-  setTimeout(()=>banner(modeText()), 6000);
+  notice(`Saved first-return.ply, ${(buf.byteLength/1e6).toFixed(1)} MB. It opens in Blender, MeshLab or CloudCompare.`);
 }
 
 // ---------------------------------------------------------------- camera moves
@@ -81,7 +80,7 @@ async function recordMove(move, secs){
   const [W,H] = exportSize(MOBILE ? 1280 : 1920);
   const rc=document.createElement('canvas'); rc.width=W; rc.height=H; const rx=rc.getContext('2d');
   const frameAt = i => { const t=(i-hold)/(frames-2*hold-1); Object.assign(S, poseAt(base, move, t)); draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
-  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false;
+  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked');
   let blob=null, ext='mp4';
   try {
     let config=null;
@@ -125,6 +124,6 @@ async function recordMove(move, secs){
       blob = new Blob(chunks, {type:mime.split(';')[0]});
     }
   } catch(err){ console.error(err); banner(String(err.message||err)); }
-  S.recording=false; $('#recbar').hidden=true; Object.assign(S, base); S.dirtyDraw=true;
+  S.recording=false; $('#recbar').hidden=true; document.body.classList.remove('locked'); Object.assign(S, base); S.dirtyDraw=true;
   if (blob){ banner(modeText()); showSheet(URL.createObjectURL(blob), 'video', 'first-return.'+ext); }
 }

@@ -9,7 +9,9 @@ Turns a photo into a lidar-style point cloud. Personal tool, not GPA. Live at ht
 - **Adjust:** one control at a time, each with named steps: Dots, Dot size, Glow, Brightness, Colour, 3D, Backdrop, Floor, Edges.
 - **Subject:** each new photo is searched for people and things (people, animals, vehicles, boats; not furniture), and each one found is outlined and framed. If nothing is found, the nearest things are used. Tap what matters to choose yourself; **Sharper outline** adds Magic Touch for cleaner edges; **Nearest things** goes back to depth alone.
 - **3D scans:** Open also takes a `.ply` point cloud (Polycam, phone lidar apps, photogrammetry, Gaussian splats from Brush and similar). The scan is levelled on its own floor and drawn in the same looks; its floor follows the Backdrop setting.
-- **Straighten (Shape menu):** a tilted photo is levelled from how far its vertical edges lean. Photos without clear verticals are left alone.
+- **Hidden parts (Adjust):** fills in what one photo cannot see, the background behind people and things (push-pull inpainting of depth and colour) and a rounded back for each subject sized from its silhouette. Both appear only as the view turns away from the photo; Scanner leaves them off, since real lidar has shadows.
+- **Advanced (Adjust):** views of the depth map and of what counts as subject and floor, plus direct settings for view angle, far-versus-near depth, tilt, scanner beams, range noise and picture size.
+- **Straighten (Shape menu):** a tilted photo is levelled from how its upright edges lean. Lean is fitted against position across the frame, so converging verticals (looking up or down) give the camera's pitch instead of a false tilt; the pitch then sets the horizon for the depth range. Calibrated on synthetic scenes of known tilt; photos without clear verticals are left alone.
 - **Light (Adjust):** evens out the photo's lighting so backlit and silhouetted subjects still show. It switches on by itself when the subject is dark.
 - **Move:** camera moves as an MP4 video.
 - **People:** hide faces (Light, Medium or Strong, or tap to cover a face) and add floating names.

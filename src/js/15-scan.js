@@ -132,7 +132,7 @@ async function openScan(file){
   const L = levelScan(sc);
   S.scan = {n:sc.n, pos:L.pos, col:sc.col, floor:L.floor};
   S.photo = S.photoSrc = {w:1600, h:1200, data:null}; S.photoCanvas = null; S.depth = S.depthSrc = null;
-  S.tanV = Math.tan(25*Math.PI/180); S.planes=[]; S.plane=null; S.ground=null; S.compMap=null; S.comps=[];
+  S.tanV = S.tanVAuto = Math.tan(25*Math.PI/180); Object.assign(S.adv, {fov:null, ratio:null, roll:null, beams:null}); S.dbg='result'; showDebug(); S.planes=[]; S.plane=null; S.ground=null; S.compMap=null; S.comps=[];
   S.fovSource = 'a 3D scan'; S.credit = `3D scan: ${file.name}, ${sc.n.toLocaleString()} points${L.levelled ? `, levelled on its floor${L.tilt>=1 ? ` (it was ${L.tilt.toFixed(0)}° off)` : ''}` : ''}. It stayed on this device.`;
   S.undo=[]; undoArmed=true; S.placing=false; S.panMode=false; syncPan(); S.autoFrame=false; S.home=null; S.refFrozen=true; S.pitchTan=0;
   S.picks=[]; S.labels=[]; S.faces=[]; S.faceMask=null; S.rollAuto=0; S.roll=0; S.compCache=null;

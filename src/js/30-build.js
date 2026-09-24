@@ -1,6 +1,7 @@
 // ---------------------------------------------------------------- building the cloud
 // Each point is 10 floats: position (3), photo colour (3), kind, random, luminance, incidence.
-// kind 0 = subject, 1 = backdrop, 2 = synthetic floor. Which subject a point belongs to is kept
+// kind 0 = subject, 1 = backdrop, 2 = synthetic floor, 3 = filled background behind the subject,
+// 4 = the subject's filled-in back. Which subject a point belongs to is kept
 // separately (S.cpuComp) because only picking needs it.
 function buildCloud(cfg){
   const Ph=S.photo, D=S.depth, aspect=Ph.w/Ph.h, map=S.compMap, tanV=S.tanV, tanH=tanV*aspect;
@@ -9,7 +10,8 @@ function buildCloud(cfg){
   const floorOK = (S.planes && S.planes.length) || S.floorTouched;     // no made-up floor under a hand held up to the sky
   const floorN = cfg.floor > 0 && floorOK ? Math.round(cfg.floor * Math.min(90000, 9000 + target*0.08)) : 0;
   target = Math.max(1000, Math.min(target, (cfg.cap||MAXPTS) - floorN - 2000));
-  const cap = Math.round(target*1.08) + (cfg.cap ? 0 : 60000) + floorN + 4000;   // room for the subject detail pass
+  const hid = cfg.hidden||0, hidN = hid>=0.5 && !cfg.cap ? Math.round(target*0.9) : 0;
+  const cap = Math.round(target*1.08) + (cfg.cap ? 0 : 60000) + floorN + hidN + 4000;   // room for the subject detail pass and hidden parts
   const out = new Float32Array(cap*10), comp = new Int16Array(cap);
   let n = 0;
   const push = (x,y,z,r,g,b,kind,rnd,lum,inc,c) => { if (n>=cap) return; const o=n*10;
@@ -26,6 +28,7 @@ function buildCloud(cfg){
       bx0=Math.min(bx0,x/D.w); bx1=Math.max(bx1,(x+1)/D.w); by0=Math.min(by0,y/D.h); by1=Math.max(by1,(y+1)/D.h); }
     if (c){ fx=sx/c/D.w; fy=sy/c/D.h; subjArea=c*3/map.length; } }
 
+  const fill = hid>=0.5 && !cfg.cap && map.some(v=>v>=0) ? hiddenFill(map) : null;
   const sample = (u,v,cell) => {
     if (u<0||u>=1||v<0||v>=1) return;
     const mi = Math.min(D.h-1,(v*D.h)|0)*D.w + Math.min(D.w-1,(u*D.w)|0);
@@ -57,9 +60,16 @@ function buildCloud(cfg){
     // range noise grows with distance, along the beam
     // hashed per cell, so the dots stay put between rebuilds
     const gn = Math.sqrt(-2*Math.log(hash2(cell,41,7)+1e-9))*Math.cos(6.283185*hash2(cell,43,9));
-    const zz = z + gn*(0.002 + 0.0035*z)*(1 + 4*inFace);
+    const zz = z + gn*(0.002 + 0.0035*z)*(1 + 4*inFace)*S.adv.noise;
     const p = unproject(u,v,zz);
     push(p[0],p[1],p[2],r,g,b,kind,rnd,lum,inc,c);
+    // the subject's back: a rounded surface as thick at this row as the subject is wide there
+    if (kind===0 && fill && hid>=1.5 && hash2(cell,51,3) < 0.6){
+      const row=Math.min(D.h-1,(v*D.h)|0), j=c*D.h+row, lo=fill.lo[j], hi=fill.hi[j];
+      if (hi>=lo){ const k=2*tanV*aspect*zz/D.w, half=(hi-lo+1)/2*k, dx=(u*D.w-(lo+hi+1)/2)*k;
+        const t=Math.min(0.35*zz, Math.sqrt(Math.max(0, half*half-dx*dx))*0.85);
+        if (t > 0.004*zz){ const q=unproject(u,v,zz+2*t); push(q[0],q[1],q[2],r*.7,g*.7,b*.7,4,rnd,lum*.7,inc,c); } }
+    }
     if (kind===0){ const ci2=cinfo[c]; ci2.n++; ci2.sx+=p[0]; ci2.sz+=p[2];
       if (p[1]>ci2.maxY){ci2.maxY=p[1]; ci2.top=p; ci2.topUV=[u,v];} if (p[1]<ci2.minY){ci2.minY=p[1]; ci2.foot=p;} }
   };
@@ -68,7 +78,7 @@ function buildCloud(cfg){
   const beamEls = [];
   if (rings){
     // fixed beam elevations, packed closer together near the horizon like a real multi-beam unit
-    const beams = Math.round(16 + density/100*200);
+    const beams = S.adv.beams || Math.round(16 + density/100*200);
     for (let k=0;k<beams;k++){ const s=(k+.5)/beams*2-1; beamEls.push(elMax*1.02*Math.sign(s)*Math.pow(Math.abs(s),1.45)); }
     const per = Math.max(200, Math.min(4000, Math.round(target/beams)));
     beamEls.forEach((el,k)=>{
@@ -95,6 +105,21 @@ function buildCloud(cfg){
           const mi = Math.min(D.h-1,(v*D.h)|0)*D.w + Math.min(D.w-1,(u*D.w)|0);
           if (map[mi] >= 0) sample(u, v, 1e7 + y*nx2 + x); }
       }
+    }
+  }
+
+  // the background hidden behind the subject, sampled like the backdrop around it
+  if (fill && hid>=0.5 && subjArea>0){
+    const bw=bx1-bx0, bh=by1-by0, cells=Math.min(hidN, target*bw*bh), cw3=Math.sqrt(bw*bh/Math.max(1,cells)), nx3=Math.ceil(bw/cw3), ny3=Math.ceil(bh/cw3);
+    for (let y=0;y<ny3;y++) for (let x=0;x<nx3;x++){
+      const u=bx0+(x+hash2(x,y,61))*bw/nx3, v=by0+(y+hash2(x,y,62))*bh/ny3, xi=Math.min(D.w-1,(u*D.w)|0), yi=Math.min(D.h-1,(v*D.h)|0), mi=yi*D.w+xi;
+      if (!fill.region[mi]) continue;
+      const cell=2e7+y*nx3+x, rnd=hash2(cell,17,5);
+      let keep=cfg.backdrop; if (fog){ const dx=(u-fx)*aspect/Math.max(aspect,1), dy=v-fy; keep*=Math.exp(-(dx*dx+dy*dy)/0.07); }
+      if (rnd>=keep) continue;
+      const dF=fill.f[mi*4], zF=zOf(dF); if (zF < zOf(D.d[mi])*1.03) continue;      // only what really lies behind
+      const q=unproject(u,v,zF), R=fill.f[mi*4+1], Gc=fill.f[mi*4+2], B=fill.f[mi*4+3];
+      push(q[0],q[1],q[2],R,Gc,B,3,rnd,0.299*R+0.587*Gc+0.114*B,1,-1);
     }
   }
 
@@ -166,7 +191,7 @@ function lsqFloor(rows){
 
 function cfgFromP(extra){
   const L = LOOKS[look];
-  return Object.assign({dots:val('dots'), backdrop:val('backdrop'), floor:val('floor'), pattern:P.pattern, bgTint:L.bgTint}, extra||{});
+  return Object.assign({dots:val('dots'), backdrop:val('backdrop'), floor:val('floor'), hidden:val('hidden'), pattern:P.pattern, bgTint:L.bgTint}, extra||{});
 }
 function build(){
   S.dirtyBuild = false;
@@ -200,7 +225,7 @@ function build(){
   const ex = extents(R.out, R.n); S.rng=ex.rng; S.yr=ex.yr;
   uploadCloud(R.out, R.n);
   if (S.autoFrame){ S.autoFrame = false; setTimeout(frameSubject, 0); }
-  refreshLabelPositions(); renderPins();
+  refreshLabelPositions(); renderPins(); if (S.dbg!=='result') showDebug();
   S.dirtyDraw = true;
 }
 function extents(out, n){

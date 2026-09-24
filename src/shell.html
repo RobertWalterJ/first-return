@@ -88,6 +88,11 @@ body.scan .tab[data-tab="subject"], body.scan .tab[data-tab="people"]{opacity:.5
 .stops button:first-child{text-align:left} .stops button:last-child{text-align:right}
 .stops button[aria-current="true"]{color:var(--accent);font-weight:640}
 .sect{margin-top:14px}
+.advrow{display:grid;grid-template-columns:92px minmax(0,1fr) 58px auto;gap:8px;align-items:center;margin:8px 0}
+.advrow label{font-size:13.5px}
+.advrow output{font:12px var(--mono);color:var(--dim);text-align:right}
+.advrow input{width:100%;accent-color:var(--accent)}
+.chip.small{padding:5px 9px;font-size:12.5px}
 .lablist{display:flex;flex-direction:column;gap:6px;margin-top:8px}
 .lablist div{display:flex;gap:6px}
 .lablist input{flex:1;min-width:0;background:var(--raise);border:1px solid var(--line2);border-radius:8px;padding:9px 10px}
@@ -130,6 +135,7 @@ body.scan .tab[data-tab="subject"], body.scan .tab[data-tab="people"]{opacity:.5
   <div class="stage" id="stage">
     <canvas id="gl" tabindex="0" aria-label="The point cloud. Drag to turn it, pinch or scroll to zoom, drag with two fingers to slide it, double tap a spot to centre on it."></canvas>
     <img class="compare" id="compare" alt="" hidden>
+    <canvas class="compare" id="dbgView" hidden></canvas>
     <div class="overlay" id="pins"></div>
     <div class="overlay" id="labels"></div>
     <div class="msgs"><div class="notice" id="notice" hidden></div><div class="banner" id="banner" hidden></div></div>

@@ -100,6 +100,11 @@ body.scan .tab[data-tab="subject"], body.scan .tab[data-tab="people"]{opacity:.5
 .stops button:first-child{text-align:left} .stops button:last-child{text-align:right}
 .stops button[aria-current="true"]{color:var(--accent);font-weight:640}
 .sect{margin-top:14px}
+.advrow{display:grid;grid-template-columns:92px minmax(0,1fr) 58px auto;gap:8px;align-items:center;margin:8px 0}
+.advrow label{font-size:13.5px}
+.advrow output{font:12px var(--mono);color:var(--dim);text-align:right}
+.advrow input{width:100%;accent-color:var(--accent)}
+.chip.small{padding:5px 9px;font-size:12.5px}
 .lablist{display:flex;flex-direction:column;gap:6px;margin-top:8px}
 .lablist div{display:flex;gap:6px}
 .lablist input{flex:1;min-width:0;background:var(--raise);border:1px solid var(--line2);border-radius:8px;padding:9px 10px}
@@ -142,6 +147,7 @@ body.scan .tab[data-tab="subject"], body.scan .tab[data-tab="people"]{opacity:.5
   <div class="stage" id="stage">
     <canvas id="gl" tabindex="0" aria-label="The point cloud. Drag to turn it, pinch or scroll to zoom, drag with two fingers to slide it, double tap a spot to centre on it."></canvas>
     <img class="compare" id="compare" alt="" hidden>
+    <canvas class="compare" id="dbgView" hidden></canvas>
     <div class="overlay" id="pins"></div>
     <div class="overlay" id="labels"></div>
     <div class="msgs"><div class="notice" id="notice" hidden></div><div class="banner" id="banner" hidden></div></div>
@@ -210,6 +216,8 @@ const CONTROLS = [
    stops:[['None',0],['Faint',.12],['Some',.4],['Full',1]]},
   {key:'floor',    name:'Floor',      hint:'A scatter of dots on the ground under the subject.', rebuild:true,
    stops:[['Off',0],['Light',.55],['Full',1.1]]},
+  {key:'hidden',   name:'Hidden parts', hint:'Fills in what the photo could not see: the background behind things, and the backs of people and objects. It shows when you turn the view.', rebuild:true,
+   stops:[['Off',0],['Behind',1],['Behind and backs',2]]},
   {key:'edges',    name:'Edges',      hint:'Dark outlines where near meets far, the way lidar viewers shade a scan.',
    stops:[['Off',0],['Soft',.9],['Strong',2.2]]},
 ];
@@ -218,16 +226,16 @@ const CTRL = Object.fromEntries(CONTROLS.map(c=>[c.key,c]));
 // Looks set every control plus a few things that are part of the style itself.
 // Control values are positions on the stops (0 = first stop, 1 = second, fractions in between).
 const LOOKS = {
-  void:    {name:'Void',    dots:3.05, size:1.9, glow:1.9, bright:2.3, colour:'photo',  depth3d:2, backdrop:1.05, floor:1.3, edges:0,
+  void:    {name:'Void',    dots:3.05, size:1.9, glow:1.9, bright:2.3, colour:'photo',  depth3d:2, backdrop:1.05, floor:1.3, edges:0, hidden:2,
             pattern:'scatter', bgTint:1, bgGain:.45, bgSize:2.4, sparkle:0, yaw:0, pitch:0, zoom:1.3},
-  sparse:  {name:'Sparse',  dots:1.45, size:2.7, glow:2.4, bright:3.1, colour:'muted',  depth3d:2, backdrop:0,    floor:1.55, edges:0,
+  sparse:  {name:'Sparse',  dots:1.45, size:2.7, glow:2.4, bright:3.1, colour:'muted',  depth3d:2, backdrop:0,    floor:1.55, edges:0, hidden:2,
             pattern:'scatter', bgTint:1, bgGain:.4, bgSize:2, sparkle:1, yaw:0, pitch:0, zoom:1.3},
-  scanner: {name:'Scanner', dots:1.8,  size:1.4, glow:1.0, bright:1.7, colour:'range',  depth3d:2, backdrop:3,    floor:0,   edges:1,
+  scanner: {name:'Scanner', dots:1.8,  size:1.4, glow:1.0, bright:1.7, colour:'range',  depth3d:2, backdrop:3,    floor:0,   edges:1, hidden:0,
             pattern:'rings',   bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:24, pitch:14, zoom:2.2},
-  survey:  {name:'Survey',  dots:2.85, size:1.2, glow:.55, bright:1.4, colour:'height', depth3d:2, backdrop:3,    floor:0,   edges:1.6,
+  survey:  {name:'Survey',  dots:2.85, size:1.2, glow:.55, bright:1.4, colour:'height', depth3d:2, backdrop:3,    floor:0,   edges:1.6, hidden:2,
             pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:18, pitch:10, zoom:1.6},
 };
-const LOOK_KEYS = ['dots','size','glow','bright','colour','depth3d','backdrop','floor','edges','pattern'];
+const LOOK_KEYS = ['dots','size','glow','bright','colour','depth3d','backdrop','floor','edges','hidden','pattern'];
 
 const P = {};            // the live settings
 let look = 'void';
@@ -246,6 +254,7 @@ const S = {
   yaw:0, pitch:0, zoom:1, target:[0,0,-2], spin:false,
   planes:[], floorTouched:false, autoLight:false, autoFind:true, scan:null,
   roll:0, rollAuto:0, level:true, pitchTan:0,   // camera tilt: roll from upright edges, pitch from how they converge
+  adv:{fov:null, ratio:null, roll:null, beams:null, noise:1, exportLong:null}, tanVAuto:Math.tan(25*Math.PI/180), dbg:'result', fillCache:null,
   gen:0, home:null, reframe:false, lightAuto:0, compCache:null, depthVer:0, refFrozen:false,
   pivot:[0,0,-2], pan:[0,0,0], refDist:2, userMoved:false, panMode:false,   // where turning is centred, and how far the view has slid
   count:0, cpu:null, rng:[1,2], yr:[0,1], floor3d:null,
@@ -556,6 +565,7 @@ function depthAt(u,v){ const D=S.depth; const x=Math.min(D.w-1.001,Math.max(0,u*
   return (d[i]*(1-ax)+d[i+1]*ax)*(1-ay)+(d[i+D.w]*(1-ax)+d[i+D.w+1]*ax)*ay; }
 function curShift(){
   // the 3D control scales the near-to-far ratio found for this photo
+  if (S.adv.ratio) return 1/(Math.max(1.03, S.adv.ratio)-1);        // Advanced: a set near-to-far ratio
   const R0 = (1+S.shiftAuto)/S.shiftAuto, R = Math.max(1.03, Math.min(80, Math.pow(R0, val('depth3d'))));
   return 1/(R-1);
 }
@@ -698,7 +708,7 @@ async function openScan(file){
   const L = levelScan(sc);
   S.scan = {n:sc.n, pos:L.pos, col:sc.col, floor:L.floor};
   S.photo = S.photoSrc = {w:1600, h:1200, data:null}; S.photoCanvas = null; S.depth = S.depthSrc = null;
-  S.tanV = Math.tan(25*Math.PI/180); S.planes=[]; S.plane=null; S.ground=null; S.compMap=null; S.comps=[];
+  S.tanV = S.tanVAuto = Math.tan(25*Math.PI/180); Object.assign(S.adv, {fov:null, ratio:null, roll:null, beams:null}); S.dbg='result'; showDebug(); S.planes=[]; S.plane=null; S.ground=null; S.compMap=null; S.comps=[];
   S.fovSource = 'a 3D scan'; S.credit = `3D scan: ${file.name}, ${sc.n.toLocaleString()} points${L.levelled ? `, levelled on its floor${L.tilt>=1 ? ` (it was ${L.tilt.toFixed(0)}° off)` : ''}` : ''}. It stayed on this device.`;
   S.undo=[]; undoArmed=true; S.placing=false; S.panMode=false; syncPan(); S.autoFrame=false; S.home=null; S.refFrozen=true; S.pitchTan=0;
   S.picks=[]; S.labels=[]; S.faces=[]; S.faceMask=null; S.rollAuto=0; S.roll=0; S.compCache=null;
@@ -888,7 +898,8 @@ async function findThings(){
 
 // ---------------------------------------------------------------- building the cloud
 // Each point is 10 floats: position (3), photo colour (3), kind, random, luminance, incidence.
-// kind 0 = subject, 1 = backdrop, 2 = synthetic floor. Which subject a point belongs to is kept
+// kind 0 = subject, 1 = backdrop, 2 = synthetic floor, 3 = filled background behind the subject,
+// 4 = the subject's filled-in back. Which subject a point belongs to is kept
 // separately (S.cpuComp) because only picking needs it.
 function buildCloud(cfg){
   const Ph=S.photo, D=S.depth, aspect=Ph.w/Ph.h, map=S.compMap, tanV=S.tanV, tanH=tanV*aspect;
@@ -897,7 +908,8 @@ function buildCloud(cfg){
   const floorOK = (S.planes && S.planes.length) || S.floorTouched;     // no made-up floor under a hand held up to the sky
   const floorN = cfg.floor > 0 && floorOK ? Math.round(cfg.floor * Math.min(90000, 9000 + target*0.08)) : 0;
   target = Math.max(1000, Math.min(target, (cfg.cap||MAXPTS) - floorN - 2000));
-  const cap = Math.round(target*1.08) + (cfg.cap ? 0 : 60000) + floorN + 4000;   // room for the subject detail pass
+  const hid = cfg.hidden||0, hidN = hid>=0.5 && !cfg.cap ? Math.round(target*0.9) : 0;
+  const cap = Math.round(target*1.08) + (cfg.cap ? 0 : 60000) + floorN + hidN + 4000;   // room for the subject detail pass and hidden parts
   const out = new Float32Array(cap*10), comp = new Int16Array(cap);
   let n = 0;
   const push = (x,y,z,r,g,b,kind,rnd,lum,inc,c) => { if (n>=cap) return; const o=n*10;
@@ -914,6 +926,7 @@ function buildCloud(cfg){
       bx0=Math.min(bx0,x/D.w); bx1=Math.max(bx1,(x+1)/D.w); by0=Math.min(by0,y/D.h); by1=Math.max(by1,(y+1)/D.h); }
     if (c){ fx=sx/c/D.w; fy=sy/c/D.h; subjArea=c*3/map.length; } }
 
+  const fill = hid>=0.5 && !cfg.cap && map.some(v=>v>=0) ? hiddenFill(map) : null;
   const sample = (u,v,cell) => {
     if (u<0||u>=1||v<0||v>=1) return;
     const mi = Math.min(D.h-1,(v*D.h)|0)*D.w + Math.min(D.w-1,(u*D.w)|0);
@@ -945,9 +958,16 @@ function buildCloud(cfg){
     // range noise grows with distance, along the beam
     // hashed per cell, so the dots stay put between rebuilds
     const gn = Math.sqrt(-2*Math.log(hash2(cell,41,7)+1e-9))*Math.cos(6.283185*hash2(cell,43,9));
-    const zz = z + gn*(0.002 + 0.0035*z)*(1 + 4*inFace);
+    const zz = z + gn*(0.002 + 0.0035*z)*(1 + 4*inFace)*S.adv.noise;
     const p = unproject(u,v,zz);
     push(p[0],p[1],p[2],r,g,b,kind,rnd,lum,inc,c);
+    // the subject's back: a rounded surface as thick at this row as the subject is wide there
+    if (kind===0 && fill && hid>=1.5 && hash2(cell,51,3) < 0.6){
+      const row=Math.min(D.h-1,(v*D.h)|0), j=c*D.h+row, lo=fill.lo[j], hi=fill.hi[j];
+      if (hi>=lo){ const k=2*tanV*aspect*zz/D.w, half=(hi-lo+1)/2*k, dx=(u*D.w-(lo+hi+1)/2)*k;
+        const t=Math.min(0.35*zz, Math.sqrt(Math.max(0, half*half-dx*dx))*0.85);
+        if (t > 0.004*zz){ const q=unproject(u,v,zz+2*t); push(q[0],q[1],q[2],r*.7,g*.7,b*.7,4,rnd,lum*.7,inc,c); } }
+    }
     if (kind===0){ const ci2=cinfo[c]; ci2.n++; ci2.sx+=p[0]; ci2.sz+=p[2];
       if (p[1]>ci2.maxY){ci2.maxY=p[1]; ci2.top=p; ci2.topUV=[u,v];} if (p[1]<ci2.minY){ci2.minY=p[1]; ci2.foot=p;} }
   };
@@ -956,7 +976,7 @@ function buildCloud(cfg){
   const beamEls = [];
   if (rings){
     // fixed beam elevations, packed closer together near the horizon like a real multi-beam unit
-    const beams = Math.round(16 + density/100*200);
+    const beams = S.adv.beams || Math.round(16 + density/100*200);
     for (let k=0;k<beams;k++){ const s=(k+.5)/beams*2-1; beamEls.push(elMax*1.02*Math.sign(s)*Math.pow(Math.abs(s),1.45)); }
     const per = Math.max(200, Math.min(4000, Math.round(target/beams)));
     beamEls.forEach((el,k)=>{
@@ -983,6 +1003,21 @@ function buildCloud(cfg){
           const mi = Math.min(D.h-1,(v*D.h)|0)*D.w + Math.min(D.w-1,(u*D.w)|0);
           if (map[mi] >= 0) sample(u, v, 1e7 + y*nx2 + x); }
       }
+    }
+  }
+
+  // the background hidden behind the subject, sampled like the backdrop around it
+  if (fill && hid>=0.5 && subjArea>0){
+    const bw=bx1-bx0, bh=by1-by0, cells=Math.min(hidN, target*bw*bh), cw3=Math.sqrt(bw*bh/Math.max(1,cells)), nx3=Math.ceil(bw/cw3), ny3=Math.ceil(bh/cw3);
+    for (let y=0;y<ny3;y++) for (let x=0;x<nx3;x++){
+      const u=bx0+(x+hash2(x,y,61))*bw/nx3, v=by0+(y+hash2(x,y,62))*bh/ny3, xi=Math.min(D.w-1,(u*D.w)|0), yi=Math.min(D.h-1,(v*D.h)|0), mi=yi*D.w+xi;
+      if (!fill.region[mi]) continue;
+      const cell=2e7+y*nx3+x, rnd=hash2(cell,17,5);
+      let keep=cfg.backdrop; if (fog){ const dx=(u-fx)*aspect/Math.max(aspect,1), dy=v-fy; keep*=Math.exp(-(dx*dx+dy*dy)/0.07); }
+      if (rnd>=keep) continue;
+      const dF=fill.f[mi*4], zF=zOf(dF); if (zF < zOf(D.d[mi])*1.03) continue;      // only what really lies behind
+      const q=unproject(u,v,zF), R=fill.f[mi*4+1], Gc=fill.f[mi*4+2], B=fill.f[mi*4+3];
+      push(q[0],q[1],q[2],R,Gc,B,3,rnd,0.299*R+0.587*Gc+0.114*B,1,-1);
     }
   }
 
@@ -1054,7 +1089,7 @@ function lsqFloor(rows){
 
 function cfgFromP(extra){
   const L = LOOKS[look];
-  return Object.assign({dots:val('dots'), backdrop:val('backdrop'), floor:val('floor'), pattern:P.pattern, bgTint:L.bgTint}, extra||{});
+  return Object.assign({dots:val('dots'), backdrop:val('backdrop'), floor:val('floor'), hidden:val('hidden'), pattern:P.pattern, bgTint:L.bgTint}, extra||{});
 }
 function build(){
   S.dirtyBuild = false;
@@ -1088,13 +1123,72 @@ function build(){
   const ex = extents(R.out, R.n); S.rng=ex.rng; S.yr=ex.yr;
   uploadCloud(R.out, R.n);
   if (S.autoFrame){ S.autoFrame = false; setTimeout(frameSubject, 0); }
-  refreshLabelPositions(); renderPins();
+  refreshLabelPositions(); renderPins(); if (S.dbg!=='result') showDebug();
   S.dirtyDraw = true;
 }
 function extents(out, n){
   let rmin=1e9,rmax=-1e9,ymin=1e9,ymax=-1e9; const step=Math.max(1,(n/20000)|0);
   for (let i=0;i<n;i+=step){ const o=i*10, x=out[o],y=out[o+1],z=out[o+2], r=Math.hypot(x,y,z); if(r<rmin)rmin=r; if(r>rmax)rmax=r; if(y<ymin)ymin=y; if(y>ymax)ymax=y; }
   return {rng:[rmin,rmax], yr:[ymin,ymax]};
+}
+
+// ---------------------------------------------------------------- hidden parts
+// One photo only sees the front of things. Turning the view shows what was hidden: the background
+// behind a person, and the person's own back. Two cheap reconstructions fill those in:
+//  - Behind: the background under the subject is filled by continuing the surrounding background
+//    inward (push-pull interpolation, the idea behind layered-depth "3D photo" inpainting), in both
+//    depth and colour.
+//  - Backs: each subject gets a rounded back surface, as thick at each row as it is wide there.
+// Both fade in only as the view turns away from the photo, so the straight-on picture is unchanged.
+
+// Fill unknown pixels from known ones: average down a pyramid, then blend back up.
+function pushPull(vals, ch, known, w, h){
+  const levels = [{w, h, v:Float32Array.from(vals), wt:new Float32Array(w*h)}];
+  { const L=levels[0]; for (let i=0;i<w*h;i++){ const k=known[i]?1:0; L.wt[i]=k; for (let c=0;c<ch;c++) L.v[i*ch+c]*=k; } }
+  while (levels[levels.length-1].w>1 || levels[levels.length-1].h>1){
+    const A=levels[levels.length-1], w2=Math.max(1,Math.ceil(A.w/2)), h2=Math.max(1,Math.ceil(A.h/2));
+    const B={w:w2, h:h2, v:new Float32Array(w2*h2*ch), wt:new Float32Array(w2*h2)};
+    for (let y=0;y<A.h;y++) for (let x=0;x<A.w;x++){ const i=y*A.w+x, j=(y>>1)*w2+(x>>1); B.wt[j]+=A.wt[i]; for (let c=0;c<ch;c++) B.v[j*ch+c]+=A.v[i*ch+c]; }
+    levels.push(B);
+  }
+  // top down: each level becomes "known where it had weight, parent's value elsewhere"
+  const top=levels[levels.length-1]; for (let i=0;i<top.w*top.h;i++){ const wt=Math.max(top.wt[i],1e-6); for (let c=0;c<ch;c++) top.v[i*ch+c]/=wt; top.wt[i]=1; }
+  for (let l=levels.length-2;l>=0;l--){
+    const A=levels[l], B=levels[l+1];
+    for (let y=0;y<A.h;y++) for (let x=0;x<A.w;x++){
+      const i=y*A.w+x, a=Math.min(1, A.wt[i]);
+      // bilinear read of the coarser level, so fills are smooth rather than blocky
+      const fx=Math.min(B.w-1, Math.max(0,(x+.5)/2-.5)), fy=Math.min(B.h-1, Math.max(0,(y+.5)/2-.5)), x0=fx|0, y0=fy|0, x1=Math.min(B.w-1,x0+1), y1=Math.min(B.h-1,y0+1), ax=fx-x0, ay=fy-y0;
+      for (let c=0;c<ch;c++){
+        const p=(B.v[(y0*B.w+x0)*ch+c]*(1-ax)+B.v[(y0*B.w+x1)*ch+c]*ax)*(1-ay)+(B.v[(y1*B.w+x0)*ch+c]*(1-ax)+B.v[(y1*B.w+x1)*ch+c]*ax)*ay;
+        const own = A.wt[i]>0 ? A.v[i*ch+c]/A.wt[i] : 0;
+        A.v[i*ch+c] = own*a + p*(1-a); }
+      A.wt[i]=1;
+    }
+  }
+  return levels[0].v;
+}
+
+// Background depth and colour behind the subject, cached per depth map and subject.
+function hiddenFill(map){
+  const key = S.depthVer+'|'+(S.compCache ? S.compCache.key : '');
+  if (S.fillCache && S.fillCache.key===key) return S.fillCache;
+  const D=S.depth, W=D.w, H=D.h, n=W*H;
+  // the hidden region is the subject, grown a little so its soft edge does not leak into the fill
+  const region=new Uint8Array(n); for (let i=0;i<n;i++) if (map[i]>=0) region[i]=1;
+  const r=Math.max(2, Math.round(W*0.006));
+  for (let pass=0;pass<r;pass++){ const nx=region.slice(); for (let y=1;y<H-1;y++) for (let x=1;x<W-1;x++){ const i=y*W+x; if (!region[i] && (region[i-1]||region[i+1]||region[i-W]||region[i+W])) nx[i]=1; } region.set(nx); }
+  // colour at depth resolution
+  const c=document.createElement('canvas'); c.width=S.photo.w; c.height=S.photo.h; c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(S.photo.data),S.photo.w,S.photo.h),0,0);
+  const c2=document.createElement('canvas'); c2.width=W; c2.height=H; const x2=c2.getContext('2d',{willReadFrequently:true}); x2.drawImage(c,0,0,W,H);
+  const px=x2.getImageData(0,0,W,H).data;
+  const vals=new Float32Array(n*4), known=new Uint8Array(n);
+  for (let i=0;i<n;i++){ vals[i*4]=D.d[i]; vals[i*4+1]=px[i*4]/255; vals[i*4+2]=px[i*4+1]/255; vals[i*4+3]=px[i*4+2]/255; known[i]=region[i]?0:1; }
+  const f = pushPull(vals, 4, known, W, H);
+  // extents of each subject along every row, for the rounded backs
+  const nComp = map.reduce((m,v)=>Math.max(m,v+1),0), lo=new Int32Array(nComp*H).fill(1e9), hi=new Int32Array(nComp*H).fill(-1);
+  for (let y=0;y<H;y++) for (let x=0;x<W;x++){ const k=map[y*W+x]; if (k<0) continue; const j=k*H+y; if (x<lo[j]) lo[j]=x; if (x>hi[j]) hi[j]=x; }
+  return S.fillCache = {key, region, f, lo, hi, W, H};
 }
 
 // ---------------------------------------------------------------- WebGL2 renderer
@@ -1105,7 +1199,7 @@ let gl = null, G = null;          // G holds every GL object so it can be rebuil
 
 const PTS_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aCol; layout(location=2) in vec4 aMeta;
-uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight; uniform int uMode;
+uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight, uOrbit; uniform int uMode;
 uniform vec2 uR, uY;
 out vec3 vCol; flat out float vRound;
 vec3 turbo(float x){ const vec4 kR=vec4(0.13572138,4.61539260,-42.66032258,132.13108234); const vec2 kR2=vec2(-152.94239396,59.28637943);
@@ -1135,15 +1229,18 @@ void main(){
   c *= uExposure * (1. - .35*r);
   float size = uPx / dist; float round_ = 1.;
   if(uSparkle>0.5){ c *= .6 + 1.4*rnd*rnd; }
-  if(kind>.5 && kind<1.5){
+  float hiddenPart = kind>2.5 ? 1. : 0.;
+  if(kind>3.5) c *= .75;                          // a filled-in back is a guess: draw it a little darker
+  if((kind>.5 && kind<1.5) || (kind>2.5 && kind<3.5)){
     vec3 t = lin(vec3(.30,.78,.70))*(.03+lumL*.9);
     c = mix(c, t*uExposure, uBgTint) * uBgGain; size *= uBgSize; round_ = 1.-uBgTint;
     c *= mix(1., .16, uFocus);
-  } else if(kind>1.5){
+  } else if(kind>1.5 && kind<2.5){
     c = lin(vec3(.62,.72,.76))*(.02 + 1.1*pow(rnd,4.)) * min(uExposure,1.8);
     size *= .75 + fract(rnd*17.3)*1.1; round_ = 0.;
     c *= mix(1., .16, uFocus);
   }
+  if(hiddenPart>.5){ if(uOrbit<.02){ gl_Position=vec4(2.,2.,2.,1.); } c *= uOrbit; }
   // points smaller than a pixel still draw one pixel, so dim them to keep brightness honest
   if(size < 1.) c *= size*size;
   vCol = c; vRound = (size >= 3. ? round_ : 0.);
@@ -1259,6 +1356,7 @@ function renderView(W, H, o){
     gl.uniform1f(u.uExposure, o.bright); gl.uniform1f(u.uSat, o.colour==='muted' ? .45 : 1);
     gl.uniform1f(u.uBgTint, L.bgTint); gl.uniform1f(u.uBgGain, L.bgGain); gl.uniform1f(u.uBgSize, L.bgSize);
     gl.uniform1f(u.uSparkle, L.sparkle); gl.uniform1f(u.uFocus, o.focus ? 1 : 0); gl.uniform1f(u.uLight, o.light||0);
+    gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8));
     gl.uniform1i(u.uMode, {photo:0,muted:0,range:1,height:2,grey:3,phosphor:4}[o.colour]||0);
     gl.uniform2f(u.uR, S.rng[0], S.rng[1]); gl.uniform2f(u.uY, S.yr[0], S.yr[1]);
     gl.bindVertexArray(o.cloud.vao); gl.drawArrays(gl.POINTS, 0, o.cloud.count); gl.bindVertexArray(null);
@@ -1410,7 +1508,7 @@ function withCanvasSize(W, H, fn){
   if (r && typeof r.then === 'function') return r.finally(restore);
   restore(); return r;
 }
-function exportSize(long){ const a=frameAspect(); const L=Math.min(long, gl.getParameter(gl.MAX_TEXTURE_SIZE));
+function exportSize(long){ const a=frameAspect(); const L=Math.min(S.adv.exportLong || long, gl.getParameter(gl.MAX_TEXTURE_SIZE));
   return a>=1 ? [L&~1, Math.round(L/a)&~1] : [Math.round(L*a)&~1, L&~1]; }
 async function savePicture(){
   if (!S.count) return;
@@ -1432,8 +1530,7 @@ function savePly(){
   const url = URL.createObjectURL(new Blob([buf],{type:'application/octet-stream'}));
   const a = document.createElement('a'); a.href=url; a.download='first-return.ply'; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(url), 30000);
-  banner(`Saved first-return.ply, ${(buf.byteLength/1e6).toFixed(1)} MB. It opens in Blender, MeshLab or CloudCompare.`);
-  setTimeout(()=>banner(modeText()), 6000);
+  notice(`Saved first-return.ply, ${(buf.byteLength/1e6).toFixed(1)} MB. It opens in Blender, MeshLab or CloudCompare.`);
 }
 
 // ---------------------------------------------------------------- camera moves
@@ -1465,7 +1562,7 @@ async function recordMove(move, secs){
   const [W,H] = exportSize(MOBILE ? 1280 : 1920);
   const rc=document.createElement('canvas'); rc.width=W; rc.height=H; const rx=rc.getContext('2d');
   const frameAt = i => { const t=(i-hold)/(frames-2*hold-1); Object.assign(S, poseAt(base, move, t)); draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
-  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false;
+  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked');
   let blob=null, ext='mp4';
   try {
     let config=null;
@@ -1509,7 +1606,7 @@ async function recordMove(move, secs){
       blob = new Blob(chunks, {type:mime.split(';')[0]});
     }
   } catch(err){ console.error(err); banner(String(err.message||err)); }
-  S.recording=false; $('#recbar').hidden=true; Object.assign(S, base); S.dirtyDraw=true;
+  S.recording=false; $('#recbar').hidden=true; document.body.classList.remove('locked'); Object.assign(S, base); S.dirtyDraw=true;
   if (blob){ banner(modeText()); showSheet(URL.createObjectURL(blob), 'video', 'first-return.'+ext); }
 }
 
@@ -1547,7 +1644,7 @@ function setTab(t){
   S.tab=t; if (t!=='people' && (S.placing==='face'||S.placing==='label')) S.placing=false;
   document.querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-selected', b.dataset.tab===t));
   $('#tray').hidden = !t; $('#stage').classList.toggle('picking', t==='subject' || !!S.placing);
-  renderTray(); banner(modeText()); S.dirtyDraw=true; renderPins();
+  renderTray(); banner(modeText()); S.dirtyDraw=true; renderPins(); showDebug();
   requestAnimationFrame(layout);
   if (t) store('tab', t);
 }
@@ -1574,8 +1671,11 @@ function renderTray(){
     $('#resetLook').addEventListener('click',()=>applyLook(look, true));
     paintThumbs();
   }
+  else if (S.tab==='adjust' && S.ctrl==='advanced'){
+    renderAdvanced(tr);
+  }
   else if (S.tab==='adjust'){
-    if (S.scan && (S.ctrl==='depth3d' || S.ctrl==='light')) S.ctrl='dots';
+    if (S.scan && (S.ctrl==='depth3d' || S.ctrl==='light' || S.ctrl==='hidden')) S.ctrl='dots';
     const c = CTRL[S.ctrl];
     let body;
     if (c.chips){
@@ -1585,7 +1685,7 @@ function renderTray(){
       body = `<div class="stepper"><input type="range" id="ctl" min="0" max="${c.stops.length-1}" step="0.05" value="${P[c.key]}" aria-label="${c.name}">
         <div class="stops">${c.stops.map(([n],i)=>`<button data-stop="${i}" aria-current="${Math.abs(P[c.key]-i)<0.15}" class="${i===def?'def':''}">${n}${i===def?(c.key==='light'?' (auto)':' ·'):''}</button>`).join('')}</div></div>`;
     }
-    tr.innerHTML = `<div class="scroller">${CONTROLS.filter(k=>!(S.scan && (k.key==='depth3d'||k.key==='light'))).map(k=>`<button class="chip" data-ctrl="${k.key}" aria-pressed="${k.key===S.ctrl}">${k.name}</button>`).join('')}</div>
+    tr.innerHTML = `<div class="scroller">${CONTROLS.filter(k=>!(S.scan && (k.key==='depth3d'||k.key==='light'||k.key==='hidden'))).map(k=>`<button class="chip" data-ctrl="${k.key}" aria-pressed="${k.key===S.ctrl}">${k.name}</button>`).join('')}<button class="chip" data-ctrl="advanced" aria-pressed="${S.ctrl==='advanced'}">Advanced</button></div>
       ${body}<p class="hint">${sayBtn(c.hint)}<span>${c.hint}</span></p>
       <div class="sect row">${undoBtn}</div>`;
     tr.querySelectorAll('[data-ctrl]').forEach(b=>b.addEventListener('click',()=>{ S.ctrl=b.dataset.ctrl; renderTray(); }));
@@ -1657,6 +1757,60 @@ function renderTray(){
   if (S.tab==='adjust') tr.querySelectorAll('.scroller [aria-pressed="true"]').forEach(b=>{ const sc=b.parentElement; sc.scrollLeft = b.offsetLeft - sc.clientWidth/2 + b.offsetWidth/2; });
   const u=$('#undoBtn'); if (u) u.addEventListener('click', undo);
   tr.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say)));
+}
+// ---------------------------------------------------------------- Advanced: diagnostic views and direct settings
+function autoRatio(){ return (1+S.shiftAuto)/S.shiftAuto; }
+function renderAdvanced(tr){
+  const deg = r => r*180/Math.PI, A=S.adv;
+  const fov = A.fov || deg(2*Math.atan(S.tanVAuto)), ratio = A.ratio || Math.pow(autoRatio(), val('depth3d')), roll = A.roll!=null ? A.roll : deg(S.roll);
+  const beams = A.beams || Math.round(16 + val('dots')/100*200);
+  const ratioPos = Math.log(ratio/1.1)/Math.log(60/1.1)*100;
+  const row = (id, label, min, max, step, v, out, auto) => `<div class="advrow"><label for="${id}">${label}</label><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${v}"><output id="${id}Out">${out}</output>${auto?`<button class="chip small" data-auto="${id}">Auto</button>`:'<span></span>'}</div>`;
+  tr.innerHTML = `<div class="scroller">${CONTROLS.filter(k=>!(S.scan && (k.key==='depth3d'||k.key==='light'||k.key==='hidden'))).map(k=>`<button class="chip" data-ctrl="${k.key}" aria-pressed="false">${k.name}</button>`).join('')}<button class="chip" data-ctrl="advanced" aria-pressed="true">Advanced</button></div>
+    <div class="sect"><h3>Show</h3><div class="scroller">${[['result','The result'],['depth','Depth map'],['masks','Subject and floors']].map(([v,n])=>`<button class="chip" data-dbg="${v}" aria-pressed="${S.dbg===v}" ${S.scan&&v!=='result'?'disabled':''}>${n}</button>`).join('')}</div>
+      ${S.dbg==='masks'?'<p class="hint">Yellow is the subject. Blue, cyan and violet are floors that were fitted; green is other ground facing up.</p>':S.dbg==='depth'?'<p class="hint">Light is near, dark is far.</p>':''}</div>
+    <div class="sect"><h3>Camera and depth</h3>
+      ${row('advFov','View angle',20,110,1,fov.toFixed(0),fov.toFixed(0)+'°',!!A.fov)}
+      ${S.scan?'':row('advRatio','Far vs near',0,100,1,ratioPos.toFixed(0),ratio.toFixed(1)+'x',!!A.ratio)}
+      ${S.scan?'':row('advRoll','Tilt',-12,12,0.1,roll.toFixed(1),roll.toFixed(1)+'°',A.roll!=null)}
+    </div>
+    <div class="sect"><h3>Scanner</h3>
+      ${row('advBeams','Beams',16,256,1,beams,beams,!!A.beams)}
+      ${row('advNoise','Range noise',0,4,0.1,A.noise,A.noise.toFixed(1)+'x',A.noise!==1)}
+    </div>
+    <div class="sect"><h3>Picture size</h3><div class="scroller">${[[null,'Auto'],[1080,'1080'],[2048,'2048'],[2880,'2880'],[4096,'4096']].map(([v,n])=>`<button class="chip" data-size="${v}" aria-pressed="${A.exportLong===v}">${n}</button>`).join('')}</div>
+      <p class="hint">Pixels along the long side of saved pictures.</p></div>`;
+  tr.querySelectorAll('[data-ctrl]').forEach(b=>b.addEventListener('click',()=>{ S.ctrl=b.dataset.ctrl; renderTray(); }));
+  tr.querySelectorAll('[data-dbg]').forEach(b=>b.addEventListener('click',()=>{ S.dbg=b.dataset.dbg; renderTray(); showDebug(); }));
+  tr.querySelectorAll('[data-size]').forEach(b=>b.addEventListener('click',()=>{ A.exportLong = b.dataset.size==='null' ? null : +b.dataset.size; renderTray(); }));
+  const on = (id, fn) => { const el=$('#'+id); if (el) el.addEventListener('input', ()=>fn(+el.value, $('#'+id+'Out'))); };
+  on('advFov', (v,o)=>{ A.fov=v; S.tanV=Math.tan(v*Math.PI/360); o.textContent=v+'°'; S.dirtyBuild=true; });
+  on('advRatio', (v,o)=>{ const r=1.1*Math.pow(60/1.1, v/100); A.ratio=r; o.textContent=r.toFixed(1)+'x'; S.lowDetail=true; S.dirtyBuild=true; });
+  on('advRoll', (v,o)=>{ A.roll=v; S.roll=v*Math.PI/180; o.textContent=v.toFixed(1)+'°'; S.dirtyDraw=true; });
+  on('advBeams', (v,o)=>{ A.beams=v; o.textContent=v; S.dirtyBuild=true; });
+  on('advNoise', (v,o)=>{ A.noise=v; o.textContent=v.toFixed(1)+'x'; S.dirtyBuild=true; });
+  tr.querySelectorAll('input[type=range]').forEach(el=>el.addEventListener('change',()=>{ S.lowDetail=false; S.dirtyBuild=true; renderTray(); }));
+  tr.querySelectorAll('[data-auto]').forEach(b=>b.addEventListener('click',()=>{ const k=b.dataset.auto;
+    if (k==='advFov'){ A.fov=null; S.tanV=S.tanVAuto; }
+    if (k==='advRatio') A.ratio=null;
+    if (k==='advRoll'){ A.roll=null; S.roll = S.level ? S.rollAuto : 0; }
+    if (k==='advBeams') A.beams=null;
+    if (k==='advNoise') A.noise=1;
+    S.dirtyBuild=true; renderTray(); }));
+}
+// Diagnostic views drawn over the picture: the depth map, or what counts as subject and floor.
+function showDebug(){
+  const c=$('#dbgView');
+  if (S.dbg==='result' || S.scan || !S.depth || S.tab!=='adjust'){ c.hidden=true; return; }
+  const D=S.depth, m=S.compMap, G=S.ground; c.width=D.w; c.height=D.h;
+  const x=c.getContext('2d'), im=x.createImageData(D.w,D.h), col={1:[40,120,255],2:[40,220,220],3:[160,80,255],4:[40,200,90],9:[20,40,90]};
+  for (let i=0;i<D.w*D.h;i++){ const v=D.d[i]*255; let cc=[v,v,v];
+    if (S.dbg==='masks'){ const g=v*0.35; cc = m && m[i]>=0 ? [255,200,40] : (G && G[i] ? col[G[i]] : [g,g,g]); }
+    im.data[i*4]=cc[0]; im.data[i*4+1]=cc[1]; im.data[i*4+2]=cc[2]; im.data[i*4+3]=255; }
+  x.putImageData(im,0,0);
+  const pa=S.photo.w/S.photo.h, fa=frameAspect(); let w=S.cssW, h=S.cssH; if (fa>pa) w=h*pa; else h=w/pa;
+  Object.assign(c.style, {width:w+'px', height:h+'px', left:(parseFloat(cv.style.left)+(S.cssW-w)/2)+'px', top:(parseFloat(cv.style.top)+(S.cssH-h)/2)+'px'});
+  c.hidden=false;
 }
 function markStops(c){ document.querySelectorAll('[data-stop]').forEach(b=>b.setAttribute('aria-current', Math.abs(P[c.key]-(+b.dataset.stop))<0.15)); }
 
@@ -1928,7 +2082,8 @@ async function setPhoto(ph, D, credit){
   const g = S.gen;
   S.scan=null; document.body.classList.remove('scan'); $('#compareBtn').hidden=false; S.roll=0; S.rollAuto=0; S.pitchTan=0;
   if (S.colourBeforeScan){ P.colour=S.colourBeforeScan; S.colourBeforeScan=null; }
-  S.photoCanvas=ph.canvas; S.photoSrc=S.photo={w:ph.w,h:ph.h,data:ph.data}; S.tanV=ph.fov.tanV; S.fovSource=ph.fov.src; S.credit=credit||'';
+  S.photoCanvas=ph.canvas; S.photoSrc=S.photo={w:ph.w,h:ph.h,data:ph.data}; S.tanV=S.tanVAuto=ph.fov.tanV; S.fovSource=ph.fov.src; S.credit=credit||'';
+  Object.assign(S.adv, {fov:null, ratio:null, roll:null, beams:null}); S.fillCache=null; S.dbg='result'; showDebug();
   S.isSample = /^Sample/.test(S.credit);
   invalidateCompare();
   S.undo=[]; undoArmed=true; S.placing=false; S.home=null; S.refFrozen=false; S.compCache=null; S.depthVer++;

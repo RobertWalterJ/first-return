@@ -26,6 +26,8 @@ const CONTROLS = [
    stops:[['None',0],['Faint',.12],['Some',.4],['Full',1]]},
   {key:'floor',    name:'Floor',      hint:'A scatter of dots on the ground under the subject.', rebuild:true,
    stops:[['Off',0],['Light',.55],['Full',1.1]]},
+  {key:'hidden',   name:'Hidden parts', hint:'Fills in what the photo could not see: the background behind things, and the backs of people and objects. It shows when you turn the view.', rebuild:true,
+   stops:[['Off',0],['Behind',1],['Behind and backs',2]]},
   {key:'edges',    name:'Edges',      hint:'Dark outlines where near meets far, the way lidar viewers shade a scan.',
    stops:[['Off',0],['Soft',.9],['Strong',2.2]]},
 ];
@@ -34,16 +36,16 @@ const CTRL = Object.fromEntries(CONTROLS.map(c=>[c.key,c]));
 // Looks set every control plus a few things that are part of the style itself.
 // Control values are positions on the stops (0 = first stop, 1 = second, fractions in between).
 const LOOKS = {
-  void:    {name:'Void',    dots:3.05, size:1.9, glow:1.9, bright:2.3, colour:'photo',  depth3d:2, backdrop:1.05, floor:1.3, edges:0,
+  void:    {name:'Void',    dots:3.05, size:1.9, glow:1.9, bright:2.3, colour:'photo',  depth3d:2, backdrop:1.05, floor:1.3, edges:0, hidden:2,
             pattern:'scatter', bgTint:1, bgGain:.45, bgSize:2.4, sparkle:0, yaw:0, pitch:0, zoom:1.3},
-  sparse:  {name:'Sparse',  dots:1.45, size:2.7, glow:2.4, bright:3.1, colour:'muted',  depth3d:2, backdrop:0,    floor:1.55, edges:0,
+  sparse:  {name:'Sparse',  dots:1.45, size:2.7, glow:2.4, bright:3.1, colour:'muted',  depth3d:2, backdrop:0,    floor:1.55, edges:0, hidden:2,
             pattern:'scatter', bgTint:1, bgGain:.4, bgSize:2, sparkle:1, yaw:0, pitch:0, zoom:1.3},
-  scanner: {name:'Scanner', dots:1.8,  size:1.4, glow:1.0, bright:1.7, colour:'range',  depth3d:2, backdrop:3,    floor:0,   edges:1,
+  scanner: {name:'Scanner', dots:1.8,  size:1.4, glow:1.0, bright:1.7, colour:'range',  depth3d:2, backdrop:3,    floor:0,   edges:1, hidden:0,
             pattern:'rings',   bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:24, pitch:14, zoom:2.2},
-  survey:  {name:'Survey',  dots:2.85, size:1.2, glow:.55, bright:1.4, colour:'height', depth3d:2, backdrop:3,    floor:0,   edges:1.6,
+  survey:  {name:'Survey',  dots:2.85, size:1.2, glow:.55, bright:1.4, colour:'height', depth3d:2, backdrop:3,    floor:0,   edges:1.6, hidden:2,
             pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:18, pitch:10, zoom:1.6},
 };
-const LOOK_KEYS = ['dots','size','glow','bright','colour','depth3d','backdrop','floor','edges','pattern'];
+const LOOK_KEYS = ['dots','size','glow','bright','colour','depth3d','backdrop','floor','edges','hidden','pattern'];
 
 const P = {};            // the live settings
 let look = 'void';
@@ -62,6 +64,7 @@ const S = {
   yaw:0, pitch:0, zoom:1, target:[0,0,-2], spin:false,
   planes:[], floorTouched:false, autoLight:false, autoFind:true, scan:null,
   roll:0, rollAuto:0, level:true, pitchTan:0,   // camera tilt: roll from upright edges, pitch from how they converge
+  adv:{fov:null, ratio:null, roll:null, beams:null, noise:1, exportLong:null}, tanVAuto:Math.tan(25*Math.PI/180), dbg:'result', fillCache:null,
   gen:0, home:null, reframe:false, lightAuto:0, compCache:null, depthVer:0, refFrozen:false,
   pivot:[0,0,-2], pan:[0,0,0], refDist:2, userMoved:false, panMode:false,   // where turning is centred, and how far the view has slid
   count:0, cpu:null, rng:[1,2], yr:[0,1], floor3d:null,

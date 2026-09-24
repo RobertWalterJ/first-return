@@ -6,7 +6,7 @@ let gl = null, G = null;          // G holds every GL object so it can be rebuil
 
 const PTS_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aCol; layout(location=2) in vec4 aMeta;
-uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight; uniform int uMode;
+uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight, uOrbit; uniform int uMode;
 uniform vec2 uR, uY;
 out vec3 vCol; flat out float vRound;
 vec3 turbo(float x){ const vec4 kR=vec4(0.13572138,4.61539260,-42.66032258,132.13108234); const vec2 kR2=vec2(-152.94239396,59.28637943);
@@ -36,15 +36,18 @@ void main(){
   c *= uExposure * (1. - .35*r);
   float size = uPx / dist; float round_ = 1.;
   if(uSparkle>0.5){ c *= .6 + 1.4*rnd*rnd; }
-  if(kind>.5 && kind<1.5){
+  float hiddenPart = kind>2.5 ? 1. : 0.;
+  if(kind>3.5) c *= .75;                          // a filled-in back is a guess: draw it a little darker
+  if((kind>.5 && kind<1.5) || (kind>2.5 && kind<3.5)){
     vec3 t = lin(vec3(.30,.78,.70))*(.03+lumL*.9);
     c = mix(c, t*uExposure, uBgTint) * uBgGain; size *= uBgSize; round_ = 1.-uBgTint;
     c *= mix(1., .16, uFocus);
-  } else if(kind>1.5){
+  } else if(kind>1.5 && kind<2.5){
     c = lin(vec3(.62,.72,.76))*(.02 + 1.1*pow(rnd,4.)) * min(uExposure,1.8);
     size *= .75 + fract(rnd*17.3)*1.1; round_ = 0.;
     c *= mix(1., .16, uFocus);
   }
+  if(hiddenPart>.5){ if(uOrbit<.02){ gl_Position=vec4(2.,2.,2.,1.); } c *= uOrbit; }
   // points smaller than a pixel still draw one pixel, so dim them to keep brightness honest
   if(size < 1.) c *= size*size;
   vCol = c; vRound = (size >= 3. ? round_ : 0.);
@@ -160,6 +163,7 @@ function renderView(W, H, o){
     gl.uniform1f(u.uExposure, o.bright); gl.uniform1f(u.uSat, o.colour==='muted' ? .45 : 1);
     gl.uniform1f(u.uBgTint, L.bgTint); gl.uniform1f(u.uBgGain, L.bgGain); gl.uniform1f(u.uBgSize, L.bgSize);
     gl.uniform1f(u.uSparkle, L.sparkle); gl.uniform1f(u.uFocus, o.focus ? 1 : 0); gl.uniform1f(u.uLight, o.light||0);
+    gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8));
     gl.uniform1i(u.uMode, {photo:0,muted:0,range:1,height:2,grey:3,phosphor:4}[o.colour]||0);
     gl.uniform2f(u.uR, S.rng[0], S.rng[1]); gl.uniform2f(u.uY, S.yr[0], S.yr[1]);
     gl.bindVertexArray(o.cloud.vao); gl.drawArrays(gl.POINTS, 0, o.cloud.count); gl.bindVertexArray(null);

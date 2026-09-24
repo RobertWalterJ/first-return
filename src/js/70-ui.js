@@ -32,7 +32,7 @@ function setTab(t){
   S.tab=t; if (t!=='people' && (S.placing==='face'||S.placing==='label')) S.placing=false;
   document.querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-selected', b.dataset.tab===t));
   $('#tray').hidden = !t; $('#stage').classList.toggle('picking', t==='subject' || !!S.placing);
-  renderTray(); banner(modeText()); S.dirtyDraw=true; renderPins();
+  renderTray(); banner(modeText()); S.dirtyDraw=true; renderPins(); showDebug();
   requestAnimationFrame(layout);
   if (t) store('tab', t);
 }
@@ -59,8 +59,11 @@ function renderTray(){
     $('#resetLook').addEventListener('click',()=>applyLook(look, true));
     paintThumbs();
   }
+  else if (S.tab==='adjust' && S.ctrl==='advanced'){
+    renderAdvanced(tr);
+  }
   else if (S.tab==='adjust'){
-    if (S.scan && (S.ctrl==='depth3d' || S.ctrl==='light')) S.ctrl='dots';
+    if (S.scan && (S.ctrl==='depth3d' || S.ctrl==='light' || S.ctrl==='hidden')) S.ctrl='dots';
     const c = CTRL[S.ctrl];
     let body;
     if (c.chips){
@@ -70,7 +73,7 @@ function renderTray(){
       body = `<div class="stepper"><input type="range" id="ctl" min="0" max="${c.stops.length-1}" step="0.05" value="${P[c.key]}" aria-label="${c.name}">
         <div class="stops">${c.stops.map(([n],i)=>`<button data-stop="${i}" aria-current="${Math.abs(P[c.key]-i)<0.15}" class="${i===def?'def':''}">${n}${i===def?(c.key==='light'?' (auto)':' ·'):''}</button>`).join('')}</div></div>`;
     }
-    tr.innerHTML = `<div class="scroller">${CONTROLS.filter(k=>!(S.scan && (k.key==='depth3d'||k.key==='light'))).map(k=>`<button class="chip" data-ctrl="${k.key}" aria-pressed="${k.key===S.ctrl}">${k.name}</button>`).join('')}</div>
+    tr.innerHTML = `<div class="scroller">${CONTROLS.filter(k=>!(S.scan && (k.key==='depth3d'||k.key==='light'||k.key==='hidden'))).map(k=>`<button class="chip" data-ctrl="${k.key}" aria-pressed="${k.key===S.ctrl}">${k.name}</button>`).join('')}<button class="chip" data-ctrl="advanced" aria-pressed="${S.ctrl==='advanced'}">Advanced</button></div>
       ${body}<p class="hint">${sayBtn(c.hint)}<span>${c.hint}</span></p>
       <div class="sect row">${undoBtn}</div>`;
     tr.querySelectorAll('[data-ctrl]').forEach(b=>b.addEventListener('click',()=>{ S.ctrl=b.dataset.ctrl; renderTray(); }));
@@ -142,6 +145,60 @@ function renderTray(){
   if (S.tab==='adjust') tr.querySelectorAll('.scroller [aria-pressed="true"]').forEach(b=>{ const sc=b.parentElement; sc.scrollLeft = b.offsetLeft - sc.clientWidth/2 + b.offsetWidth/2; });
   const u=$('#undoBtn'); if (u) u.addEventListener('click', undo);
   tr.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say)));
+}
+// ---------------------------------------------------------------- Advanced: diagnostic views and direct settings
+function autoRatio(){ return (1+S.shiftAuto)/S.shiftAuto; }
+function renderAdvanced(tr){
+  const deg = r => r*180/Math.PI, A=S.adv;
+  const fov = A.fov || deg(2*Math.atan(S.tanVAuto)), ratio = A.ratio || Math.pow(autoRatio(), val('depth3d')), roll = A.roll!=null ? A.roll : deg(S.roll);
+  const beams = A.beams || Math.round(16 + val('dots')/100*200);
+  const ratioPos = Math.log(ratio/1.1)/Math.log(60/1.1)*100;
+  const row = (id, label, min, max, step, v, out, auto) => `<div class="advrow"><label for="${id}">${label}</label><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${v}"><output id="${id}Out">${out}</output>${auto?`<button class="chip small" data-auto="${id}">Auto</button>`:'<span></span>'}</div>`;
+  tr.innerHTML = `<div class="scroller">${CONTROLS.filter(k=>!(S.scan && (k.key==='depth3d'||k.key==='light'||k.key==='hidden'))).map(k=>`<button class="chip" data-ctrl="${k.key}" aria-pressed="false">${k.name}</button>`).join('')}<button class="chip" data-ctrl="advanced" aria-pressed="true">Advanced</button></div>
+    <div class="sect"><h3>Show</h3><div class="scroller">${[['result','The result'],['depth','Depth map'],['masks','Subject and floors']].map(([v,n])=>`<button class="chip" data-dbg="${v}" aria-pressed="${S.dbg===v}" ${S.scan&&v!=='result'?'disabled':''}>${n}</button>`).join('')}</div>
+      ${S.dbg==='masks'?'<p class="hint">Yellow is the subject. Blue, cyan and violet are floors that were fitted; green is other ground facing up.</p>':S.dbg==='depth'?'<p class="hint">Light is near, dark is far.</p>':''}</div>
+    <div class="sect"><h3>Camera and depth</h3>
+      ${row('advFov','View angle',20,110,1,fov.toFixed(0),fov.toFixed(0)+'°',!!A.fov)}
+      ${S.scan?'':row('advRatio','Far vs near',0,100,1,ratioPos.toFixed(0),ratio.toFixed(1)+'x',!!A.ratio)}
+      ${S.scan?'':row('advRoll','Tilt',-12,12,0.1,roll.toFixed(1),roll.toFixed(1)+'°',A.roll!=null)}
+    </div>
+    <div class="sect"><h3>Scanner</h3>
+      ${row('advBeams','Beams',16,256,1,beams,beams,!!A.beams)}
+      ${row('advNoise','Range noise',0,4,0.1,A.noise,A.noise.toFixed(1)+'x',A.noise!==1)}
+    </div>
+    <div class="sect"><h3>Picture size</h3><div class="scroller">${[[null,'Auto'],[1080,'1080'],[2048,'2048'],[2880,'2880'],[4096,'4096']].map(([v,n])=>`<button class="chip" data-size="${v}" aria-pressed="${A.exportLong===v}">${n}</button>`).join('')}</div>
+      <p class="hint">Pixels along the long side of saved pictures.</p></div>`;
+  tr.querySelectorAll('[data-ctrl]').forEach(b=>b.addEventListener('click',()=>{ S.ctrl=b.dataset.ctrl; renderTray(); }));
+  tr.querySelectorAll('[data-dbg]').forEach(b=>b.addEventListener('click',()=>{ S.dbg=b.dataset.dbg; renderTray(); showDebug(); }));
+  tr.querySelectorAll('[data-size]').forEach(b=>b.addEventListener('click',()=>{ A.exportLong = b.dataset.size==='null' ? null : +b.dataset.size; renderTray(); }));
+  const on = (id, fn) => { const el=$('#'+id); if (el) el.addEventListener('input', ()=>fn(+el.value, $('#'+id+'Out'))); };
+  on('advFov', (v,o)=>{ A.fov=v; S.tanV=Math.tan(v*Math.PI/360); o.textContent=v+'°'; S.dirtyBuild=true; });
+  on('advRatio', (v,o)=>{ const r=1.1*Math.pow(60/1.1, v/100); A.ratio=r; o.textContent=r.toFixed(1)+'x'; S.lowDetail=true; S.dirtyBuild=true; });
+  on('advRoll', (v,o)=>{ A.roll=v; S.roll=v*Math.PI/180; o.textContent=v.toFixed(1)+'°'; S.dirtyDraw=true; });
+  on('advBeams', (v,o)=>{ A.beams=v; o.textContent=v; S.dirtyBuild=true; });
+  on('advNoise', (v,o)=>{ A.noise=v; o.textContent=v.toFixed(1)+'x'; S.dirtyBuild=true; });
+  tr.querySelectorAll('input[type=range]').forEach(el=>el.addEventListener('change',()=>{ S.lowDetail=false; S.dirtyBuild=true; renderTray(); }));
+  tr.querySelectorAll('[data-auto]').forEach(b=>b.addEventListener('click',()=>{ const k=b.dataset.auto;
+    if (k==='advFov'){ A.fov=null; S.tanV=S.tanVAuto; }
+    if (k==='advRatio') A.ratio=null;
+    if (k==='advRoll'){ A.roll=null; S.roll = S.level ? S.rollAuto : 0; }
+    if (k==='advBeams') A.beams=null;
+    if (k==='advNoise') A.noise=1;
+    S.dirtyBuild=true; renderTray(); }));
+}
+// Diagnostic views drawn over the picture: the depth map, or what counts as subject and floor.
+function showDebug(){
+  const c=$('#dbgView');
+  if (S.dbg==='result' || S.scan || !S.depth || S.tab!=='adjust'){ c.hidden=true; return; }
+  const D=S.depth, m=S.compMap, G=S.ground; c.width=D.w; c.height=D.h;
+  const x=c.getContext('2d'), im=x.createImageData(D.w,D.h), col={1:[40,120,255],2:[40,220,220],3:[160,80,255],4:[40,200,90],9:[20,40,90]};
+  for (let i=0;i<D.w*D.h;i++){ const v=D.d[i]*255; let cc=[v,v,v];
+    if (S.dbg==='masks'){ const g=v*0.35; cc = m && m[i]>=0 ? [255,200,40] : (G && G[i] ? col[G[i]] : [g,g,g]); }
+    im.data[i*4]=cc[0]; im.data[i*4+1]=cc[1]; im.data[i*4+2]=cc[2]; im.data[i*4+3]=255; }
+  x.putImageData(im,0,0);
+  const pa=S.photo.w/S.photo.h, fa=frameAspect(); let w=S.cssW, h=S.cssH; if (fa>pa) w=h*pa; else h=w/pa;
+  Object.assign(c.style, {width:w+'px', height:h+'px', left:(parseFloat(cv.style.left)+(S.cssW-w)/2)+'px', top:(parseFloat(cv.style.top)+(S.cssH-h)/2)+'px'});
+  c.hidden=false;
 }
 function markStops(c){ document.querySelectorAll('[data-stop]').forEach(b=>b.setAttribute('aria-current', Math.abs(P[c.key]-(+b.dataset.stop))<0.15)); }
 
@@ -413,7 +470,8 @@ async function setPhoto(ph, D, credit){
   const g = S.gen;
   S.scan=null; document.body.classList.remove('scan'); $('#compareBtn').hidden=false; S.roll=0; S.rollAuto=0; S.pitchTan=0;
   if (S.colourBeforeScan){ P.colour=S.colourBeforeScan; S.colourBeforeScan=null; }
-  S.photoCanvas=ph.canvas; S.photoSrc=S.photo={w:ph.w,h:ph.h,data:ph.data}; S.tanV=ph.fov.tanV; S.fovSource=ph.fov.src; S.credit=credit||'';
+  S.photoCanvas=ph.canvas; S.photoSrc=S.photo={w:ph.w,h:ph.h,data:ph.data}; S.tanV=S.tanVAuto=ph.fov.tanV; S.fovSource=ph.fov.src; S.credit=credit||'';
+  Object.assign(S.adv, {fov:null, ratio:null, roll:null, beams:null}); S.fillCache=null; S.dbg='result'; showDebug();
   S.isSample = /^Sample/.test(S.credit);
   invalidateCompare();
   S.undo=[]; undoArmed=true; S.placing=false; S.home=null; S.refFrozen=false; S.compCache=null; S.depthVer++;
