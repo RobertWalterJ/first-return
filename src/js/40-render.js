@@ -6,7 +6,7 @@ let gl = null, G = null;          // G holds every GL object so it can be rebuil
 
 const PTS_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aCol; layout(location=2) in vec4 aMeta;
-uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus; uniform int uMode;
+uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight; uniform int uMode;
 uniform vec2 uR, uY;
 out vec3 vCol; flat out float vRound;
 vec3 turbo(float x){ const vec4 kR=vec4(0.13572138,4.61539260,-42.66032258,132.13108234); const vec2 kR2=vec2(-152.94239396,59.28637943);
@@ -23,6 +23,11 @@ void main(){
   float kind=aMeta.x, rnd=aMeta.y, lum=aMeta.z, inc=aMeta.w;
   float r = clamp((length(aPos)-uR.x)/(uR.y-uR.x),0.,1.);
   vec3 c = lin(aCol); float g = dot(c, vec3(.2126,.7152,.0722)); float lumL = pow(lum,2.2);
+  if(uLight>0. && kind<1.5){
+    // squeeze the brightness range toward a mid grey, keeping each dot's own hue and some texture
+    float gl=max(g,1e-4), ng=.16*pow(gl/.16, 1.-.78*uLight);
+    c = mix(vec3(ng), c/gl*ng, smoothstep(.0008,.012,g)); g=ng; lumL=ng;
+  }
   if(uMode==0) c = mix(vec3(g), c, uSat);
   else if(uMode==1) c = lin(turbo(1.-r)) * (.3+.9*lumL);
   else if(uMode==2) c = lin(heat((aPos.y-uY.x)/(uY.y-uY.x))) * (.35+.8*lumL);
@@ -153,7 +158,7 @@ function renderView(W, H, o){
     gl.uniform1f(u.uPx, o.size * 1.62 * fitH/1000 * ref * (0.466/S.tanV));
     gl.uniform1f(u.uExposure, o.bright); gl.uniform1f(u.uSat, o.colour==='muted' ? .45 : 1);
     gl.uniform1f(u.uBgTint, L.bgTint); gl.uniform1f(u.uBgGain, L.bgGain); gl.uniform1f(u.uBgSize, L.bgSize);
-    gl.uniform1f(u.uSparkle, L.sparkle); gl.uniform1f(u.uFocus, o.focus ? 1 : 0);
+    gl.uniform1f(u.uSparkle, L.sparkle); gl.uniform1f(u.uFocus, o.focus ? 1 : 0); gl.uniform1f(u.uLight, o.light||0);
     gl.uniform1i(u.uMode, {photo:0,muted:0,range:1,height:2,grey:3,phosphor:4}[o.colour]||0);
     gl.uniform2f(u.uR, S.rng[0], S.rng[1]); gl.uniform2f(u.uY, S.yr[0], S.yr[1]);
     gl.bindVertexArray(o.cloud.vao); gl.drawArrays(gl.POINTS, 0, o.cloud.count); gl.bindVertexArray(null);
@@ -174,7 +179,7 @@ function renderView(W, H, o){
   gl.bindVertexArray(null);
 }
 function viewOpts(extra){
-  return Object.assign({cloud:G.clouds.main||{count:0}, look, colour:P.colour, size:val('size'), bright:val('bright'), glow:val('glow'),
+  return Object.assign({cloud:G.clouds.main||{count:0}, look, colour:P.colour, size:val('size'), bright:val('bright'), glow:val('glow'), light:val('light'),
     edges:val('edges'), yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, focus:S.tab==='subject' && !S.recording}, extra||{});
 }
 function draw(W, H){ if (!gl || gl.isContextLost()) return; renderView(W||cv.width, H||cv.height, viewOpts()); }

@@ -74,18 +74,28 @@ function renderTray(){
     tr.querySelectorAll('[data-colour]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); P.colour=b.dataset.colour; S.dirtyDraw=true; commit(); }));
     const r = $('#ctl');
     if (r){
-      r.addEventListener('input', ()=>{ pushUndo(); P[c.key]=+r.value; if (c.rebuild){ S.lowDetail=true; S.dirtyBuild=true; } S.dirtyDraw=true; markStops(c); });
+      r.addEventListener('input', ()=>{ pushUndo(); P[c.key]=+r.value; if (c.key==='floor') S.floorTouched=true; if (c.rebuild){ S.lowDetail=true; S.dirtyBuild=true; } S.dirtyDraw=true; markStops(c); });
       r.addEventListener('change', ()=>{ if (c.rebuild){ S.lowDetail=false; S.dirtyBuild=true; } commit(); });
-      tr.querySelectorAll('[data-stop]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); P[c.key]=+b.dataset.stop; if (c.rebuild){ S.lowDetail=false; S.dirtyBuild=true; } S.dirtyDraw=true; commit(); }));
+      tr.querySelectorAll('[data-stop]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); P[c.key]=+b.dataset.stop; if (c.key==='floor') S.floorTouched=true; if (c.rebuild){ S.lowDetail=false; S.dirtyBuild=true; } S.dirtyDraw=true; commit(); }));
     }
   }
   else if (S.tab==='subject'){
     tr.innerHTML = `<p class="hint" style="margin:0 0 10px">${sayBtn('Tap the thing that matters in the picture. It becomes the subject, even if something else is nearer. Tap more things to add them.')}<span>Tap the thing that matters. It becomes the subject, even if something else is nearer.</span></p>
-      <div class="scroller"><button class="chip" id="autoSub" aria-pressed="${!S.picks.length}">Auto</button>
+      <div class="row" style="margin-bottom:10px"><button class="btn primary" id="findThings">Find people and things</button></div>
+      <div class="scroller"><button class="chip" id="autoSub" aria-pressed="${!S.picks.length}">Nearest things</button>
       ${['Tighter','Normal','Looser'].map((n,i)=>`<button class="chip" data-band="${i}" aria-pressed="${S.band===i}">${n}</button>`).join('')}
       <button class="chip" id="sharp" aria-pressed="${!!S.sharp}">Sharper outline</button>${undoBtn}</div>
       <p class="hint">${S.sharp?'Uses an outline finder (18 MB, first time only) for cleaner edges.':'Tighter keeps only what sits at the same depth as your tap. Looser takes in more.'}</p>`;
     $('#autoSub').addEventListener('click',()=>{ pushUndo(); S.picks=[]; S.dirtyBuild=true; commit(); banner(modeText()); });
+    $('#findThings').addEventListener('click', async ()=>{
+      const picks = await findThings();
+      if (picks===null){ banner('The finder could not start here. Tap what matters instead.'); return; }
+      if (!picks.length){ banner('Nothing found. Tap what matters instead.'); return; }
+      pushUndo(); S.picks = picks; S.dirtyBuild = true; commit();
+      const people = picks.filter(p=>p.name==='person').length, other = picks.length-people;
+      const parts = []; if (people) parts.push(people+' '+(people===1?'person':'people')); if (other) parts.push(other+' '+(other===1?'thing':'things'));
+      banner('Found '+parts.join(' and ')+'. Tap a ring to remove one.');
+    });
     tr.querySelectorAll('[data-band]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); S.band=+b.dataset.band; S.dirtyBuild=true; commit(); }));
     $('#sharp').addEventListener('click', async ()=>{ S.sharp=!S.sharp; renderTray();
       if (S.sharp && S.picks.length){ for (const p of S.picks) if (!p.seg) p.seg = await outlineFor(p.u,p.v); S.dirtyBuild=true; }
@@ -143,7 +153,7 @@ function makeThumbs(job){
     const tw=208, th=156;
     if (cv.width>=tw && cv.height>=th){
       renderView(tw, th, {cloud:G.clouds.thumb, look:k, colour:L.colour, size:CTRL.size.stops[Math.round(L.size)][1]*1.3, bright:val2('bright',L.bright)*1.5,
-        glow:val2('glow',L.glow), edges:val2('edges',L.edges), yaw:L.yaw, pitch:L.pitch, zoom:Math.max(1, L.zoom*0.78), thumb:true, targetKey:'thumb'});
+        glow:val2('glow',L.glow), edges:val2('edges',L.edges), light:val('light'), yaw:L.yaw, pitch:L.pitch, zoom:Math.max(1, L.zoom*0.78), thumb:true, targetKey:'thumb'});
       const c=document.createElement('canvas'); c.width=tw; c.height=th; c.getContext('2d').drawImage(cv, 0, cv.height-th, tw, th, 0, 0, tw, th);
       out[k]=c; S.dirtyDraw=true;
     }
@@ -184,16 +194,21 @@ function renderPins(){
     const d=document.createElement('div'); d.className='pin'; d.style.left=(ox+s[0])+'px'; d.style.top=(oy+s[1])+'px'; box.appendChild(d); p.sx=s[0]; p.sy=s[1]; });
 }
 
-// nearest drawn point to a tap, for picking what was tapped in any view
+// What was tapped, found from the photo's own depth rather than from the dots on screen: in the Void
+// look most of the background is not drawn, and a tap there used to land on whatever dot was near.
+// Within a small radius the nearest surface to the camera wins, so a tap on a person in front of a
+// wall picks the person.
 function pickPoint(cx, cy){
-  if (!S.count) return null;
-  const MV=M4.mul(S.P,S.V), out=S.cpu; let best=1e9, bi=-1;
-  const step=Math.max(1, Math.floor(S.count/250000));
-  for (let i=0;i<S.count;i+=step){ const o=i*10; if (out[o+6]===2) continue; const c=M4.xf(MV,[out[o],out[o+1],out[o+2]]); if (c[3]<=0) continue;
-    const sx=(c[0]*.5+.5)*S.cssW, sy=(1-(c[1]*.5+.5))*S.cssH, dd=(sx-cx)**2+(sy-cy)**2; if (dd<best){best=dd; bi=i;} }
-  if (bi<0 || best > 44*44) return null;
-  const o=bi*10, uv=uvOf([out[o],out[o+1],out[o+2]]);
-  return {u:uv[0], v:uv[1], comp:S.cpuComp[bi], p:[out[o],out[o+1],out[o+2]]};
+  if (!S.depth || !S.P) return null;
+  const D=S.depth, MV=M4.mul(S.P,S.V), step=Math.max(1, Math.round(Math.sqrt(D.w*D.h/160000)));
+  let best=1e9, bi=-1, bp=null, near=-1, nearW=1e9, nearP=null;
+  for (let y=0;y<D.h;y+=step) for (let x=0;x<D.w;x+=step){
+    const i=y*D.w+x, p=unproject((x+.5)/D.w,(y+.5)/D.h,zOf(D.d[i])), c=M4.xf(MV,p); if (c[3]<=0) continue;
+    const sx=(c[0]*.5+.5)*S.cssW, sy=(1-(c[1]*.5+.5))*S.cssH, dd=(sx-cx)**2+(sy-cy)**2;
+    if (dd<best){ best=dd; bi=i; bp=p; }
+    if (dd<14*14 && c[3]<nearW){ nearW=c[3]; near=i; nearP=p; } }
+  if (near>=0){ bi=near; bp=nearP; } else if (bi<0 || best > 44*44) return null;
+  return {u:((bi%D.w)+.5)/D.w, v:(((bi/D.w)|0)+.5)/D.h, comp:S.compMap ? S.compMap[bi] : -1, p:bp};
 }
 async function onTap(cx, cy){
   if (S.tab==='subject'){
@@ -202,9 +217,8 @@ async function onTap(cx, cy){
     if (hit>=0){ S.picks.splice(hit,1); }
     else {
       // tapping in photo view maps straight to the photo; otherwise use the nearest point
-      let u, v;
-      if (Math.abs(S.yaw)<0.5 && Math.abs(S.pitch)<0.5 && Math.abs(S.zoom-1)<0.01 && frameAspect()===S.photo.w/S.photo.h){ u=cx/S.cssW; v=cy/S.cssH; }
-      else { const p=pickPoint(cx,cy); if (!p){ undoArmed=true; S.undo.pop(); return; } u=p.u; v=p.v; }
+      const hitP=pickPoint(cx,cy); if (!hitP){ undoArmed=true; S.undo.pop(); return; }
+      const u=hitP.u, v=hitP.v;
       const pick={u,v}; if (S.sharp) pick.seg = await outlineFor(u,v);
       S.picks.push(pick); if (S.picks.length>4) S.picks.shift();
     }
@@ -280,6 +294,21 @@ cv.addEventListener('keydown', e=>{ const k={ArrowLeft:[-4,0],ArrowRight:[4,0],A
 
 // ---------------------------------------------------------------- picture buttons
 function viewButton(){ const L=LOOKS[look]; $('#photoView').hidden = !(S.userMoved||Math.abs(S.yaw-L.yaw)>0.5||Math.abs(S.pitch-L.pitch)>0.5||Math.abs(S.zoom-L.zoom)>0.01); }
+// Centre the subject and size it to fill about 60% of the frame height, like the reference shots.
+function frameSubject(){
+  if (!S.count || !S.P || !S.comps.length) return;
+  draw();
+  const MV=M4.mul(S.P,S.V), out=S.cpu; let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9, sx=0,sy=0,sz=0,n=0;
+  for (let i=0;i<S.count;i+=3){ const o=i*10; if (out[o+6]!==0) continue; const c=M4.xf(MV,[out[o],out[o+1],out[o+2]]); if (c[3]<=0) continue;
+    x0=Math.min(x0,c[0]); x1=Math.max(x1,c[0]); y0=Math.min(y0,c[1]); y1=Math.max(y1,c[1]); sx+=out[o]; sy+=out[o+1]; sz+=out[o+2]; n++; }
+  if (n<50) return;
+  const h = Math.max((y1-y0)/2, (x1-x0)/2*S.cssW/S.cssH);           // share of the frame the subject spans now
+  S.zoom = Math.max(0.45, Math.min(2.5, S.zoom * h / 0.6));
+  S.pivot = S.target.slice(); S.pan=[0,0,0]; S.userMoved = true;
+  draw(); const V=viewMatrix(S.yaw,S.pitch,S.zoom,S.pivot,S.pan), pv=M4.xf(V,[sx/n,sy/n,sz/n]);
+  setPivotKeepingView([sx/n,sy/n,sz/n]); S.pan=[S.pan[0]+pv[0], S.pan[1]+pv[1], S.pan[2]];
+  S.dirtyDraw = true; viewButton();
+}
 function resetView(){ const L=LOOKS[look]; glide++; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pivot=S.target.slice(); S.pan=[0,0,0]; S.userMoved=false; S.spin=false; syncSpin(); S.dirtyDraw=true; viewButton(); }
 function syncSpin(){ $('#spin').setAttribute('aria-pressed', S.spin); }
 $('#photoView').addEventListener('click', resetView);
@@ -323,8 +352,8 @@ document.addEventListener('click', ()=>{ document.querySelectorAll('.menu').forE
 $('#infoBtn').addEventListener('click', e=>{ e.stopPropagation(); const i=$('#info'); i.hidden=!i.hidden; $('#infoBtn').setAttribute('aria-expanded', !i.hidden);
   if (!i.hidden){ const text='First Return turns a photo into a lidar style point cloud. Depth is worked out on your device, and the photo never leaves it.';
     i.innerHTML = `<p style="display:flex;gap:8px;align-items:center">${sayBtn(text)}<b>${text}</b></p>
-      <p>${S.count.toLocaleString()} dots. ${S.nComp} subject${S.nComp===1?'':'s'}. Camera view: ${esc(S.fovSource)}.${S.plane?' Floor found in the photo.':''}</p>
-      <p>${esc(S.credit||'')}</p><p>Depth: Depth Anything V2 Small (Apache 2.0). Outlines: MediaPipe Magic Touch (Apache 2.0). Faces: UltraFace (MIT). Runtime: ONNX Runtime Web (MIT).</p>
+      <p>${S.count.toLocaleString()} dots. ${S.nComp} subject${S.nComp===1?'':'s'}. Camera view: ${esc(S.fovSource)}.${S.planes.length?` ${S.planes.length===1?'A floor':S.planes.length+' floor surfaces'} found in the photo.`:''}${P.light?' Light evened out.':''}</p>
+      <p>${esc(S.credit||'')}</p><p>Depth: Depth Anything V2 Small (Apache 2.0). Finder: MediaPipe EfficientDet Lite0 (Apache 2.0). Outlines: MediaPipe Magic Touch (Apache 2.0). Faces: UltraFace (MIT). Runtime: ONNX Runtime Web (MIT).</p>
       <button class="btn" id="infoClose">Close</button>`;
     $('#infoClose').addEventListener('click',()=>{ i.hidden=true; });
     i.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say))); } });
@@ -336,10 +365,15 @@ async function setPhoto(ph, D, credit){
   invalidateCompare();
   busy('Sharpening the depth edges', null); await tick();
   S.depthSrc=S.depth=refineDepth(D, ph.canvas);
-  S.plane=fitFloor(S.depth); S.ground=groundMask(S.depth, S.plane); S.shiftAuto=estimateShift(S.plane); S.autoCut=otsu(S.depth.d, S.ground);
-  S.picks=[]; S.labels=[]; S.faces=[]; S.facesFound=false; S.faceMask=null;
+  S.planes=fitFloors(S.depth); S.plane=S.planes[0]||null; S.ground=groundMask(S.depth, S.planes); S.shiftAuto=estimateShift(S.plane);
+  SHIFT=curShift(); upFacingGround(S.depth, S.ground); S.autoCut=otsu(S.depth.d, S.ground);
+  S.floorTouched=false; S.autoLight=true;
+  S.picks=[]; S.labels=[]; S.faces=[]; S.facesFound=false; S.faceMask=null; banner('');
   if (S.anon){ await findFaces(); applyAnon(); }
+  // look for people and things first; depth alone decides only when nothing is found
+  if (S.autoFind){ const picks = await findThings(); if (picks && picks.length) S.picks = picks; }
   const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pan=[0,0,0]; S.userMoved=false; viewButton();
+  S.autoFrame = L.bgTint > 0 && credit !== undefined && !/^Sample/.test(credit||'');   // the stage looks frame the subject
   busy(null); layout(); S.dirtyBuild=true; renderTray(); queueThumbs();
 }
 $('#file').addEventListener('change', async e=>{

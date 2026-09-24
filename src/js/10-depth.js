@@ -136,9 +136,21 @@ function refineDepth(D, photoCanvas){
 // is a flat plane in (column, row, depth), and that plane reaches zero at the horizon. Fitting
 // it with RANSAC finds the floor (so it can be swapped for the synthetic one) and pins the shift,
 // which sets how far away the back wall really is compared with the subject.
-function fitFloor(D){
+// A scene can have more than one floor: water and a dock, a road and a pavement, a deck and the sea.
+// Fit the biggest one, set its points aside, and look again, up to three times.
+function fitFloors(D){
   const W=D.w, H=D.h, rnd=seeded(11), pts=[];
-  for (let k=0;k<3000;k++){ const x=(rnd()*W)|0, y=(H*0.42+rnd()*H*0.58)|0; pts.push([(x+.5)/W,(y+.5)/H,D.d[y*W+x]]); }
+  for (let k=0;k<4000;k++){ const x=(rnd()*W)|0, y=(H*0.42+rnd()*H*0.58)|0; pts.push([(x+.5)/W,(y+.5)/H,D.d[y*W+x]]); }
+  const planes=[]; let rest=pts;
+  for (let k=0;k<3;k++){
+    const pl = fitFloor(rest, rnd, pts.length*(k===0 ? 0.12 : 0.06)); if (!pl) break;
+    pl.frac = pl.n/pts.length; planes.push(pl);
+    rest = rest.filter(p=>Math.abs(p[2]-(pl.al*p[0]+pl.be*p[1]+pl.ga)) >= 0.02);
+    if (rest.length < 300) break;
+  }
+  return planes;
+}
+function fitFloor(pts, rnd, minN){
   let best=null, bestN=0; const tol=0.012;
   for (let it=0; it<300; it++){
     const a=pts[(rnd()*pts.length)|0], b=pts[(rnd()*pts.length)|0], c=pts[(rnd()*pts.length)|0];
@@ -149,23 +161,55 @@ function fitFloor(D){
     let n=0; for (const p of pts) if (Math.abs(p[2]-(al*p[0]+be*p[1]+ga)) < tol) n++;
     if (n > bestN){ bestN=n; best=[al,be,ga]; }
   }
-  if (!best || bestN < pts.length*0.12) return null;
+  if (!best || bestN < minN) return null;
   // least-squares polish on the inliers
   const inl = pts.filter(p=>Math.abs(p[2]-(best[0]*p[0]+best[1]*p[1]+best[2])) < tol);
   let Sxx=0,Sxy=0,Sx=0,Syy=0,Sy=0,Sn=inl.length,Sxd=0,Syd=0,Sd=0;
   for (const [x,y,d] of inl){ Sxx+=x*x; Sxy+=x*y; Sx+=x; Syy+=y*y; Sy+=y; Sxd+=x*d; Syd+=y*d; Sd+=d; }
   const A=[[Sxx,Sxy,Sx],[Sxy,Syy,Sy],[Sx,Sy,Sn]], B=[Sxd,Syd,Sd];
   const det=m=>m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1])-m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0])+m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
-  const D0=det(A); if (Math.abs(D0)<1e-12) return {al:best[0],be:best[1],ga:best[2],frac:bestN/pts.length};
+  const D0=det(A); if (Math.abs(D0)<1e-12) return {al:best[0],be:best[1],ga:best[2],n:bestN};
   const col=(i)=>A.map((r,k)=>r.map((v,j)=>j===i?B[k]:v));
-  return {al:det(col(0))/D0, be:det(col(1))/D0, ga:det(col(2))/D0, frac:inl.length/pts.length};
+  return {al:det(col(0))/D0, be:det(col(1))/D0, ga:det(col(2))/D0, n:inl.length};
 }
-function groundMask(D, pl){
-  const g = new Uint8Array(D.w*D.h); if (!pl) return g;
+// 1, 2, 3 = on floor 1, 2 or 3; 9 = at or behind the main floor, which nothing standing on it can be.
+// Only the main floor gets the "behind" rule: a smaller fitted surface could be the top of a car
+// bonnet, and the rest of the car is behind that.
+function groundMask(D, planes){
+  const g = new Uint8Array(D.w*D.h); if (!planes.length) return g;
   for (let y=0;y<D.h;y++){ const v=(y+.5)/D.h;
-    for (let x=0;x<D.w;x++){ const u=(x+.5)/D.w, e=pl.al*u+pl.be*v+pl.ga, r=D.d[y*D.w+x]-e; if (e<=0.02) continue;
-      // 1 = on the floor; 2 = at or behind the floor, which nothing standing on it can be
-      if (Math.abs(r) < 0.022) g[y*D.w+x]=1; else if (r < 0) g[y*D.w+x]=2; } }
+    for (let x=0;x<D.w;x++){ const u=(x+.5)/D.w, i=y*D.w+x, d=D.d[i];
+      for (let k=0;k<planes.length;k++){ const pl=planes[k], e=pl.al*u+pl.be*v+pl.ga; if (e<=0.02) continue;
+        const r=d-e; if (Math.abs(r) < 0.015+0.03*e){ g[i]=1+k; break; } if (k===0 && r<0) g[i]=9; } } }
+  return g;
+}
+// Any big upward-facing surface that runs off the bottom of the frame is floor too: a dock, a deck,
+// a pavement, a table top. Planes alone missed wet boards, whose depth is not flat enough to fit.
+// Held things (a boat on a shoulder) face up too but do not reach the bottom edge, so they stay.
+// Needs the camera and depth range set first.
+function upFacingGround(D, g){
+  const W=D.w, H=D.h, k=Math.max(2, Math.round(W*0.006)), up=new Uint8Array(W*H);
+  for (let y=k;y<H-k;y+=1) for (let x=k;x<W-k;x+=1){
+    const u=(x+.5)/W, v=(y+.5)/H, du=k/W, dv=k/H, i=y*W+x;
+    const zc=zOf(D.d[i]), zl=zOf(D.d[i-k]), zr=zOf(D.d[i+k]), zu=zOf(D.d[i-k*W]), zd=zOf(D.d[i+k*W]);
+    // a floor has no sideways depth jumps; across the edge of a thin thing the "normal" is nonsense
+    if (Math.abs(zr-zl) > 0.06*zc || Math.abs(zd-zu) > 0.3*zc) continue;
+    const pl=unproject(u-du,v,zl), pr=unproject(u+du,v,zr), pu=unproject(u,v-dv,zu), pd=unproject(u,v+dv,zd);
+    const ax=pr[0]-pl[0], ay=pr[1]-pl[1], az=pr[2]-pl[2], bx=pd[0]-pu[0], by=pd[1]-pu[1], bz=pd[2]-pu[2];
+    const nx=ay*bz-az*by, ny=az*bx-ax*bz, nz=ax*by-ay*bx, nl=Math.hypot(nx,ny,nz)||1;
+    if (Math.abs(ny)/nl > 0.82 && v > 0.35) up[i]=1;
+  }
+  // keep connected patches that are big and reach the bottom edge
+  const seen=new Uint8Array(W*H), q=new Int32Array(W*H);
+  for (let s=0;s<W*H;s++){
+    if (!up[s] || seen[s]) continue;
+    let head=0, tail=0, anchored=false; q[tail++]=s; seen[s]=1;
+    while(head<tail){ const i=q[head++], x=i%W, y=(i/W)|0;
+      if (y>=H-k-2) anchored=true;
+      for (const j of [x>0?i-1:-1, x<W-1?i+1:-1, y>0?i-W:-1, y<H-1?i+W:-1]){ if (j<0) continue;
+        if (up[j] && !seen[j]){ seen[j]=1; q[tail++]=j; } } }
+    if (anchored && tail > W*H*0.012) for (let t=0;t<tail;t++) if (!g[q[t]]) g[q[t]]=4;
+  }
   return g;
 }
 function estimateShift(pl){

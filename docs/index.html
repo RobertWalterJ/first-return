@@ -188,6 +188,8 @@ const CONTROLS = [
    stops:[['Off',0],['Soft',.45],['Medium',.9],['Strong',1.4],['Bloom',2.1]]},
   {key:'bright',   name:'Brightness', hint:'How bright the dots are.',
    stops:[['Dim',.6],['Soft',.9],['Normal',1.25],['Bright',1.8],['Blazing',2.7]]},
+  {key:'light',    name:'Light',      hint:'Evens out the photo\'s lighting so dark or backlit subjects still show. Real lidar sees surfaces, not sunlight.',
+   stops:[['As shot',0],['Lifted',.5],['Even',1]]},
   {key:'colour',   name:'Colour',     hint:'What decides the colour of each dot.', chips:[
      ['photo','Photo'],['muted','Muted'],['grey','Grey'],['range','Distance'],['height','Height'],['phosphor','Green']]},
   {key:'depth3d',  name:'3D',         hint:'How far near things stand out from far things. Easiest to see when you turn the view.', rebuild:true,
@@ -230,6 +232,7 @@ const S = {
   labels:[], placing:false,
   faces:[], anon:false, anonLevel:1, faceMask:null, facesFound:false,
   yaw:0, pitch:0, zoom:1, target:[0,0,-2], spin:false,
+  planes:[], floorTouched:false, autoLight:false, autoFind:true,
   pivot:[0,0,-2], pan:[0,0,0], refDist:2, userMoved:false, panMode:false,   // where turning is centred, and how far the view has slid
   count:0, cpu:null, rng:[1,2], yr:[0,1], floor3d:null,
   dirtyBuild:true, dirtyDraw:true, lowDetail:false, recording:false,
@@ -398,9 +401,21 @@ function refineDepth(D, photoCanvas){
 // is a flat plane in (column, row, depth), and that plane reaches zero at the horizon. Fitting
 // it with RANSAC finds the floor (so it can be swapped for the synthetic one) and pins the shift,
 // which sets how far away the back wall really is compared with the subject.
-function fitFloor(D){
+// A scene can have more than one floor: water and a dock, a road and a pavement, a deck and the sea.
+// Fit the biggest one, set its points aside, and look again, up to three times.
+function fitFloors(D){
   const W=D.w, H=D.h, rnd=seeded(11), pts=[];
-  for (let k=0;k<3000;k++){ const x=(rnd()*W)|0, y=(H*0.42+rnd()*H*0.58)|0; pts.push([(x+.5)/W,(y+.5)/H,D.d[y*W+x]]); }
+  for (let k=0;k<4000;k++){ const x=(rnd()*W)|0, y=(H*0.42+rnd()*H*0.58)|0; pts.push([(x+.5)/W,(y+.5)/H,D.d[y*W+x]]); }
+  const planes=[]; let rest=pts;
+  for (let k=0;k<3;k++){
+    const pl = fitFloor(rest, rnd, pts.length*(k===0 ? 0.12 : 0.06)); if (!pl) break;
+    pl.frac = pl.n/pts.length; planes.push(pl);
+    rest = rest.filter(p=>Math.abs(p[2]-(pl.al*p[0]+pl.be*p[1]+pl.ga)) >= 0.02);
+    if (rest.length < 300) break;
+  }
+  return planes;
+}
+function fitFloor(pts, rnd, minN){
   let best=null, bestN=0; const tol=0.012;
   for (let it=0; it<300; it++){
     const a=pts[(rnd()*pts.length)|0], b=pts[(rnd()*pts.length)|0], c=pts[(rnd()*pts.length)|0];
@@ -411,23 +426,55 @@ function fitFloor(D){
     let n=0; for (const p of pts) if (Math.abs(p[2]-(al*p[0]+be*p[1]+ga)) < tol) n++;
     if (n > bestN){ bestN=n; best=[al,be,ga]; }
   }
-  if (!best || bestN < pts.length*0.12) return null;
+  if (!best || bestN < minN) return null;
   // least-squares polish on the inliers
   const inl = pts.filter(p=>Math.abs(p[2]-(best[0]*p[0]+best[1]*p[1]+best[2])) < tol);
   let Sxx=0,Sxy=0,Sx=0,Syy=0,Sy=0,Sn=inl.length,Sxd=0,Syd=0,Sd=0;
   for (const [x,y,d] of inl){ Sxx+=x*x; Sxy+=x*y; Sx+=x; Syy+=y*y; Sy+=y; Sxd+=x*d; Syd+=y*d; Sd+=d; }
   const A=[[Sxx,Sxy,Sx],[Sxy,Syy,Sy],[Sx,Sy,Sn]], B=[Sxd,Syd,Sd];
   const det=m=>m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1])-m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0])+m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
-  const D0=det(A); if (Math.abs(D0)<1e-12) return {al:best[0],be:best[1],ga:best[2],frac:bestN/pts.length};
+  const D0=det(A); if (Math.abs(D0)<1e-12) return {al:best[0],be:best[1],ga:best[2],n:bestN};
   const col=(i)=>A.map((r,k)=>r.map((v,j)=>j===i?B[k]:v));
-  return {al:det(col(0))/D0, be:det(col(1))/D0, ga:det(col(2))/D0, frac:inl.length/pts.length};
+  return {al:det(col(0))/D0, be:det(col(1))/D0, ga:det(col(2))/D0, n:inl.length};
 }
-function groundMask(D, pl){
-  const g = new Uint8Array(D.w*D.h); if (!pl) return g;
+// 1, 2, 3 = on floor 1, 2 or 3; 9 = at or behind the main floor, which nothing standing on it can be.
+// Only the main floor gets the "behind" rule: a smaller fitted surface could be the top of a car
+// bonnet, and the rest of the car is behind that.
+function groundMask(D, planes){
+  const g = new Uint8Array(D.w*D.h); if (!planes.length) return g;
   for (let y=0;y<D.h;y++){ const v=(y+.5)/D.h;
-    for (let x=0;x<D.w;x++){ const u=(x+.5)/D.w, e=pl.al*u+pl.be*v+pl.ga, r=D.d[y*D.w+x]-e; if (e<=0.02) continue;
-      // 1 = on the floor; 2 = at or behind the floor, which nothing standing on it can be
-      if (Math.abs(r) < 0.022) g[y*D.w+x]=1; else if (r < 0) g[y*D.w+x]=2; } }
+    for (let x=0;x<D.w;x++){ const u=(x+.5)/D.w, i=y*D.w+x, d=D.d[i];
+      for (let k=0;k<planes.length;k++){ const pl=planes[k], e=pl.al*u+pl.be*v+pl.ga; if (e<=0.02) continue;
+        const r=d-e; if (Math.abs(r) < 0.015+0.03*e){ g[i]=1+k; break; } if (k===0 && r<0) g[i]=9; } } }
+  return g;
+}
+// Any big upward-facing surface that runs off the bottom of the frame is floor too: a dock, a deck,
+// a pavement, a table top. Planes alone missed wet boards, whose depth is not flat enough to fit.
+// Held things (a boat on a shoulder) face up too but do not reach the bottom edge, so they stay.
+// Needs the camera and depth range set first.
+function upFacingGround(D, g){
+  const W=D.w, H=D.h, k=Math.max(2, Math.round(W*0.006)), up=new Uint8Array(W*H);
+  for (let y=k;y<H-k;y+=1) for (let x=k;x<W-k;x+=1){
+    const u=(x+.5)/W, v=(y+.5)/H, du=k/W, dv=k/H, i=y*W+x;
+    const zc=zOf(D.d[i]), zl=zOf(D.d[i-k]), zr=zOf(D.d[i+k]), zu=zOf(D.d[i-k*W]), zd=zOf(D.d[i+k*W]);
+    // a floor has no sideways depth jumps; across the edge of a thin thing the "normal" is nonsense
+    if (Math.abs(zr-zl) > 0.06*zc || Math.abs(zd-zu) > 0.3*zc) continue;
+    const pl=unproject(u-du,v,zl), pr=unproject(u+du,v,zr), pu=unproject(u,v-dv,zu), pd=unproject(u,v+dv,zd);
+    const ax=pr[0]-pl[0], ay=pr[1]-pl[1], az=pr[2]-pl[2], bx=pd[0]-pu[0], by=pd[1]-pu[1], bz=pd[2]-pu[2];
+    const nx=ay*bz-az*by, ny=az*bx-ax*bz, nz=ax*by-ay*bx, nl=Math.hypot(nx,ny,nz)||1;
+    if (Math.abs(ny)/nl > 0.82 && v > 0.35) up[i]=1;
+  }
+  // keep connected patches that are big and reach the bottom edge
+  const seen=new Uint8Array(W*H), q=new Int32Array(W*H);
+  for (let s=0;s<W*H;s++){
+    if (!up[s] || seen[s]) continue;
+    let head=0, tail=0, anchored=false; q[tail++]=s; seen[s]=1;
+    while(head<tail){ const i=q[head++], x=i%W, y=(i/W)|0;
+      if (y>=H-k-2) anchored=true;
+      for (const j of [x>0?i-1:-1, x<W-1?i+1:-1, y>0?i-W:-1, y<H-1?i+W:-1]){ if (j<0) continue;
+        if (up[j] && !seen[j]){ seen[j]=1; q[tail++]=j; } } }
+    if (anchored && tail > W*H*0.012) for (let t=0;t<tail;t++) if (!g[q[t]]) g[q[t]]=4;
+  }
   return g;
 }
 function estimateShift(pl){
@@ -485,8 +532,11 @@ function growFrom(pick, id, map){
   const D=S.depth, n=D.w*D.h, G=S.ground, W=D.w;
   const sx=Math.min(W-1,(pick.u*W)|0), sy=Math.min(D.h-1,(pick.v*D.h)|0);
   let seed=sy*W+sx;
-  // if the tap landed on the floor or a hole, use the nearest non-floor pixel close by
-  if (G[seed]){ let best=-1, bd=1e9; const r=Math.round(W*0.03);
+  // A tap on something the floor finder claimed only because it faces up (the top of a boat on a
+  // shoulder, a table) means "this": let the tap win. A tap on a fitted floor plane means "the thing
+  // standing here", so move to the nearest pixel that is not floor.
+  const onUp = G[seed]===4;
+  if (G[seed] && !onUp){ let best=-1, bd=1e9; const r=Math.round(W*0.03);
     for (let y=Math.max(0,sy-r);y<Math.min(D.h,sy+r);y++) for (let x=Math.max(0,sx-r);x<Math.min(W,sx+r);x++){ const i=y*W+x; if (!G[i]){ const dd=(x-sx)**2+(y-sy)**2; if (dd<bd){bd=dd; best=i;} } }
     if (best>=0) seed=best; }
   const tau = BANDS[S.band], step = 0.018 + 0.01*S.band;
@@ -499,7 +549,10 @@ function growFrom(pick, id, map){
     else seg = null;
   }
   if (!seg){ const d0=D.d[seed]; lo=d0-tau; hi=d0+tau; }
-  const ok = j => map[j]===-1 && !G[j] && D.d[j]>=lo && D.d[j]<=hi && (!seg || seg[j]);
+  const allowFloor = onUp || !!seg;          // an outline or a deliberate tap outranks the floor guess
+  const bx = pick.box;                        // a found thing stays inside its own box
+  const inBox = j => { if (!bx) return true; const u=(j%W+.5)/W, v=(((j/W)|0)+.5)/D.h; return u>=bx[0] && u<=bx[2] && v>=bx[1] && v<=bx[3]; };
+  const ok = j => map[j]===-1 && (allowFloor ? G[j]!==9 && (G[j]===0 || G[j]===4 || !!seg) : !G[j]) && D.d[j]>=lo && D.d[j]<=hi && (!seg || seg[j]) && inBox(j);
   if (seg){ // take every pixel of the outline that sits in the depth band
     let area=0; for (let i=0;i<n;i++) if (ok(i)){ map[i]=id; area++; } return area; }
   const q=new Int32Array(n); let head=0, tail=0, area=0;
@@ -517,13 +570,17 @@ function subjectMap(){
 }
 
 // ---------------------------------------------------------------- optional sharper outline (MediaPipe Magic Touch)
-let segmenter = null, segFailed = false;
+let segmenter = null, segFailed = false, visionFiles = null;
+async function visionFileset(){
+  if (visionFiles) return visionFiles;
+  await loadScript('mp/vision_bundle.js');
+  return visionFiles = await Vision.FilesetResolver.forVisionTasks(new URL('mp/wasm', location.href).href);
+}
 async function loadSegmenter(){
   if (segmenter || segFailed) return segmenter;
   try {
     busy('Getting the outline finder, first time only', null); await tick();
-    await loadScript('mp/vision_bundle.js');
-    const fileset = await Vision.FilesetResolver.forVisionTasks(new URL('mp/wasm', location.href).href);
+    const fileset = await visionFileset();
     segmenter = await Vision.InteractiveSegmenterLegacy.createFromOptions(fileset, {
       baseOptions:{modelAssetPath:new URL('models/magic_touch.tflite', location.href).href, delegate:'CPU'},
       outputCategoryMask:true, outputConfidenceMasks:false});
@@ -531,11 +588,11 @@ async function loadSegmenter(){
   busy(null);
   return segmenter;
 }
-async function outlineFor(u, v){
+async function outlineFor(u, v, stroke){
   const seg = await loadSegmenter(); if (!seg) return null;
   busy('Finding the outline', null); await tick();
   try {
-    const res = seg.segment(S.photoCanvasForSeg || S.photoCanvas, {keypoint:{x:u, y:v}});
+    const res = seg.segment(S.photoCanvas, stroke ? {scribble:stroke} : {keypoint:{x:u, y:v}});
     const m = res.categoryMask, mw = m.width, mh = m.height, a = m.getAsUint8Array();
     // resample to the depth grid; the tapped pixel tells us which value means "selected"
     const on = a[Math.min(mh-1,(v*mh)|0)*mw + Math.min(mw-1,(u*mw)|0)];
@@ -547,6 +604,54 @@ async function outlineFor(u, v){
   } catch(err){ console.error(err); busy(null); return null; }
 }
 
+// ---------------------------------------------------------------- find people and things (MediaPipe object detector)
+// Depth alone cannot tell that the person behind the dinner table is the point of the photo. A small
+// object detector (EfficientDet Lite0, Apache 2.0) finds people, animals and vehicles; each one is then
+// outlined with Magic Touch using a stroke down its middle, kept inside its box, and checked against depth.
+let detector = null, detFailed = false;
+const SKIP = new Set(['dining table','chair','bench','couch','bed','potted plant','tv','toilet','sink','refrigerator','oven','microwave','book','vase','clock','cup','bowl','bottle','wine glass','fork','knife','spoon','cell phone','remote','keyboard','mouse','laptop']);
+async function loadDetector(){
+  if (detector || detFailed) return detector;
+  try {
+    busy('Getting the finder, first time only', null); await tick();
+    const fileset = await visionFileset();
+    detector = await Vision.ObjectDetector.createFromOptions(fileset, {
+      baseOptions:{modelAssetPath:new URL('models/efficientdet_lite0.tflite', location.href).href, delegate:'CPU'},
+      scoreThreshold:0.35, maxResults:12, runningMode:'IMAGE'});
+  } catch(err){ console.error(err); detFailed = true; detector = null; }
+  busy(null);
+  return detector;
+}
+async function findThings(){
+  const det = await loadDetector(); if (!det) return null;
+  busy('Looking for people and things', null); await tick();
+  const W = S.photoCanvas.width, H = S.photoCanvas.height;
+  let found = [];
+  try {
+    const r = det.detect(S.photoCanvas);
+    for (const d of r.detections){
+      const c = d.categories[0]; if (!c || SKIP.has(c.categoryName)) continue;
+      const b = d.boundingBox, x0=b.originX/W, y0=b.originY/H, x1=(b.originX+b.width)/W, y1=(b.originY+b.height)/H;
+      if ((x1-x0)*(y1-y0) < 0.004) continue;
+      found.push({name:c.categoryName, score:c.score, box:[x0,y0,x1,y1]});
+    }
+  } catch(err){ console.error(err); busy(null); return null; }
+  // people first, then the biggest things; at most five
+  const area = f => (f.box[2]-f.box[0])*(f.box[3]-f.box[1]);
+  found.sort((a,b)=>((b.name==='person')-(a.name==='person')) || (area(b)-area(a)));
+  found = found.slice(0, MOBILE ? 3 : 5);
+  const picks = [];
+  for (const f of found){
+    const [x0,y0,x1,y1] = f.box, cx=(x0+x1)/2, pad=0.04;
+    const stroke = [0.25,0.4,0.55,0.7].map(t=>({x:cx, y:y0+(y1-y0)*t}));
+    const seg = await outlineFor(cx, (y0+y1)/2, stroke);
+    picks.push({u:cx, v:y0+(y1-y0)*0.4, seg, name:f.name,
+      box:[Math.max(0,x0-pad),Math.max(0,y0-pad),Math.min(1,x1+pad),Math.min(1,y1+pad)]});
+  }
+  busy(null);
+  return picks;
+}
+
 // ---------------------------------------------------------------- building the cloud
 // Each point is 10 floats: position (3), photo colour (3), kind, random, luminance, incidence.
 // kind 0 = subject, 1 = backdrop, 2 = synthetic floor. Which subject a point belongs to is kept
@@ -555,9 +660,10 @@ function buildCloud(cfg){
   const Ph=S.photo, D=S.depth, aspect=Ph.w/Ph.h, map=S.compMap, tanV=S.tanV, tanH=tanV*aspect;
   const density = cfg.dots;                         // 0..100
   let target = Math.round(2000*Math.pow(10, density/100*2.75)) * (cfg.low ? 0.3 : 1);
-  const floorN = cfg.floor > 0 ? Math.round(cfg.floor * Math.min(90000, 9000 + target*0.08)) : 0;
+  const floorOK = (S.planes && S.planes.length) || S.floorTouched;     // no made-up floor under a hand held up to the sky
+  const floorN = cfg.floor > 0 && floorOK ? Math.round(cfg.floor * Math.min(90000, 9000 + target*0.08)) : 0;
   target = Math.max(1000, Math.min(target, (cfg.cap||MAXPTS) - floorN - 2000));
-  const cap = Math.round(target*1.08) + floorN + 4000;
+  const cap = Math.round(target*1.08) + (cfg.cap ? 0 : 60000) + floorN + 4000;   // room for the subject detail pass
   const out = new Float32Array(cap*10), comp = new Int16Array(cap);
   let n = 0;
   const push = (x,y,z,r,g,b,kind,rnd,lum,inc,c) => { if (n>=cap) return; const o=n*10;
@@ -569,7 +675,10 @@ function buildCloud(cfg){
   const noise = seeded(3);
 
   // centre of the subject in the frame, for fading the backdrop out around it
-  let fx=0.5, fy=0.5; { let sx=0,sy=0,c=0; for (let i=0;i<map.length;i+=3) if (map[i]>=0){ sx+=i%D.w; sy+=(i/D.w)|0; c++; } if (c){ fx=sx/c/D.w; fy=sy/c/D.h; } }
+  let fx=0.5, fy=0.5, bx0=1, by0=1, bx1=0, by1=0, subjArea=0;
+  { let sx=0,sy=0,c=0; for (let i=0;i<map.length;i+=3) if (map[i]>=0){ const x=i%D.w, y=(i/D.w)|0; sx+=x; sy+=y; c++;
+      bx0=Math.min(bx0,x/D.w); bx1=Math.max(bx1,(x+1)/D.w); by0=Math.min(by0,y/D.h); by1=Math.max(by1,(y+1)/D.h); }
+    if (c){ fx=sx/c/D.w; fy=sy/c/D.h; subjArea=c*3/map.length; } }
 
   const sample = (u,v,cell) => {
     if (u<0||u>=1||v<0||v>=1) return;
@@ -625,6 +734,22 @@ function buildCloud(cfg){
       sample(Math.min(.9999,(x+.5+(hash2(x,y,1)-.5)*jit)/nx), Math.min(.9999,(y+.5+(hash2(x,y,2)-.5)*jit)/ny), cell); }
   }
 
+  // Detail where it matters: a small subject gets extra samples of its own, so it holds up when framed
+  // close. Only subject pixels are kept from this pass.
+  if (subjArea > 0 && !cfg.cap){
+    const want = Math.min(60000, target), have = target*subjArea;
+    if (have < want){
+      const extra = Math.min(want - have, (cfg.cap||MAXPTS) - n - floorN - 2000), bw=bx1-bx0, bh=by1-by0;
+      if (extra > 500 && bw>0 && bh>0){
+        const cells = extra/Math.max(0.05, subjArea/(bw*bh)), cw2 = Math.sqrt(bw*bh/cells), nx2 = Math.ceil(bw/cw2), ny2 = Math.ceil(bh/cw2);
+        for (let y=0;y<ny2;y++) for (let x=0;x<nx2;x++){
+          const u = bx0 + (x+hash2(x,y,31))*bw/nx2, v = by0 + (y+hash2(x,y,32))*bh/ny2;
+          const mi = Math.min(D.h-1,(v*D.h)|0)*D.w + Math.min(D.w-1,(u*D.w)|0);
+          if (map[mi] >= 0) sample(u, v, 1e7 + y*nx2 + x); }
+      }
+    }
+  }
+
   // synthetic floor, laid on the real floor plane when the photo has one
   const live = cinfo.map((c,i)=>({...c,id:i})).filter(c=>c.n>50 && c.foot);
   let floorPlane = null;
@@ -665,23 +790,29 @@ function buildCloud(cfg){
 function floorPlane3D(live){
   const lowest = Math.min(...live.map(c=>c.minY));
   const G = S.ground, D = S.depth;
-  if (S.plane && G){
-    const rnd = seeded(5), rows=[];
-    for (let k=0;k<6000 && rows.length<1500;k++){ const i=(rnd()*G.length)|0; if (G[i]!==1) continue;
+  // of the floors found, use the one the subjects actually stand on
+  let best = null, bestErr = 1e9;
+  for (let id=1; id<=(S.planes||[]).length; id++){
+    const rnd = seeded(5+id), rows=[];
+    for (let k=0;k<9000 && rows.length<1500;k++){ const i=(rnd()*G.length)|0; if (G[i]!==id) continue;
       const u=((i%D.w)+.5)/D.w, v=(((i/D.w)|0)+.5)/D.h; rows.push(unproject(u,v,zOf(D.d[i]))); }
-    if (rows.length > 200){
-      // least squares for y = a x + c z + b
-      let Sxx=0,Sxz=0,Sx=0,Szz=0,Sz=0,Sy=0,Sxy=0,Szy=0; const N=rows.length;
-      for (const [x,y,z] of rows){ Sxx+=x*x; Sxz+=x*z; Sx+=x; Szz+=z*z; Sz+=z; Sy+=y; Sxy+=x*y; Szy+=z*y; }
-      const A=[[Sxx,Sxz,Sx],[Sxz,Szz,Sz],[Sx,Sz,N]], B=[Sxy,Szy,Sy];
-      const det=m=>m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1])-m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0])+m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
-      const D0=det(A);
-      if (Math.abs(D0)>1e-9){ const col=i=>A.map((r,k)=>r.map((v,j)=>j===i?B[k]:v));
-        const a=det(col(0))/D0, c=det(col(1))/D0, b=det(col(2))/D0;
-        if (Math.abs(a)<0.5 && Math.abs(c)<1.2) return {a,c,b}; }
-    }
+    const pl = rows.length > 200 ? lsqFloor(rows) : null; if (!pl) continue;
+    const h = Math.max(...live.map(c=>c.maxY-c.minY));
+    const err = live.reduce((s,c)=>s+Math.abs(pl.a*c.foot[0]+pl.c*c.foot[2]+pl.b-c.minY),0)/live.length;
+    if (err < bestErr && err < 0.35*h){ bestErr=err; best=pl; }
   }
-  return {a:0, c:0, b:lowest};
+  return best || {a:0, c:0, b:lowest};
+}
+function lsqFloor(rows){
+  // least squares for y = a x + c z + b
+  let Sxx=0,Sxz=0,Sx=0,Szz=0,Sz=0,Sy=0,Sxy=0,Szy=0; const N=rows.length;
+  for (const [x,y,z] of rows){ Sxx+=x*x; Sxz+=x*z; Sx+=x; Szz+=z*z; Sz+=z; Sy+=y; Sxy+=x*y; Szy+=z*y; }
+  const A=[[Sxx,Sxz,Sx],[Sxz,Szz,Sz],[Sx,Sz,N]], B=[Sxy,Szy,Sy];
+  const det=m=>m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1])-m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0])+m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0]);
+  const D0=det(A); if (Math.abs(D0)<=1e-9) return null;
+  const col=i=>A.map((r,k)=>r.map((v,j)=>j===i?B[k]:v));
+  const a=det(col(0))/D0, c=det(col(1))/D0, b=det(col(2))/D0;
+  return (Math.abs(a)<0.5 && Math.abs(c)<1.2) ? {a,c,b} : null;
 }
 
 function cfgFromP(extra){
@@ -696,6 +827,14 @@ function build(){
   const R = buildCloud(cfgFromP({low:S.lowDetail}));
   S.cpu = R.out; S.cpuComp = R.comp; S.count = R.n; S.nComp = R.live.length; S.floor3d = R.floorPlane;
   S.comps = R.live;
+  if (S.autoLight){
+    S.autoLight = false; const ls=[];
+    for (let i=0;i<R.n;i+=7) if (R.out[i*10+6]===0) ls.push(R.out[i*10+8]);
+    ls.sort((a,b)=>a-b); const med = ls.length ? ls[ls.length>>1] : 0.5;
+    P.light = med < 0.16 ? 2 : med < 0.26 ? 1 : 0;
+    if (P.light) banner(P.light===2 ? 'The subject was in shadow, so its light is evened out. Change it under Adjust, Light.' : 'The subject was dark, so its light is lifted. Change it under Adjust, Light.');
+    if (S.tab==='adjust') renderTray();
+  }
   if (R.live.length){ const all=R.live.reduce((a,c)=>[a[0]+c.sx, a[1]+(c.minY+c.maxY)/2*c.n, a[2]+c.sz, a[3]+c.n],[0,0,0,0]);
     S.target=[all[0]/all[3], all[1]/all[3], all[2]/all[3]]; }
   else S.target=[0,0,-zOf(0.5)];
@@ -703,6 +842,7 @@ function build(){
   if (!S.userMoved){ S.pivot = S.target.slice(); S.pan = [0,0,0]; }
   const ex = extents(R.out, R.n); S.rng=ex.rng; S.yr=ex.yr;
   uploadCloud(R.out, R.n);
+  if (S.autoFrame){ S.autoFrame = false; setTimeout(frameSubject, 0); }
   refreshLabelPositions(); renderPins();
   S.dirtyDraw = true;
 }
@@ -720,7 +860,7 @@ let gl = null, G = null;          // G holds every GL object so it can be rebuil
 
 const PTS_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aCol; layout(location=2) in vec4 aMeta;
-uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus; uniform int uMode;
+uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight; uniform int uMode;
 uniform vec2 uR, uY;
 out vec3 vCol; flat out float vRound;
 vec3 turbo(float x){ const vec4 kR=vec4(0.13572138,4.61539260,-42.66032258,132.13108234); const vec2 kR2=vec2(-152.94239396,59.28637943);
@@ -737,6 +877,11 @@ void main(){
   float kind=aMeta.x, rnd=aMeta.y, lum=aMeta.z, inc=aMeta.w;
   float r = clamp((length(aPos)-uR.x)/(uR.y-uR.x),0.,1.);
   vec3 c = lin(aCol); float g = dot(c, vec3(.2126,.7152,.0722)); float lumL = pow(lum,2.2);
+  if(uLight>0. && kind<1.5){
+    // squeeze the brightness range toward a mid grey, keeping each dot's own hue and some texture
+    float gl=max(g,1e-4), ng=.16*pow(gl/.16, 1.-.78*uLight);
+    c = mix(vec3(ng), c/gl*ng, smoothstep(.0008,.012,g)); g=ng; lumL=ng;
+  }
   if(uMode==0) c = mix(vec3(g), c, uSat);
   else if(uMode==1) c = lin(turbo(1.-r)) * (.3+.9*lumL);
   else if(uMode==2) c = lin(heat((aPos.y-uY.x)/(uY.y-uY.x))) * (.35+.8*lumL);
@@ -867,7 +1012,7 @@ function renderView(W, H, o){
     gl.uniform1f(u.uPx, o.size * 1.62 * fitH/1000 * ref * (0.466/S.tanV));
     gl.uniform1f(u.uExposure, o.bright); gl.uniform1f(u.uSat, o.colour==='muted' ? .45 : 1);
     gl.uniform1f(u.uBgTint, L.bgTint); gl.uniform1f(u.uBgGain, L.bgGain); gl.uniform1f(u.uBgSize, L.bgSize);
-    gl.uniform1f(u.uSparkle, L.sparkle); gl.uniform1f(u.uFocus, o.focus ? 1 : 0);
+    gl.uniform1f(u.uSparkle, L.sparkle); gl.uniform1f(u.uFocus, o.focus ? 1 : 0); gl.uniform1f(u.uLight, o.light||0);
     gl.uniform1i(u.uMode, {photo:0,muted:0,range:1,height:2,grey:3,phosphor:4}[o.colour]||0);
     gl.uniform2f(u.uR, S.rng[0], S.rng[1]); gl.uniform2f(u.uY, S.yr[0], S.yr[1]);
     gl.bindVertexArray(o.cloud.vao); gl.drawArrays(gl.POINTS, 0, o.cloud.count); gl.bindVertexArray(null);
@@ -888,7 +1033,7 @@ function renderView(W, H, o){
   gl.bindVertexArray(null);
 }
 function viewOpts(extra){
-  return Object.assign({cloud:G.clouds.main||{count:0}, look, colour:P.colour, size:val('size'), bright:val('bright'), glow:val('glow'),
+  return Object.assign({cloud:G.clouds.main||{count:0}, look, colour:P.colour, size:val('size'), bright:val('bright'), glow:val('glow'), light:val('light'),
     edges:val('edges'), yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, focus:S.tab==='subject' && !S.recording}, extra||{});
 }
 function draw(W, H){ if (!gl || gl.isContextLost()) return; renderView(W||cv.width, H||cv.height, viewOpts()); }
@@ -1199,18 +1344,28 @@ function renderTray(){
     tr.querySelectorAll('[data-colour]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); P.colour=b.dataset.colour; S.dirtyDraw=true; commit(); }));
     const r = $('#ctl');
     if (r){
-      r.addEventListener('input', ()=>{ pushUndo(); P[c.key]=+r.value; if (c.rebuild){ S.lowDetail=true; S.dirtyBuild=true; } S.dirtyDraw=true; markStops(c); });
+      r.addEventListener('input', ()=>{ pushUndo(); P[c.key]=+r.value; if (c.key==='floor') S.floorTouched=true; if (c.rebuild){ S.lowDetail=true; S.dirtyBuild=true; } S.dirtyDraw=true; markStops(c); });
       r.addEventListener('change', ()=>{ if (c.rebuild){ S.lowDetail=false; S.dirtyBuild=true; } commit(); });
-      tr.querySelectorAll('[data-stop]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); P[c.key]=+b.dataset.stop; if (c.rebuild){ S.lowDetail=false; S.dirtyBuild=true; } S.dirtyDraw=true; commit(); }));
+      tr.querySelectorAll('[data-stop]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); P[c.key]=+b.dataset.stop; if (c.key==='floor') S.floorTouched=true; if (c.rebuild){ S.lowDetail=false; S.dirtyBuild=true; } S.dirtyDraw=true; commit(); }));
     }
   }
   else if (S.tab==='subject'){
     tr.innerHTML = `<p class="hint" style="margin:0 0 10px">${sayBtn('Tap the thing that matters in the picture. It becomes the subject, even if something else is nearer. Tap more things to add them.')}<span>Tap the thing that matters. It becomes the subject, even if something else is nearer.</span></p>
-      <div class="scroller"><button class="chip" id="autoSub" aria-pressed="${!S.picks.length}">Auto</button>
+      <div class="row" style="margin-bottom:10px"><button class="btn primary" id="findThings">Find people and things</button></div>
+      <div class="scroller"><button class="chip" id="autoSub" aria-pressed="${!S.picks.length}">Nearest things</button>
       ${['Tighter','Normal','Looser'].map((n,i)=>`<button class="chip" data-band="${i}" aria-pressed="${S.band===i}">${n}</button>`).join('')}
       <button class="chip" id="sharp" aria-pressed="${!!S.sharp}">Sharper outline</button>${undoBtn}</div>
       <p class="hint">${S.sharp?'Uses an outline finder (18 MB, first time only) for cleaner edges.':'Tighter keeps only what sits at the same depth as your tap. Looser takes in more.'}</p>`;
     $('#autoSub').addEventListener('click',()=>{ pushUndo(); S.picks=[]; S.dirtyBuild=true; commit(); banner(modeText()); });
+    $('#findThings').addEventListener('click', async ()=>{
+      const picks = await findThings();
+      if (picks===null){ banner('The finder could not start here. Tap what matters instead.'); return; }
+      if (!picks.length){ banner('Nothing found. Tap what matters instead.'); return; }
+      pushUndo(); S.picks = picks; S.dirtyBuild = true; commit();
+      const people = picks.filter(p=>p.name==='person').length, other = picks.length-people;
+      const parts = []; if (people) parts.push(people+' '+(people===1?'person':'people')); if (other) parts.push(other+' '+(other===1?'thing':'things'));
+      banner('Found '+parts.join(' and ')+'. Tap a ring to remove one.');
+    });
     tr.querySelectorAll('[data-band]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); S.band=+b.dataset.band; S.dirtyBuild=true; commit(); }));
     $('#sharp').addEventListener('click', async ()=>{ S.sharp=!S.sharp; renderTray();
       if (S.sharp && S.picks.length){ for (const p of S.picks) if (!p.seg) p.seg = await outlineFor(p.u,p.v); S.dirtyBuild=true; }
@@ -1268,7 +1423,7 @@ function makeThumbs(job){
     const tw=208, th=156;
     if (cv.width>=tw && cv.height>=th){
       renderView(tw, th, {cloud:G.clouds.thumb, look:k, colour:L.colour, size:CTRL.size.stops[Math.round(L.size)][1]*1.3, bright:val2('bright',L.bright)*1.5,
-        glow:val2('glow',L.glow), edges:val2('edges',L.edges), yaw:L.yaw, pitch:L.pitch, zoom:Math.max(1, L.zoom*0.78), thumb:true, targetKey:'thumb'});
+        glow:val2('glow',L.glow), edges:val2('edges',L.edges), light:val('light'), yaw:L.yaw, pitch:L.pitch, zoom:Math.max(1, L.zoom*0.78), thumb:true, targetKey:'thumb'});
       const c=document.createElement('canvas'); c.width=tw; c.height=th; c.getContext('2d').drawImage(cv, 0, cv.height-th, tw, th, 0, 0, tw, th);
       out[k]=c; S.dirtyDraw=true;
     }
@@ -1309,16 +1464,21 @@ function renderPins(){
     const d=document.createElement('div'); d.className='pin'; d.style.left=(ox+s[0])+'px'; d.style.top=(oy+s[1])+'px'; box.appendChild(d); p.sx=s[0]; p.sy=s[1]; });
 }
 
-// nearest drawn point to a tap, for picking what was tapped in any view
+// What was tapped, found from the photo's own depth rather than from the dots on screen: in the Void
+// look most of the background is not drawn, and a tap there used to land on whatever dot was near.
+// Within a small radius the nearest surface to the camera wins, so a tap on a person in front of a
+// wall picks the person.
 function pickPoint(cx, cy){
-  if (!S.count) return null;
-  const MV=M4.mul(S.P,S.V), out=S.cpu; let best=1e9, bi=-1;
-  const step=Math.max(1, Math.floor(S.count/250000));
-  for (let i=0;i<S.count;i+=step){ const o=i*10; if (out[o+6]===2) continue; const c=M4.xf(MV,[out[o],out[o+1],out[o+2]]); if (c[3]<=0) continue;
-    const sx=(c[0]*.5+.5)*S.cssW, sy=(1-(c[1]*.5+.5))*S.cssH, dd=(sx-cx)**2+(sy-cy)**2; if (dd<best){best=dd; bi=i;} }
-  if (bi<0 || best > 44*44) return null;
-  const o=bi*10, uv=uvOf([out[o],out[o+1],out[o+2]]);
-  return {u:uv[0], v:uv[1], comp:S.cpuComp[bi], p:[out[o],out[o+1],out[o+2]]};
+  if (!S.depth || !S.P) return null;
+  const D=S.depth, MV=M4.mul(S.P,S.V), step=Math.max(1, Math.round(Math.sqrt(D.w*D.h/160000)));
+  let best=1e9, bi=-1, bp=null, near=-1, nearW=1e9, nearP=null;
+  for (let y=0;y<D.h;y+=step) for (let x=0;x<D.w;x+=step){
+    const i=y*D.w+x, p=unproject((x+.5)/D.w,(y+.5)/D.h,zOf(D.d[i])), c=M4.xf(MV,p); if (c[3]<=0) continue;
+    const sx=(c[0]*.5+.5)*S.cssW, sy=(1-(c[1]*.5+.5))*S.cssH, dd=(sx-cx)**2+(sy-cy)**2;
+    if (dd<best){ best=dd; bi=i; bp=p; }
+    if (dd<14*14 && c[3]<nearW){ nearW=c[3]; near=i; nearP=p; } }
+  if (near>=0){ bi=near; bp=nearP; } else if (bi<0 || best > 44*44) return null;
+  return {u:((bi%D.w)+.5)/D.w, v:(((bi/D.w)|0)+.5)/D.h, comp:S.compMap ? S.compMap[bi] : -1, p:bp};
 }
 async function onTap(cx, cy){
   if (S.tab==='subject'){
@@ -1327,9 +1487,8 @@ async function onTap(cx, cy){
     if (hit>=0){ S.picks.splice(hit,1); }
     else {
       // tapping in photo view maps straight to the photo; otherwise use the nearest point
-      let u, v;
-      if (Math.abs(S.yaw)<0.5 && Math.abs(S.pitch)<0.5 && Math.abs(S.zoom-1)<0.01 && frameAspect()===S.photo.w/S.photo.h){ u=cx/S.cssW; v=cy/S.cssH; }
-      else { const p=pickPoint(cx,cy); if (!p){ undoArmed=true; S.undo.pop(); return; } u=p.u; v=p.v; }
+      const hitP=pickPoint(cx,cy); if (!hitP){ undoArmed=true; S.undo.pop(); return; }
+      const u=hitP.u, v=hitP.v;
       const pick={u,v}; if (S.sharp) pick.seg = await outlineFor(u,v);
       S.picks.push(pick); if (S.picks.length>4) S.picks.shift();
     }
@@ -1405,6 +1564,21 @@ cv.addEventListener('keydown', e=>{ const k={ArrowLeft:[-4,0],ArrowRight:[4,0],A
 
 // ---------------------------------------------------------------- picture buttons
 function viewButton(){ const L=LOOKS[look]; $('#photoView').hidden = !(S.userMoved||Math.abs(S.yaw-L.yaw)>0.5||Math.abs(S.pitch-L.pitch)>0.5||Math.abs(S.zoom-L.zoom)>0.01); }
+// Centre the subject and size it to fill about 60% of the frame height, like the reference shots.
+function frameSubject(){
+  if (!S.count || !S.P || !S.comps.length) return;
+  draw();
+  const MV=M4.mul(S.P,S.V), out=S.cpu; let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9, sx=0,sy=0,sz=0,n=0;
+  for (let i=0;i<S.count;i+=3){ const o=i*10; if (out[o+6]!==0) continue; const c=M4.xf(MV,[out[o],out[o+1],out[o+2]]); if (c[3]<=0) continue;
+    x0=Math.min(x0,c[0]); x1=Math.max(x1,c[0]); y0=Math.min(y0,c[1]); y1=Math.max(y1,c[1]); sx+=out[o]; sy+=out[o+1]; sz+=out[o+2]; n++; }
+  if (n<50) return;
+  const h = Math.max((y1-y0)/2, (x1-x0)/2*S.cssW/S.cssH);           // share of the frame the subject spans now
+  S.zoom = Math.max(0.45, Math.min(2.5, S.zoom * h / 0.6));
+  S.pivot = S.target.slice(); S.pan=[0,0,0]; S.userMoved = true;
+  draw(); const V=viewMatrix(S.yaw,S.pitch,S.zoom,S.pivot,S.pan), pv=M4.xf(V,[sx/n,sy/n,sz/n]);
+  setPivotKeepingView([sx/n,sy/n,sz/n]); S.pan=[S.pan[0]+pv[0], S.pan[1]+pv[1], S.pan[2]];
+  S.dirtyDraw = true; viewButton();
+}
 function resetView(){ const L=LOOKS[look]; glide++; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pivot=S.target.slice(); S.pan=[0,0,0]; S.userMoved=false; S.spin=false; syncSpin(); S.dirtyDraw=true; viewButton(); }
 function syncSpin(){ $('#spin').setAttribute('aria-pressed', S.spin); }
 $('#photoView').addEventListener('click', resetView);
@@ -1448,8 +1622,8 @@ document.addEventListener('click', ()=>{ document.querySelectorAll('.menu').forE
 $('#infoBtn').addEventListener('click', e=>{ e.stopPropagation(); const i=$('#info'); i.hidden=!i.hidden; $('#infoBtn').setAttribute('aria-expanded', !i.hidden);
   if (!i.hidden){ const text='First Return turns a photo into a lidar style point cloud. Depth is worked out on your device, and the photo never leaves it.';
     i.innerHTML = `<p style="display:flex;gap:8px;align-items:center">${sayBtn(text)}<b>${text}</b></p>
-      <p>${S.count.toLocaleString()} dots. ${S.nComp} subject${S.nComp===1?'':'s'}. Camera view: ${esc(S.fovSource)}.${S.plane?' Floor found in the photo.':''}</p>
-      <p>${esc(S.credit||'')}</p><p>Depth: Depth Anything V2 Small (Apache 2.0). Outlines: MediaPipe Magic Touch (Apache 2.0). Faces: UltraFace (MIT). Runtime: ONNX Runtime Web (MIT).</p>
+      <p>${S.count.toLocaleString()} dots. ${S.nComp} subject${S.nComp===1?'':'s'}. Camera view: ${esc(S.fovSource)}.${S.planes.length?` ${S.planes.length===1?'A floor':S.planes.length+' floor surfaces'} found in the photo.`:''}${P.light?' Light evened out.':''}</p>
+      <p>${esc(S.credit||'')}</p><p>Depth: Depth Anything V2 Small (Apache 2.0). Finder: MediaPipe EfficientDet Lite0 (Apache 2.0). Outlines: MediaPipe Magic Touch (Apache 2.0). Faces: UltraFace (MIT). Runtime: ONNX Runtime Web (MIT).</p>
       <button class="btn" id="infoClose">Close</button>`;
     $('#infoClose').addEventListener('click',()=>{ i.hidden=true; });
     i.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say))); } });
@@ -1461,10 +1635,15 @@ async function setPhoto(ph, D, credit){
   invalidateCompare();
   busy('Sharpening the depth edges', null); await tick();
   S.depthSrc=S.depth=refineDepth(D, ph.canvas);
-  S.plane=fitFloor(S.depth); S.ground=groundMask(S.depth, S.plane); S.shiftAuto=estimateShift(S.plane); S.autoCut=otsu(S.depth.d, S.ground);
-  S.picks=[]; S.labels=[]; S.faces=[]; S.facesFound=false; S.faceMask=null;
+  S.planes=fitFloors(S.depth); S.plane=S.planes[0]||null; S.ground=groundMask(S.depth, S.planes); S.shiftAuto=estimateShift(S.plane);
+  SHIFT=curShift(); upFacingGround(S.depth, S.ground); S.autoCut=otsu(S.depth.d, S.ground);
+  S.floorTouched=false; S.autoLight=true;
+  S.picks=[]; S.labels=[]; S.faces=[]; S.facesFound=false; S.faceMask=null; banner('');
   if (S.anon){ await findFaces(); applyAnon(); }
+  // look for people and things first; depth alone decides only when nothing is found
+  if (S.autoFind){ const picks = await findThings(); if (picks && picks.length) S.picks = picks; }
   const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pan=[0,0,0]; S.userMoved=false; viewButton();
+  S.autoFrame = L.bgTint > 0 && credit !== undefined && !/^Sample/.test(credit||'');   // the stage looks frame the subject
   busy(null); layout(); S.dirtyBuild=true; renderTray(); queueThumbs();
 }
 $('#file').addEventListener('change', async e=>{
@@ -1491,7 +1670,7 @@ async function boot(){
   if (!initGL()){ banner('This browser has no WebGL2, which drawing the dots needs.'); return; }
   const saved = recall('state');
   look = saved && LOOKS[saved.look] ? saved.look : 'void';
-  LOOK_KEYS.forEach(k=>{ P[k]=LOOKS[look][k]; });
+  LOOK_KEYS.forEach(k=>{ P[k]=LOOKS[look][k]; }); P.light = 0;
   if (saved && saved.P) LOOK_KEYS.forEach(k=>{ if (saved.P[k]!=null && typeof saved.P[k]===typeof P[k]) P[k]=saved.P[k]; });
   S.shape = saved && saved.shape ? saved.shape : (MOBILE ? 'photo' : 'wide');
   const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom;
@@ -1507,15 +1686,17 @@ async function boot(){
     const d=document.createElement('canvas'); d.width=bmp.width; d.height=bmp.height; const dx=d.getContext('2d',{willReadFrequently:true}); dx.drawImage(bmp,0,0);
     const px=dx.getImageData(0,0,d.width,d.height).data, raw=new Float32Array(d.width*d.height);
     for (let i=0;i<raw.length;i++) raw[i]=(px[i*4]*256+px[i*4+1])/65535;
+    S.autoFind = false;             // the sample needs no finder, so opening the page downloads nothing extra
     await setPhoto({canvas:c, w:c.width, h:c.height, data:x.getImageData(0,0,c.width,c.height).data, fov:{tanV:Math.tan(25*Math.PI/180), src:'museum photo, lens assumed'}},
       normaliseDepth({w:d.width, h:d.height, d:raw}),
       'Sample: Abraham Lincoln: The Man (Standing Lincoln), Augustus Saint-Gaudens, The Metropolitan Museum of Art, public domain (CC0).');
+    S.autoFind = true;
     // a name over the sample's head, to show what names look like
     requestAnimationFrame(()=>{ const c0=S.comps.slice().sort((a,b)=>b.n-a.n)[0];
       if (c0){ const Lb={u:c0.topUV[0], v:c0.topUV[1], lift:(c0.maxY-c0.minY)*0.07, text:'Standing Lincoln'}; Lb.pos=labelWorld(Lb); S.labels=[Lb]; S.dirtyDraw=true; if (S.tab==='people') renderTray(); } });
   } catch(err){ console.error(err); banner('Tap Open to choose a photo.'); }
 }
-window.__fr = {S, P, LOOKS, build, setTab, queueThumbs, draw};   // for testing from the console
+window.__fr = {S, P, LOOKS, build, setTab, queueThumbs, draw, findThings};   // for testing from the console
 boot();
 
 })();

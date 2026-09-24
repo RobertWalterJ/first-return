@@ -15,6 +15,8 @@ const CONTROLS = [
    stops:[['Off',0],['Soft',.45],['Medium',.9],['Strong',1.4],['Bloom',2.1]]},
   {key:'bright',   name:'Brightness', hint:'How bright the dots are.',
    stops:[['Dim',.6],['Soft',.9],['Normal',1.25],['Bright',1.8],['Blazing',2.7]]},
+  {key:'light',    name:'Light',      hint:'Evens out the photo\'s lighting so dark or backlit subjects still show. Real lidar sees surfaces, not sunlight.',
+   stops:[['As shot',0],['Lifted',.5],['Even',1]]},
   {key:'colour',   name:'Colour',     hint:'What decides the colour of each dot.', chips:[
      ['photo','Photo'],['muted','Muted'],['grey','Grey'],['range','Distance'],['height','Height'],['phosphor','Green']]},
   {key:'depth3d',  name:'3D',         hint:'How far near things stand out from far things. Easiest to see when you turn the view.', rebuild:true,
@@ -57,6 +59,7 @@ const S = {
   labels:[], placing:false,
   faces:[], anon:false, anonLevel:1, faceMask:null, facesFound:false,
   yaw:0, pitch:0, zoom:1, target:[0,0,-2], spin:false,
+  planes:[], floorTouched:false, autoLight:false, autoFind:true,
   pivot:[0,0,-2], pan:[0,0,0], refDist:2, userMoved:false, panMode:false,   // where turning is centred, and how far the view has slid
   count:0, cpu:null, rng:[1,2], yr:[0,1], floor3d:null,
   dirtyBuild:true, dirtyDraw:true, lowDetail:false, recording:false,
