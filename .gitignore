@@ -1,0 +1,8 @@
+tools/node_modules/
+tools/package/
+tools/*.tgz
+tools/*.onnx
+tools/*.jpg
+tools/facetest.mjs
+.claude/
+__pycache__/
