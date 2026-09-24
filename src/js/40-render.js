@@ -26,7 +26,7 @@ void main(){
   if(uLight>0. && kind<1.5){
     // squeeze the brightness range toward a mid grey, keeping each dot's own hue and some texture
     float gl=max(g,1e-4), ng=.16*pow(gl/.16, 1.-.78*uLight);
-    c = mix(vec3(ng), c/gl*ng, smoothstep(.0008,.012,g)); g=ng; lumL=ng;
+    c = mix(vec3(ng), min(c/gl, vec3(3.))*ng, smoothstep(.0008,.012,g)); g=ng; lumL=ng;
   }
   if(uMode==0) c = mix(vec3(g), c, uSat);
   else if(uMode==1) c = lin(turbo(1.-r)) * (.3+.9*lumL);
@@ -132,7 +132,8 @@ function viewMatrix(yaw, pitch, zoom, pivot, pan){
   // yaw = pitch = 0, zoom = 1 and no pan is exactly the photo's own viewpoint. Turning happens about
   // the pivot; pan slides the camera in its own plane (and along its axis when the pivot is re-centred).
   const t = pivot || S.target, pn = pan || [0,0,0], back = (zoom-1)*S.refDist;
-  const R = M4.mul(M4.rz(S.roll), M4.mul(M4.rx(pitch*Math.PI/180), M4.ry(yaw*Math.PI/180)));
+  // straightening first, then the turn, so the view orbits about the true vertical
+  const R = M4.mul(M4.rx(pitch*Math.PI/180), M4.mul(M4.ry(yaw*Math.PI/180), M4.rz(S.roll)));
   return M4.mul(M4.tr(-pn[0],-pn[1],-back-pn[2]), M4.mul(M4.tr(t[0],t[1],t[2]), M4.mul(R, M4.tr(-t[0],-t[1],-t[2]))));
 }
 function viewTan(aspect){ const pa = S.photo ? S.photo.w/S.photo.h : 1; return aspect < pa ? S.tanV*pa/aspect : S.tanV; }

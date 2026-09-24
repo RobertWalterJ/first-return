@@ -158,7 +158,7 @@ function fitFloor(pts, rnd, minN){
     const nx=uy*vd-ud*vy, ny=ud*vx-ux*vd, nd=ux*vy-uy*vx; if (Math.abs(nd)<1e-6) continue;
     const al=-nx/nd, be=-ny/nd, ga=a[2]-al*a[0]-be*a[1];
     if (!(be > 0.5 && Math.abs(al) < 0.6*be)) continue;          // a floor gets nearer as you look down the frame
-    let n=0; for (const p of pts) if (Math.abs(p[2]-(al*p[0]+be*p[1]+ga)) < tol) n++;
+    let n=0; for (const p of pts) if (Math.abs(p[2]-(al*p[0]+be*p[1]+ga)) < tol*(p[2]+0.3)/0.8) n++;
     if (n > bestN){ bestN=n; best=[al,be,ga]; }
   }
   if (!best || bestN < minN) return null;
@@ -187,8 +187,8 @@ function groundMask(D, planes){
 // a pavement, a table top. Planes alone missed wet boards, whose depth is not flat enough to fit.
 // Held things (a boat on a shoulder) face up too but do not reach the bottom edge, so they stay.
 // Needs the camera and depth range set first.
-function upFacingGround(D, g){
-  const W=D.w, H=D.h, k=Math.max(2, Math.round(W*0.006)), up=new Uint8Array(W*H);
+function upFacingGround(D, g, upv){
+  const W=D.w, H=D.h, k=Math.max(2, Math.round(W*0.006)), up=new Uint8Array(W*H), U=upv||[0,1,0];
   for (let y=k;y<H-k;y+=1) for (let x=k;x<W-k;x+=1){
     const u=(x+.5)/W, v=(y+.5)/H, du=k/W, dv=k/H, i=y*W+x;
     const zc=zOf(D.d[i]), zl=zOf(D.d[i-k]), zr=zOf(D.d[i+k]), zu=zOf(D.d[i-k*W]), zd=zOf(D.d[i+k*W]);
@@ -197,7 +197,7 @@ function upFacingGround(D, g){
     const pl=unproject(u-du,v,zl), pr=unproject(u+du,v,zr), pu=unproject(u,v-dv,zu), pd=unproject(u,v+dv,zd);
     const ax=pr[0]-pl[0], ay=pr[1]-pl[1], az=pr[2]-pl[2], bx=pd[0]-pu[0], by=pd[1]-pu[1], bz=pd[2]-pu[2];
     const nx=ay*bz-az*by, ny=az*bx-ax*bz, nz=ax*by-ay*bx, nl=Math.hypot(nx,ny,nz)||1;
-    if (Math.abs(ny)/nl > 0.82 && v > 0.35) up[i]=1;
+    if (Math.abs(nx*U[0]+ny*U[1]+nz*U[2])/nl > 0.82 && v > 0.35) up[i]=1;
   }
   // keep connected patches that are big and reach the bottom edge
   const seen=new Uint8Array(W*H), q=new Int32Array(W*H);
@@ -208,38 +208,53 @@ function upFacingGround(D, g){
       if (y>=H-k-2) anchored=true;
       for (const j of [x>0?i-1:-1, x<W-1?i+1:-1, y>0?i-W:-1, y<H-1?i+W:-1]){ if (j<0) continue;
         if (up[j] && !seen[j]){ seen[j]=1; q[tail++]=j; } } }
-    if (anchored && tail > W*H*0.012) for (let t=0;t<tail;t++) if (!g[q[t]]) g[q[t]]=4;
+    // a patch covering nearly half the frame is the subject seen from above (a flat lay, a baby on a bed), not floor
+    if (anchored && tail > W*H*0.012 && tail < W*H*0.45) for (let t=0;t<tail;t++) if (!g[q[t]]) g[q[t]]=4;
   }
   return g;
 }
-// How far the camera was rolled, from how far the photo's vertical edges lean (walls, poles, door
-// frames, easels, people standing). Depth models learn from upright photos and tend to straighten
-// floors in their output, so the floor under-reads a tilt; vertical edges do not.
-function rollFromVerticals(canvas){
+// Camera tilt from upright edges (walls, poles, door frames, people standing). Each edge's lean is
+// fitted against its position across the frame: lean = roll + slope * x. The constant part is the roll
+// (a tilted photo leans everything the same way); the slope comes from pitch, because verticals
+// converge when the camera looks up or down. Fitting both stops a building shot from looking up being
+// read as a tilt, and gives the pitch the depth range needs. A structure tensor averages each edge's
+// direction, and coherence keeps long straight lines over foliage.
+function tiltFromVerticals(canvas, tanV){
   const L=640, s=Math.min(1, L/Math.max(canvas.width,canvas.height)), w=Math.round(canvas.width*s), h=Math.round(canvas.height*s);
   const c=document.createElement('canvas'); c.width=w; c.height=h; const x=c.getContext('2d',{willReadFrequently:true}); x.drawImage(canvas,0,0,w,h);
   const px=x.getImageData(0,0,w,h).data, g=new Float32Array(w*h); for (let i=0;i<w*h;i++) g[i]=0.299*px[i*4]+0.587*px[i*4+1]+0.114*px[i*4+2];
   const gx=new Float32Array(w*h), gy=new Float32Array(w*h);
   for (let y=1;y<h-1;y++) for (let xx=1;xx<w-1;xx++){ const i=y*w+xx;
     gx[i]=(g[i-w+1]+2*g[i+1]+g[i+w+1])-(g[i-w-1]+2*g[i-1]+g[i+w-1]); gy[i]=(g[i+w-1]+2*g[i+w]+g[i+w+1])-(g[i-w-1]+2*g[i-w]+g[i-w+1]); }
-  // Structure tensor over 7x7 windows: the edge direction is averaged, so pixel-grid and JPEG block
-  // edges stop pulling the answer toward zero, and coherence keeps long straight lines over foliage.
-  const r=3, bins=new Float64Array(97);                 // -12..+12 degrees in quarter-degree bins
+  const f = (h/2)/tanV, r=3, X=[], Dd=[], Wt=[];
   for (let y=r+1;y<h-r-1;y+=2) for (let xx=r+1;xx<w-r-1;xx+=2){
     let a=0,b=0,cc=0; for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){ const j=(y+dy)*w+xx+dx; a+=gx[j]*gx[j]; b+=gy[j]*gy[j]; cc+=gx[j]*gy[j]; }
     const tr=a+b; if (tr < 60*60*49) continue;
     const coh=Math.sqrt((a-b)**2+4*cc*cc)/tr; if (coh<0.75) continue;
-    const d=0.5*Math.atan2(2*cc, a-b)*180/Math.PI; if (Math.abs(d)>12) continue;   // how far a vertical edge leans
-    bins[Math.round((d+12)*4)] += Math.sqrt(tr)*coh*coh; }
-  let total=0; for (const q of bins) total+=q; if (!total) return 0;
-  let best=-1, bi=48; for (let k=2;k<95;k++){ const v=bins[k-2]+2*bins[k-1]+3*bins[k]+2*bins[k+1]+bins[k+2]; if (v>best){ best=v; bi=k; } }
-  if (best/9 < total/97*4) return 0;                   // no clear shared lean: leave the photo alone
-  let sw=0, sd=0; for (let k=bi-3;k<=bi+3;k++){ sw+=bins[k]; sd+=bins[k]*((k/4)-12); }
-  return (sd/sw)*Math.PI/180;
+    const d=0.5*Math.atan2(2*cc, a-b); if (Math.abs(d) > 0.26) continue;          // within about 15 degrees of upright
+    X.push((xx-w/2)/f); Dd.push(d); Wt.push(Math.sqrt(tr)*coh*coh); }
+  if (X.length < 150) return null;
+  // robust weighted line fit, Tukey weights with a shrinking scale
+  // start from the weighted median lean (most upright edges share the roll), then refine
+  let r0=0, b0=0;
+  { const ord=X.map((_,i)=>i).sort((a,b)=>Dd[a]-Dd[b]); let tot=0; for (const w of Wt) tot+=w; let acc=0; for (const i of ord){ acc+=Wt[i]; if (acc>=tot/2){ r0=Dd[i]; break; } } }
+  for (const sc of [0.08, 0.05, 0.03, 0.02, 0.014, 0.014]){
+    let S0=0,Sx=0,Sxx=0,Sd=0,Sxd=0;
+    for (let i=0;i<X.length;i++){ const e=(Dd[i]-r0-b0*X[i])/sc, t=Math.abs(e)<1 ? (1-e*e)**2 : 0, wi=Wt[i]*t;
+      S0+=wi; Sx+=wi*X[i]; Sxx+=wi*X[i]*X[i]; Sd+=wi*Dd[i]; Sxd+=wi*X[i]*Dd[i]; }
+    const det=S0*Sxx-Sx*Sx; if (S0<=0 || Math.abs(det)<1e-12) return null;
+    b0=(S0*Sxd-Sx*Sd)/det; r0=(Sd-b0*Sx)/S0; }
+  let inl=0, tot=0; for (let i=0;i<X.length;i++){ tot+=Wt[i]; if (Math.abs(Dd[i]-r0-b0*X[i]) < 0.0175) inl+=Wt[i]; }
+  if (inl/tot < 0.3) return null;                      // edges do not agree: leave the photo alone
+  // Edge angles measured on a pixel grid come out about 10% short of the truth; on synthetic scenes of
+  // known tilt (roll 3 to 5 degrees, pitch up to 15) both terms read 88 to 92%. Scale back up.
+  const CAL = 1.1;
+  return {roll:r0*CAL, pitchTan:b0*CAL, agree:inl/tot};
 }
-function estimateShift(pl){
-  // level camera: the horizon is the middle row, where the floor's true disparity is zero
-  if (pl){ const t = -(pl.al*0.5 + pl.be*0.5 + pl.ga); if (t > 0.04 && t < 3) return t; }
+function estimateShift(pl, vh){
+  // the floor's true disparity is zero on the horizon row; for a level camera that is the middle row,
+  // and a camera pitched down moves it up (vh comes from how vertical edges converge)
+  if (pl){ const t = -(pl.al*0.5 + pl.be*(vh==null ? 0.5 : vh) + pl.ga); if (t > 0.08 && t < 1.5) return t; }
   return 1/3;                      // no floor to go on: assume the far wall is 4 times further than the subject
 }
 function otsu(d, skip){

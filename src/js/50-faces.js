@@ -56,6 +56,7 @@ function boxBlur(src, w, h, ch, x0, y0, x1, y1, r, passes){
 const ANON = [{blur:.25, flat:0,   depth:.3}, {blur:.45, flat:.75, depth:.55}, {blur:.6, flat:1, depth:.9}];
 function applyAnon(){
   const P0=S.photoSrc, D0=S.depthSrc; if (!P0 || !D0) return;
+  S.depthVer++;
   if (!S.anon || !S.faces.length){ S.photo=P0; S.depth=D0; S.faceMask=null; S.dirtyBuild=true; return; }
   const L = ANON[S.anonLevel];
   const pd = new Float32Array(P0.data), dd = Float32Array.from(D0.d), mask = new Uint8Array(D0.w*D0.h);

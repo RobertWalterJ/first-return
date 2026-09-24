@@ -3,6 +3,7 @@ const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer:coarse)').matches;
 const MAXPTS = MOBILE ? 520000 : 1150000;
 const WIDE = () => matchMedia('(min-width:900px)').matches;
+const PITCH_SIGN = 1;      // how edge convergence maps to the horizon row (checked against a synthetic photo)
 
 // Every adjustable setting has named stops. The slider moves smoothly between them and snaps
 // to a stop when you tap its name, so there is always a sensible preset one tap away.
@@ -60,7 +61,8 @@ const S = {
   faces:[], anon:false, anonLevel:1, faceMask:null, facesFound:false,
   yaw:0, pitch:0, zoom:1, target:[0,0,-2], spin:false,
   planes:[], floorTouched:false, autoLight:false, autoFind:true, scan:null,
-  roll:0, rollAuto:0, level:true,      // tilt correction, from the floor
+  roll:0, rollAuto:0, level:true, pitchTan:0,   // camera tilt: roll from upright edges, pitch from how they converge
+  gen:0, home:null, reframe:false, lightAuto:0, compCache:null, depthVer:0, refFrozen:false,
   pivot:[0,0,-2], pan:[0,0,0], refDist:2, userMoved:false, panMode:false,   // where turning is centred, and how far the view has slid
   count:0, cpu:null, rng:[1,2], yr:[0,1], floor3d:null,
   dirtyBuild:true, dirtyDraw:true, lowDetail:false, recording:false,
@@ -75,8 +77,9 @@ function hash2(x, y, s){ let h = Math.imul(x|0, 374761393) ^ Math.imul(y|0, 6682
 function seeded(seed){ let a=seed>>>0; return () => { a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 function gauss(r){ return Math.sqrt(-2*Math.log(r()+1e-9))*Math.cos(6.283185*r()); }
 const tick = () => new Promise(r=>setTimeout(r,30));
-function busy(text, frac){ const b=$('#busy'); if (text==null){ b.hidden=true; return; } b.hidden=false; $('#busyText').textContent=text; $('#busyBar').style.width = frac==null ? '100%' : (Math.min(1,frac)*100).toFixed(1)+'%'; }
+function busy(text, frac){ const b=$('#busy'); document.body.classList.toggle('locked', text!=null || S.recording); if (text==null){ b.hidden=true; return; } b.hidden=false; $('#busyText').textContent=text; $('#busyBar').style.width = frac==null ? '100%' : (Math.min(1,frac)*100).toFixed(1)+'%'; }
 function banner(text){ const b=$('#banner'); b.hidden=!text; if (text) b.textContent=text; }
+function notice(text){ const b=$('#notice'); b.hidden=!text; if (text) b.textContent=text; }
 function store(k,v){ try{ localStorage.setItem('firstreturn.'+k, JSON.stringify(v)); }catch(e){} }
 function recall(k){ try{ const v=localStorage.getItem('firstreturn.'+k); return v==null?null:JSON.parse(v); }catch(e){ return null; } }
 function say(text){ try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); u.rate=0.95; speechSynthesis.speak(u); }catch(e){} }

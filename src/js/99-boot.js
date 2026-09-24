@@ -6,6 +6,7 @@ async function boot(){
   LOOK_KEYS.forEach(k=>{ P[k]=LOOKS[look][k]; }); P.light = 0;
   if (saved && saved.P) LOOK_KEYS.forEach(k=>{ if (saved.P[k]!=null && typeof saved.P[k]===typeof P[k]) P[k]=saved.P[k]; });
   S.shape = saved && saved.shape ? saved.shape : (MOBILE ? 'photo' : 'wide');
+  if (saved && typeof saved.level==='boolean') S.level = saved.level;
   const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom;
   setTab(recall('tab') || 'look');
   layout(); requestAnimationFrame(frame);
@@ -20,14 +21,13 @@ async function boot(){
     const px=dx.getImageData(0,0,d.width,d.height).data, raw=new Float32Array(d.width*d.height);
     for (let i=0;i<raw.length;i++) raw[i]=(px[i*4]*256+px[i*4+1])/65535;
     S.autoFind = false;             // the sample needs no finder, so opening the page downloads nothing extra
-    await setPhoto({canvas:c, w:c.width, h:c.height, data:x.getImageData(0,0,c.width,c.height).data, fov:{tanV:Math.tan(25*Math.PI/180), src:'museum photo, lens assumed'}},
+    try { await setPhoto({canvas:c, w:c.width, h:c.height, data:x.getImageData(0,0,c.width,c.height).data, fov:{tanV:Math.tan(25*Math.PI/180), src:'museum photo, lens assumed'}},
       normaliseDepth({w:d.width, h:d.height, d:raw}),
-      'Sample: Abraham Lincoln: The Man (Standing Lincoln), Augustus Saint-Gaudens, The Metropolitan Museum of Art, public domain (CC0).');
-    S.autoFind = true;
+      'Sample: Abraham Lincoln: The Man (Standing Lincoln), Augustus Saint-Gaudens, The Metropolitan Museum of Art, public domain (CC0).'); } finally { S.autoFind = true; }
     // a name over the sample's head, to show what names look like
     requestAnimationFrame(()=>{ const c0=S.comps.slice().sort((a,b)=>b.n-a.n)[0];
       if (c0){ const Lb={u:c0.topUV[0], v:c0.topUV[1], lift:(c0.maxY-c0.minY)*0.07, text:'Standing Lincoln'}; Lb.pos=labelWorld(Lb); S.labels=[Lb]; S.dirtyDraw=true; if (S.tab==='people') renderTray(); } });
   } catch(err){ console.error(err); banner('Tap Open to choose a photo.'); }
 }
-window.__fr = {S, P, LOOKS, build, setTab, queueThumbs, draw, findThings};   // for testing from the console
+window.__fr = {S, P, LOOKS, build, setTab, queueThumbs, draw, findThings, tiltFromVerticals};   // for testing from the console
 boot();

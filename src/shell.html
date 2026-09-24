@@ -36,7 +36,13 @@ button{cursor:pointer}
 .overlay{position:absolute;inset:0;pointer-events:none}
 .lbl{position:absolute;transform:translate(-50%,-100%);white-space:nowrap;color:#fff;font-weight:560;text-shadow:0 0 6px rgba(255,255,255,.55),0 0 16px rgba(255,255,255,.28)}
 .pin{position:absolute;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:2px solid var(--accent);background:rgba(114,232,203,.25);pointer-events:none}
-.banner{position:absolute;left:50%;top:10px;transform:translateX(-50%);max-width:calc(100% - 24px);background:rgba(8,10,12,.86);border:1px solid var(--line2);border-radius:18px;padding:7px 14px;font-size:14px;text-align:center;pointer-events:none}
+.msgs{position:absolute;left:12px;right:12px;bottom:64px;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none}
+.banner,.notice{max-width:100%;background:rgba(8,10,12,.88);border:1px solid var(--line2);border-radius:18px;padding:7px 14px;font-size:14px;text-align:center}
+.notice{border-color:var(--accent);color:var(--text)}
+.panpill{position:absolute;left:10px;top:10px;border:1px solid var(--accent);background:rgba(8,10,12,.88);color:var(--accent);border-radius:16px;padding:7px 12px;font-size:13px}
+.pin b{position:absolute;left:50%;top:22px;transform:translateX(-50%);white-space:nowrap;font:600 12px var(--ui);color:var(--accent);text-shadow:0 0 4px #000}
+body.locked .side, body.locked .top .tb{pointer-events:none;opacity:.55}
+body.scan .tab[data-tab="subject"], body.scan .tab[data-tab="people"]{opacity:.5}
 .float{position:absolute;right:10px;bottom:10px;display:flex;gap:8px}
 .fb{width:44px;height:44px;border-radius:50%;border:1px solid var(--line2);background:rgba(10,12,14,.8);display:grid;place-items:center;padding:0}
 .fb svg{width:22px;height:22px;stroke:var(--text);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
@@ -113,19 +119,21 @@ button{cursor:pointer}
 <div class="app">
   <header class="top">
     <div class="brand">First <span>Return</span></div>
-    <label class="tb primary" for="file" role="button" tabindex="0"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>Open</label>
-    <input id="file" type="file" accept="image/*,.ply" hidden>
+    <button class="tb primary" id="openBtn" aria-haspopup="true" aria-expanded="false" title="Open a photo or a 3D scan"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>Open</button>
+    <input id="file" type="file" accept="image/*" hidden>
+    <input id="fileScan" type="file" accept=".ply" hidden>
     <button class="tb" id="shapeBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M6 3v15h15"/><path d="M3 6h15v15"/></svg>Shape</button>
     <button class="tb" id="saveBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>Save</button>
     <button class="tb" id="infoBtn" aria-expanded="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.5v.5"/></svg>About</button>
   </header>
 
   <div class="stage" id="stage">
-    <canvas id="gl" tabindex="0" aria-label="The point cloud. Drag to turn it, pinch or scroll to zoom, double tap to line it up with the photo again."></canvas>
+    <canvas id="gl" tabindex="0" aria-label="The point cloud. Drag to turn it, pinch or scroll to zoom, drag with two fingers to slide it, double tap a spot to centre on it."></canvas>
     <img class="compare" id="compare" alt="" hidden>
     <div class="overlay" id="pins"></div>
     <div class="overlay" id="labels"></div>
-    <div class="banner" id="banner" hidden></div>
+    <div class="msgs"><div class="notice" id="notice" hidden></div><div class="banner" id="banner" hidden></div></div>
+    <button class="panpill" id="panPill" hidden>Pan on. Tap to turn off</button>
     <div class="recbar" id="recbar" hidden><i id="recfill"></i></div>
     <div class="float">
       <button class="fb" id="photoView" aria-label="Line up with the photo" title="Line up with the photo" hidden><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4"/></svg></button>
@@ -148,6 +156,7 @@ button{cursor:pointer}
   </aside>
 </div>
 
+<div class="menu" id="openMenu" hidden></div>
 <div class="menu" id="shapeMenu" hidden></div>
 <div class="menu" id="saveMenu" hidden></div>
 <div class="info" id="info" hidden></div>

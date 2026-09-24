@@ -21,16 +21,18 @@ function parsePly(buf){
   const vi = els.findIndex(e=>e.name==='vertex'); if (vi<0) throw new Error('no points in this file');
   const V = els[vi], names = V.props.map(p=>p.name), idx = n => names.indexOf(n);
   if (idx('x')<0 || idx('y')<0 || idx('z')<0) throw new Error('the points have no x, y, z');
-  const total = V.count, step = Math.max(1, Math.ceil(total/4e6)), n = Math.ceil(total/step);
+  const total = V.count, step = Math.max(1, Math.ceil(total/(MOBILE ? 1.5e6 : 4e6))), n = Math.ceil(total/step);
   const pos = new Float32Array(n*3), col = new Float32Array(n*3); let m = 0;
   const hasRGB = idx('red')>=0, hasDC = idx('f_dc_0')>=0, hasOp = idx('opacity')>=0;
   const colScale = hasRGB ? (V.props[idx('red')].type.startsWith('u') && PLY_SIZE[V.props[idx('red')].type]===1 ? 1/255 : PLY_SIZE[V.props[idx('red')].type]===2 ? 1/65535 : 1) : 1;
+  const ix=idx('x'), iy=idx('y'), iz=idx('z'), ir=idx('red'), ig=idx('green'), ib=idx('blue'), d0=idx('f_dc_0'), d1=idx('f_dc_1'), d2=idx('f_dc_2'), io=idx('opacity');
   const take = (get) => {
+    const X=get(ix), Y=get(iy), Z=get(iz); if (!isFinite(X) || !isFinite(Y) || !isFinite(Z)) return;
     let r=.75,g=.75,b=.75;
-    if (hasRGB){ r=get(idx('red'))*colScale; g=get(idx('green'))*colScale; b=get(idx('blue'))*colScale; }
-    else if (hasDC){ const C0=0.28209479; r=.5+C0*get(idx('f_dc_0')); g=.5+C0*get(idx('f_dc_1')); b=.5+C0*get(idx('f_dc_2')); }
-    if (hasOp && 1/(1+Math.exp(-get(idx('opacity')))) < 0.15) return;        // near-transparent splats are noise
-    pos[m*3]=get(idx('x')); pos[m*3+1]=get(idx('y')); pos[m*3+2]=get(idx('z'));
+    if (hasRGB){ r=get(ir)*colScale; g=get(ig)*colScale; b=get(ib)*colScale; }
+    else if (hasDC){ const C0=0.28209479; r=.5+C0*get(d0); g=.5+C0*get(d1); b=.5+C0*get(d2); }
+    if (hasOp && 1/(1+Math.exp(-get(io))) < 0.15) return;        // near-transparent splats are noise
+    pos[m*3]=X; pos[m*3+1]=Y; pos[m*3+2]=Z;
     col[m*3]=Math.min(1,Math.max(0,r)); col[m*3+1]=Math.min(1,Math.max(0,g)); col[m*3+2]=Math.min(1,Math.max(0,b)); m++;
   };
   if (format==='ascii'){
@@ -56,7 +58,9 @@ function parsePly(buf){
 function levelScan(sc){
   const n=sc.n, P=sc.pos, rnd=seeded(17), K=Math.min(n,20000), S0=[];
   for (let k=0;k<K;k++){ const i=(rnd()*n)|0; S0.push([P[i*3],P[i*3+1],P[i*3+2]]); }
-  let lo=[1e9,1e9,1e9], hi=[-1e9,-1e9,-1e9]; for (const p of S0) for (let a=0;a<3;a++){ lo[a]=Math.min(lo[a],p[a]); hi[a]=Math.max(hi[a],p[a]); }
+  // extent from the 2nd to 98th percentile, so a few stray splats do not inflate the tolerance
+  const pct=(a,q)=>{ const v=S0.map(p=>p[a]).sort((x,y)=>x-y); return v[Math.floor(v.length*q)]; };
+  const lo=[0,1,2].map(a=>pct(a,0.02)), hi=[0,1,2].map(a=>pct(a,0.98));
   const ext = Math.hypot(hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2]) || 1, tol = ext*0.008;
   let best=null, bestN=0;
   for (let it=0; it<400; it++){
@@ -64,12 +68,17 @@ function levelScan(sc){
     const u=[b[0]-a[0],b[1]-a[1],b[2]-a[2]], v=[c[0]-a[0],c[1]-a[1],c[2]-a[2]];
     let nn=[u[1]*v[2]-u[2]*v[1], u[2]*v[0]-u[0]*v[2], u[0]*v[1]-u[1]*v[0]]; const l=Math.hypot(...nn); if (l<1e-9) continue; nn=nn.map(x=>x/l);
     // only planes near one of the axes can be a floor (scans are saved Y-up or Z-up)
-    const hintAxis = sc.upHint==='z' ? 2 : 1, ax = Math.max(Math.abs(nn[0]),Math.abs(nn[1]),Math.abs(nn[2]));
-    if (ax < 0.8) continue;
+    // a floor is near the Y or Z axis (the two ways scans are saved), never a sideways wall
+    const hintAxis = sc.upHint==='z' ? 2 : 1;
+    if (Math.abs(nn[1]) < 0.906 && Math.abs(nn[2]) < 0.906) continue;
     const d0 = nn[0]*a[0]+nn[1]*a[1]+nn[2]*a[2]; let cnt=0;
     for (let k=0;k<K;k+=2){ const p=S0[k]; if (Math.abs(nn[0]*p[0]+nn[1]*p[1]+nn[2]*p[2]-d0) < tol) cnt++; }
     const bonus = Math.abs(nn[hintAxis]) > 0.8 ? 1.3 : 1;                 // favour the axis the file says is up
-    if (cnt*bonus > bestN){ bestN=cnt*bonus; best={nn, d0, cnt}; }
+    if (cnt*bonus <= bestN) continue;
+    // nearly everything sits on one side of a floor; a wall splits a room scan in two
+    let side=0; for (let k=1;k<K;k+=7){ const p=S0[k]; if (nn[0]*p[0]+nn[1]*p[1]+nn[2]*p[2] > d0) side++; }
+    const frac = side/Math.ceil((K-1)/7); if (Math.max(frac, 1-frac) < 0.9) continue;
+    bestN=cnt*bonus; best={nn, d0, cnt};
   }
   let up = sc.upHint==='z' ? [0,0,1] : [0,1,0], floorD = null;
   if (best && best.cnt > K/2*0.12){ up = best.nn.slice(); floorD = best.d0;
@@ -115,8 +124,9 @@ function buildScanCloud(cfg){
 }
 
 async function openScan(file){
+  const g = ++S.gen;
   busy('Reading the scan', null); await tick();
-  const sc = parsePly(await file.arrayBuffer());
+  const sc = parsePly(await file.arrayBuffer()); if (g!==S.gen) return;
   if (sc.n < 100) throw new Error('only '+sc.n+' usable points in this file');
   busy('Levelling the scan', null); await tick();
   const L = levelScan(sc);
@@ -124,10 +134,12 @@ async function openScan(file){
   S.photo = S.photoSrc = {w:1600, h:1200, data:null}; S.photoCanvas = null; S.depth = S.depthSrc = null;
   S.tanV = Math.tan(25*Math.PI/180); S.planes=[]; S.plane=null; S.ground=null; S.compMap=null; S.comps=[];
   S.fovSource = 'a 3D scan'; S.credit = `3D scan: ${file.name}, ${sc.n.toLocaleString()} points${L.levelled ? `, levelled on its floor${L.tilt>=1 ? ` (it was ${L.tilt.toFixed(0)}° off)` : ''}` : ''}. It stayed on this device.`;
-  S.picks=[]; S.labels=[]; S.faces=[]; S.anon=false; S.faceMask=null; S.rollAuto=0; S.roll=0;
+  S.undo=[]; undoArmed=true; S.placing=false; S.panMode=false; syncPan(); S.autoFrame=false; S.home=null; S.refFrozen=true; S.pitchTan=0;
+  S.picks=[]; S.labels=[]; S.faces=[]; S.faceMask=null; S.rollAuto=0; S.roll=0; S.compCache=null;
   S.target=[0,0,-L.D]; S.refDist=L.D; S.pivot=S.target.slice(); S.pan=[0,0,0]; S.userMoved=false;
-  if (!sc.hasColour && (P.colour==='photo'||P.colour==='muted')) P.colour='height';
+  if (!sc.hasColour && (P.colour==='photo'||P.colour==='muted')){ S.colourBeforeScan=P.colour; P.colour='height'; }
   const Lk=LOOKS[look]; S.yaw=Lk.yaw; S.pitch=Math.max(Lk.pitch, 12); S.zoom=Lk.zoom;
   invalidateCompare(); $('#compareBtn').hidden = true;
-  busy(null); banner(''); layout(); S.dirtyBuild=true; renderTray(); queueThumbs(); viewButton();
+  busy(null); banner(''); notice(`Opened a 3D scan: ${sc.n.toLocaleString()} points${L.levelled ? ', levelled on its floor' : ''}.`);
+  document.body.classList.add('scan'); layout(); S.dirtyBuild=true; renderTray(); queueThumbs(); viewButton();
 }

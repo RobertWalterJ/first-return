@@ -55,7 +55,9 @@ function buildCloud(cfg){
       if (hash2(cell,7,11) < drop) return;
     }
     // range noise grows with distance, along the beam
-    const zz = z + gauss(noise)*(0.002 + 0.0035*z)*(1 + 4*inFace);
+    // hashed per cell, so the dots stay put between rebuilds
+    const gn = Math.sqrt(-2*Math.log(hash2(cell,41,7)+1e-9))*Math.cos(6.283185*hash2(cell,43,9));
+    const zz = z + gn*(0.002 + 0.0035*z)*(1 + 4*inFace);
     const p = unproject(u,v,zz);
     push(p[0],p[1],p[2],r,g,b,kind,rnd,lum,inc,c);
     if (kind===0){ const ci2=cinfo[c]; ci2.n++; ci2.sx+=p[0]; ci2.sz+=p[2];
@@ -147,7 +149,8 @@ function floorPlane3D(live){
     const err = live.reduce((s,c)=>s+Math.abs(pl.a*c.foot[0]+pl.c*c.foot[2]+pl.b-c.minY),0)/live.length;
     if (err < bestErr && err < 0.35*h){ bestErr=err; best=pl; }
   }
-  return best || {a:0, c:0, b:lowest};
+  // level in the world, which is tilted in the camera's frame when the photo was straightened
+  return best || {a:-Math.tan(S.roll), c:0, b:lowest};
 }
 function lsqFloor(rows){
   // least squares for y = a x + c z + b
@@ -183,15 +186,17 @@ function build(){
     S.autoLight = false; const ls=[];
     for (let i=0;i<R.n;i+=7) if (R.out[i*10+6]===0) ls.push(R.out[i*10+8]);
     ls.sort((a,b)=>a-b); const med = ls.length ? ls[ls.length>>1] : 0.5;
-    P.light = med < 0.16 ? 2 : med < 0.26 ? 1 : 0;
-    if (P.light) banner(P.light===2 ? 'The subject was in shadow, so its light is evened out. Change it under Adjust, Light.' : 'The subject was dark, so its light is lifted. Change it under Adjust, Light.');
+    P.light = S.lightAuto = med < 0.16 ? 2 : med < 0.26 ? 1 : 0;
+    if (P.light){ const cur=$('#notice'); notice((cur.hidden ? '' : cur.textContent+' ') + (P.light===2 ? 'The subject was in shadow, so its light is evened out (Adjust, Light).' : 'The subject was dark, so its light is lifted (Adjust, Light).')); }
     if (S.tab==='adjust') renderTray();
   }
   if (R.live.length){ const all=R.live.reduce((a,c)=>[a[0]+c.sx, a[1]+(c.minY+c.maxY)/2*c.n, a[2]+c.sz, a[3]+c.n],[0,0,0,0]);
     S.target=[all[0]/all[3], all[1]/all[3], all[2]/all[3]]; }
   else S.target=[0,0,-zOf(0.5)];
-  S.refDist = Math.abs(S.target[2]) || 2;
+  // zoom distance is fixed per photo, so changing a setting does not move the camera
+  if (!S.refFrozen){ S.refDist = Math.abs(S.target[2]) || 2; S.refFrozen = true; }
   if (!S.userMoved){ S.pivot = S.target.slice(); S.pan = [0,0,0]; }
+  if (S.reframe){ S.reframe = false; if (LOOKS[look].bgTint > 0 && !S.isSample && viewAtHome()) S.autoFrame = true; }
   const ex = extents(R.out, R.n); S.rng=ex.rng; S.yr=ex.yr;
   uploadCloud(R.out, R.n);
   if (S.autoFrame){ S.autoFrame = false; setTimeout(frameSubject, 0); }

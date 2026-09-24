@@ -46,7 +46,13 @@ button{cursor:pointer}
 .overlay{position:absolute;inset:0;pointer-events:none}
 .lbl{position:absolute;transform:translate(-50%,-100%);white-space:nowrap;color:#fff;font-weight:560;text-shadow:0 0 6px rgba(255,255,255,.55),0 0 16px rgba(255,255,255,.28)}
 .pin{position:absolute;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:2px solid var(--accent);background:rgba(114,232,203,.25);pointer-events:none}
-.banner{position:absolute;left:50%;top:10px;transform:translateX(-50%);max-width:calc(100% - 24px);background:rgba(8,10,12,.86);border:1px solid var(--line2);border-radius:18px;padding:7px 14px;font-size:14px;text-align:center;pointer-events:none}
+.msgs{position:absolute;left:12px;right:12px;bottom:64px;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none}
+.banner,.notice{max-width:100%;background:rgba(8,10,12,.88);border:1px solid var(--line2);border-radius:18px;padding:7px 14px;font-size:14px;text-align:center}
+.notice{border-color:var(--accent);color:var(--text)}
+.panpill{position:absolute;left:10px;top:10px;border:1px solid var(--accent);background:rgba(8,10,12,.88);color:var(--accent);border-radius:16px;padding:7px 12px;font-size:13px}
+.pin b{position:absolute;left:50%;top:22px;transform:translateX(-50%);white-space:nowrap;font:600 12px var(--ui);color:var(--accent);text-shadow:0 0 4px #000}
+body.locked .side, body.locked .top .tb{pointer-events:none;opacity:.55}
+body.scan .tab[data-tab="subject"], body.scan .tab[data-tab="people"]{opacity:.5}
 .float{position:absolute;right:10px;bottom:10px;display:flex;gap:8px}
 .fb{width:44px;height:44px;border-radius:50%;border:1px solid var(--line2);background:rgba(10,12,14,.8);display:grid;place-items:center;padding:0}
 .fb svg{width:22px;height:22px;stroke:var(--text);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
@@ -123,19 +129,21 @@ button{cursor:pointer}
 <div class="app">
   <header class="top">
     <div class="brand">First <span>Return</span></div>
-    <label class="tb primary" for="file" role="button" tabindex="0"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>Open</label>
-    <input id="file" type="file" accept="image/*,.ply" hidden>
+    <button class="tb primary" id="openBtn" aria-haspopup="true" aria-expanded="false" title="Open a photo or a 3D scan"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>Open</button>
+    <input id="file" type="file" accept="image/*" hidden>
+    <input id="fileScan" type="file" accept=".ply" hidden>
     <button class="tb" id="shapeBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M6 3v15h15"/><path d="M3 6h15v15"/></svg>Shape</button>
     <button class="tb" id="saveBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>Save</button>
     <button class="tb" id="infoBtn" aria-expanded="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.5v.5"/></svg>About</button>
   </header>
 
   <div class="stage" id="stage">
-    <canvas id="gl" tabindex="0" aria-label="The point cloud. Drag to turn it, pinch or scroll to zoom, double tap to line it up with the photo again."></canvas>
+    <canvas id="gl" tabindex="0" aria-label="The point cloud. Drag to turn it, pinch or scroll to zoom, drag with two fingers to slide it, double tap a spot to centre on it."></canvas>
     <img class="compare" id="compare" alt="" hidden>
     <div class="overlay" id="pins"></div>
     <div class="overlay" id="labels"></div>
-    <div class="banner" id="banner" hidden></div>
+    <div class="msgs"><div class="notice" id="notice" hidden></div><div class="banner" id="banner" hidden></div></div>
+    <button class="panpill" id="panPill" hidden>Pan on. Tap to turn off</button>
     <div class="recbar" id="recbar" hidden><i id="recfill"></i></div>
     <div class="float">
       <button class="fb" id="photoView" aria-label="Line up with the photo" title="Line up with the photo" hidden><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4"/></svg></button>
@@ -158,6 +166,7 @@ button{cursor:pointer}
   </aside>
 </div>
 
+<div class="menu" id="openMenu" hidden></div>
 <div class="menu" id="shapeMenu" hidden></div>
 <div class="menu" id="saveMenu" hidden></div>
 <div class="info" id="info" hidden></div>
@@ -176,6 +185,7 @@ const $ = s => document.querySelector(s);
 const MOBILE = matchMedia('(pointer:coarse)').matches;
 const MAXPTS = MOBILE ? 520000 : 1150000;
 const WIDE = () => matchMedia('(min-width:900px)').matches;
+const PITCH_SIGN = 1;      // how edge convergence maps to the horizon row (checked against a synthetic photo)
 
 // Every adjustable setting has named stops. The slider moves smoothly between them and snaps
 // to a stop when you tap its name, so there is always a sensible preset one tap away.
@@ -233,7 +243,8 @@ const S = {
   faces:[], anon:false, anonLevel:1, faceMask:null, facesFound:false,
   yaw:0, pitch:0, zoom:1, target:[0,0,-2], spin:false,
   planes:[], floorTouched:false, autoLight:false, autoFind:true, scan:null,
-  roll:0, rollAuto:0, level:true,      // tilt correction, from the floor
+  roll:0, rollAuto:0, level:true, pitchTan:0,   // camera tilt: roll from upright edges, pitch from how they converge
+  gen:0, home:null, reframe:false, lightAuto:0, compCache:null, depthVer:0, refFrozen:false,
   pivot:[0,0,-2], pan:[0,0,0], refDist:2, userMoved:false, panMode:false,   // where turning is centred, and how far the view has slid
   count:0, cpu:null, rng:[1,2], yr:[0,1], floor3d:null,
   dirtyBuild:true, dirtyDraw:true, lowDetail:false, recording:false,
@@ -248,8 +259,9 @@ function hash2(x, y, s){ let h = Math.imul(x|0, 374761393) ^ Math.imul(y|0, 6682
 function seeded(seed){ let a=seed>>>0; return () => { a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 function gauss(r){ return Math.sqrt(-2*Math.log(r()+1e-9))*Math.cos(6.283185*r()); }
 const tick = () => new Promise(r=>setTimeout(r,30));
-function busy(text, frac){ const b=$('#busy'); if (text==null){ b.hidden=true; return; } b.hidden=false; $('#busyText').textContent=text; $('#busyBar').style.width = frac==null ? '100%' : (Math.min(1,frac)*100).toFixed(1)+'%'; }
+function busy(text, frac){ const b=$('#busy'); document.body.classList.toggle('locked', text!=null || S.recording); if (text==null){ b.hidden=true; return; } b.hidden=false; $('#busyText').textContent=text; $('#busyBar').style.width = frac==null ? '100%' : (Math.min(1,frac)*100).toFixed(1)+'%'; }
 function banner(text){ const b=$('#banner'); b.hidden=!text; if (text) b.textContent=text; }
+function notice(text){ const b=$('#notice'); b.hidden=!text; if (text) b.textContent=text; }
 function store(k,v){ try{ localStorage.setItem('firstreturn.'+k, JSON.stringify(v)); }catch(e){} }
 function recall(k){ try{ const v=localStorage.getItem('firstreturn.'+k); return v==null?null:JSON.parse(v); }catch(e){ return null; } }
 function say(text){ try{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); u.rate=0.95; speechSynthesis.speak(u); }catch(e){} }
@@ -427,7 +439,7 @@ function fitFloor(pts, rnd, minN){
     const nx=uy*vd-ud*vy, ny=ud*vx-ux*vd, nd=ux*vy-uy*vx; if (Math.abs(nd)<1e-6) continue;
     const al=-nx/nd, be=-ny/nd, ga=a[2]-al*a[0]-be*a[1];
     if (!(be > 0.5 && Math.abs(al) < 0.6*be)) continue;          // a floor gets nearer as you look down the frame
-    let n=0; for (const p of pts) if (Math.abs(p[2]-(al*p[0]+be*p[1]+ga)) < tol) n++;
+    let n=0; for (const p of pts) if (Math.abs(p[2]-(al*p[0]+be*p[1]+ga)) < tol*(p[2]+0.3)/0.8) n++;
     if (n > bestN){ bestN=n; best=[al,be,ga]; }
   }
   if (!best || bestN < minN) return null;
@@ -456,8 +468,8 @@ function groundMask(D, planes){
 // a pavement, a table top. Planes alone missed wet boards, whose depth is not flat enough to fit.
 // Held things (a boat on a shoulder) face up too but do not reach the bottom edge, so they stay.
 // Needs the camera and depth range set first.
-function upFacingGround(D, g){
-  const W=D.w, H=D.h, k=Math.max(2, Math.round(W*0.006)), up=new Uint8Array(W*H);
+function upFacingGround(D, g, upv){
+  const W=D.w, H=D.h, k=Math.max(2, Math.round(W*0.006)), up=new Uint8Array(W*H), U=upv||[0,1,0];
   for (let y=k;y<H-k;y+=1) for (let x=k;x<W-k;x+=1){
     const u=(x+.5)/W, v=(y+.5)/H, du=k/W, dv=k/H, i=y*W+x;
     const zc=zOf(D.d[i]), zl=zOf(D.d[i-k]), zr=zOf(D.d[i+k]), zu=zOf(D.d[i-k*W]), zd=zOf(D.d[i+k*W]);
@@ -466,7 +478,7 @@ function upFacingGround(D, g){
     const pl=unproject(u-du,v,zl), pr=unproject(u+du,v,zr), pu=unproject(u,v-dv,zu), pd=unproject(u,v+dv,zd);
     const ax=pr[0]-pl[0], ay=pr[1]-pl[1], az=pr[2]-pl[2], bx=pd[0]-pu[0], by=pd[1]-pu[1], bz=pd[2]-pu[2];
     const nx=ay*bz-az*by, ny=az*bx-ax*bz, nz=ax*by-ay*bx, nl=Math.hypot(nx,ny,nz)||1;
-    if (Math.abs(ny)/nl > 0.82 && v > 0.35) up[i]=1;
+    if (Math.abs(nx*U[0]+ny*U[1]+nz*U[2])/nl > 0.82 && v > 0.35) up[i]=1;
   }
   // keep connected patches that are big and reach the bottom edge
   const seen=new Uint8Array(W*H), q=new Int32Array(W*H);
@@ -477,38 +489,53 @@ function upFacingGround(D, g){
       if (y>=H-k-2) anchored=true;
       for (const j of [x>0?i-1:-1, x<W-1?i+1:-1, y>0?i-W:-1, y<H-1?i+W:-1]){ if (j<0) continue;
         if (up[j] && !seen[j]){ seen[j]=1; q[tail++]=j; } } }
-    if (anchored && tail > W*H*0.012) for (let t=0;t<tail;t++) if (!g[q[t]]) g[q[t]]=4;
+    // a patch covering nearly half the frame is the subject seen from above (a flat lay, a baby on a bed), not floor
+    if (anchored && tail > W*H*0.012 && tail < W*H*0.45) for (let t=0;t<tail;t++) if (!g[q[t]]) g[q[t]]=4;
   }
   return g;
 }
-// How far the camera was rolled, from how far the photo's vertical edges lean (walls, poles, door
-// frames, easels, people standing). Depth models learn from upright photos and tend to straighten
-// floors in their output, so the floor under-reads a tilt; vertical edges do not.
-function rollFromVerticals(canvas){
+// Camera tilt from upright edges (walls, poles, door frames, people standing). Each edge's lean is
+// fitted against its position across the frame: lean = roll + slope * x. The constant part is the roll
+// (a tilted photo leans everything the same way); the slope comes from pitch, because verticals
+// converge when the camera looks up or down. Fitting both stops a building shot from looking up being
+// read as a tilt, and gives the pitch the depth range needs. A structure tensor averages each edge's
+// direction, and coherence keeps long straight lines over foliage.
+function tiltFromVerticals(canvas, tanV){
   const L=640, s=Math.min(1, L/Math.max(canvas.width,canvas.height)), w=Math.round(canvas.width*s), h=Math.round(canvas.height*s);
   const c=document.createElement('canvas'); c.width=w; c.height=h; const x=c.getContext('2d',{willReadFrequently:true}); x.drawImage(canvas,0,0,w,h);
   const px=x.getImageData(0,0,w,h).data, g=new Float32Array(w*h); for (let i=0;i<w*h;i++) g[i]=0.299*px[i*4]+0.587*px[i*4+1]+0.114*px[i*4+2];
   const gx=new Float32Array(w*h), gy=new Float32Array(w*h);
   for (let y=1;y<h-1;y++) for (let xx=1;xx<w-1;xx++){ const i=y*w+xx;
     gx[i]=(g[i-w+1]+2*g[i+1]+g[i+w+1])-(g[i-w-1]+2*g[i-1]+g[i+w-1]); gy[i]=(g[i+w-1]+2*g[i+w]+g[i+w+1])-(g[i-w-1]+2*g[i-w]+g[i-w+1]); }
-  // Structure tensor over 7x7 windows: the edge direction is averaged, so pixel-grid and JPEG block
-  // edges stop pulling the answer toward zero, and coherence keeps long straight lines over foliage.
-  const r=3, bins=new Float64Array(97);                 // -12..+12 degrees in quarter-degree bins
+  const f = (h/2)/tanV, r=3, X=[], Dd=[], Wt=[];
   for (let y=r+1;y<h-r-1;y+=2) for (let xx=r+1;xx<w-r-1;xx+=2){
     let a=0,b=0,cc=0; for (let dy=-r;dy<=r;dy++) for (let dx=-r;dx<=r;dx++){ const j=(y+dy)*w+xx+dx; a+=gx[j]*gx[j]; b+=gy[j]*gy[j]; cc+=gx[j]*gy[j]; }
     const tr=a+b; if (tr < 60*60*49) continue;
     const coh=Math.sqrt((a-b)**2+4*cc*cc)/tr; if (coh<0.75) continue;
-    const d=0.5*Math.atan2(2*cc, a-b)*180/Math.PI; if (Math.abs(d)>12) continue;   // how far a vertical edge leans
-    bins[Math.round((d+12)*4)] += Math.sqrt(tr)*coh*coh; }
-  let total=0; for (const q of bins) total+=q; if (!total) return 0;
-  let best=-1, bi=48; for (let k=2;k<95;k++){ const v=bins[k-2]+2*bins[k-1]+3*bins[k]+2*bins[k+1]+bins[k+2]; if (v>best){ best=v; bi=k; } }
-  if (best/9 < total/97*4) return 0;                   // no clear shared lean: leave the photo alone
-  let sw=0, sd=0; for (let k=bi-3;k<=bi+3;k++){ sw+=bins[k]; sd+=bins[k]*((k/4)-12); }
-  return (sd/sw)*Math.PI/180;
+    const d=0.5*Math.atan2(2*cc, a-b); if (Math.abs(d) > 0.26) continue;          // within about 15 degrees of upright
+    X.push((xx-w/2)/f); Dd.push(d); Wt.push(Math.sqrt(tr)*coh*coh); }
+  if (X.length < 150) return null;
+  // robust weighted line fit, Tukey weights with a shrinking scale
+  // start from the weighted median lean (most upright edges share the roll), then refine
+  let r0=0, b0=0;
+  { const ord=X.map((_,i)=>i).sort((a,b)=>Dd[a]-Dd[b]); let tot=0; for (const w of Wt) tot+=w; let acc=0; for (const i of ord){ acc+=Wt[i]; if (acc>=tot/2){ r0=Dd[i]; break; } } }
+  for (const sc of [0.08, 0.05, 0.03, 0.02, 0.014, 0.014]){
+    let S0=0,Sx=0,Sxx=0,Sd=0,Sxd=0;
+    for (let i=0;i<X.length;i++){ const e=(Dd[i]-r0-b0*X[i])/sc, t=Math.abs(e)<1 ? (1-e*e)**2 : 0, wi=Wt[i]*t;
+      S0+=wi; Sx+=wi*X[i]; Sxx+=wi*X[i]*X[i]; Sd+=wi*Dd[i]; Sxd+=wi*X[i]*Dd[i]; }
+    const det=S0*Sxx-Sx*Sx; if (S0<=0 || Math.abs(det)<1e-12) return null;
+    b0=(S0*Sxd-Sx*Sd)/det; r0=(Sd-b0*Sx)/S0; }
+  let inl=0, tot=0; for (let i=0;i<X.length;i++){ tot+=Wt[i]; if (Math.abs(Dd[i]-r0-b0*X[i]) < 0.0175) inl+=Wt[i]; }
+  if (inl/tot < 0.3) return null;                      // edges do not agree: leave the photo alone
+  // Edge angles measured on a pixel grid come out about 10% short of the truth; on synthetic scenes of
+  // known tilt (roll 3 to 5 degrees, pitch up to 15) both terms read 88 to 92%. Scale back up.
+  const CAL = 1.1;
+  return {roll:r0*CAL, pitchTan:b0*CAL, agree:inl/tot};
 }
-function estimateShift(pl){
-  // level camera: the horizon is the middle row, where the floor's true disparity is zero
-  if (pl){ const t = -(pl.al*0.5 + pl.be*0.5 + pl.ga); if (t > 0.04 && t < 3) return t; }
+function estimateShift(pl, vh){
+  // the floor's true disparity is zero on the horizon row; for a level camera that is the middle row,
+  // and a camera pitched down moves it up (vh comes from how vertical edges converge)
+  if (pl){ const t = -(pl.al*0.5 + pl.be*(vh==null ? 0.5 : vh) + pl.ga); if (t > 0.08 && t < 1.5) return t; }
   return 1/3;                      // no floor to go on: assume the far wall is 4 times further than the subject
 }
 function otsu(d, skip){
@@ -558,16 +585,18 @@ function parsePly(buf){
   const vi = els.findIndex(e=>e.name==='vertex'); if (vi<0) throw new Error('no points in this file');
   const V = els[vi], names = V.props.map(p=>p.name), idx = n => names.indexOf(n);
   if (idx('x')<0 || idx('y')<0 || idx('z')<0) throw new Error('the points have no x, y, z');
-  const total = V.count, step = Math.max(1, Math.ceil(total/4e6)), n = Math.ceil(total/step);
+  const total = V.count, step = Math.max(1, Math.ceil(total/(MOBILE ? 1.5e6 : 4e6))), n = Math.ceil(total/step);
   const pos = new Float32Array(n*3), col = new Float32Array(n*3); let m = 0;
   const hasRGB = idx('red')>=0, hasDC = idx('f_dc_0')>=0, hasOp = idx('opacity')>=0;
   const colScale = hasRGB ? (V.props[idx('red')].type.startsWith('u') && PLY_SIZE[V.props[idx('red')].type]===1 ? 1/255 : PLY_SIZE[V.props[idx('red')].type]===2 ? 1/65535 : 1) : 1;
+  const ix=idx('x'), iy=idx('y'), iz=idx('z'), ir=idx('red'), ig=idx('green'), ib=idx('blue'), d0=idx('f_dc_0'), d1=idx('f_dc_1'), d2=idx('f_dc_2'), io=idx('opacity');
   const take = (get) => {
+    const X=get(ix), Y=get(iy), Z=get(iz); if (!isFinite(X) || !isFinite(Y) || !isFinite(Z)) return;
     let r=.75,g=.75,b=.75;
-    if (hasRGB){ r=get(idx('red'))*colScale; g=get(idx('green'))*colScale; b=get(idx('blue'))*colScale; }
-    else if (hasDC){ const C0=0.28209479; r=.5+C0*get(idx('f_dc_0')); g=.5+C0*get(idx('f_dc_1')); b=.5+C0*get(idx('f_dc_2')); }
-    if (hasOp && 1/(1+Math.exp(-get(idx('opacity')))) < 0.15) return;        // near-transparent splats are noise
-    pos[m*3]=get(idx('x')); pos[m*3+1]=get(idx('y')); pos[m*3+2]=get(idx('z'));
+    if (hasRGB){ r=get(ir)*colScale; g=get(ig)*colScale; b=get(ib)*colScale; }
+    else if (hasDC){ const C0=0.28209479; r=.5+C0*get(d0); g=.5+C0*get(d1); b=.5+C0*get(d2); }
+    if (hasOp && 1/(1+Math.exp(-get(io))) < 0.15) return;        // near-transparent splats are noise
+    pos[m*3]=X; pos[m*3+1]=Y; pos[m*3+2]=Z;
     col[m*3]=Math.min(1,Math.max(0,r)); col[m*3+1]=Math.min(1,Math.max(0,g)); col[m*3+2]=Math.min(1,Math.max(0,b)); m++;
   };
   if (format==='ascii'){
@@ -593,7 +622,9 @@ function parsePly(buf){
 function levelScan(sc){
   const n=sc.n, P=sc.pos, rnd=seeded(17), K=Math.min(n,20000), S0=[];
   for (let k=0;k<K;k++){ const i=(rnd()*n)|0; S0.push([P[i*3],P[i*3+1],P[i*3+2]]); }
-  let lo=[1e9,1e9,1e9], hi=[-1e9,-1e9,-1e9]; for (const p of S0) for (let a=0;a<3;a++){ lo[a]=Math.min(lo[a],p[a]); hi[a]=Math.max(hi[a],p[a]); }
+  // extent from the 2nd to 98th percentile, so a few stray splats do not inflate the tolerance
+  const pct=(a,q)=>{ const v=S0.map(p=>p[a]).sort((x,y)=>x-y); return v[Math.floor(v.length*q)]; };
+  const lo=[0,1,2].map(a=>pct(a,0.02)), hi=[0,1,2].map(a=>pct(a,0.98));
   const ext = Math.hypot(hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2]) || 1, tol = ext*0.008;
   let best=null, bestN=0;
   for (let it=0; it<400; it++){
@@ -601,12 +632,17 @@ function levelScan(sc){
     const u=[b[0]-a[0],b[1]-a[1],b[2]-a[2]], v=[c[0]-a[0],c[1]-a[1],c[2]-a[2]];
     let nn=[u[1]*v[2]-u[2]*v[1], u[2]*v[0]-u[0]*v[2], u[0]*v[1]-u[1]*v[0]]; const l=Math.hypot(...nn); if (l<1e-9) continue; nn=nn.map(x=>x/l);
     // only planes near one of the axes can be a floor (scans are saved Y-up or Z-up)
-    const hintAxis = sc.upHint==='z' ? 2 : 1, ax = Math.max(Math.abs(nn[0]),Math.abs(nn[1]),Math.abs(nn[2]));
-    if (ax < 0.8) continue;
+    // a floor is near the Y or Z axis (the two ways scans are saved), never a sideways wall
+    const hintAxis = sc.upHint==='z' ? 2 : 1;
+    if (Math.abs(nn[1]) < 0.906 && Math.abs(nn[2]) < 0.906) continue;
     const d0 = nn[0]*a[0]+nn[1]*a[1]+nn[2]*a[2]; let cnt=0;
     for (let k=0;k<K;k+=2){ const p=S0[k]; if (Math.abs(nn[0]*p[0]+nn[1]*p[1]+nn[2]*p[2]-d0) < tol) cnt++; }
     const bonus = Math.abs(nn[hintAxis]) > 0.8 ? 1.3 : 1;                 // favour the axis the file says is up
-    if (cnt*bonus > bestN){ bestN=cnt*bonus; best={nn, d0, cnt}; }
+    if (cnt*bonus <= bestN) continue;
+    // nearly everything sits on one side of a floor; a wall splits a room scan in two
+    let side=0; for (let k=1;k<K;k+=7){ const p=S0[k]; if (nn[0]*p[0]+nn[1]*p[1]+nn[2]*p[2] > d0) side++; }
+    const frac = side/Math.ceil((K-1)/7); if (Math.max(frac, 1-frac) < 0.9) continue;
+    bestN=cnt*bonus; best={nn, d0, cnt};
   }
   let up = sc.upHint==='z' ? [0,0,1] : [0,1,0], floorD = null;
   if (best && best.cnt > K/2*0.12){ up = best.nn.slice(); floorD = best.d0;
@@ -652,8 +688,9 @@ function buildScanCloud(cfg){
 }
 
 async function openScan(file){
+  const g = ++S.gen;
   busy('Reading the scan', null); await tick();
-  const sc = parsePly(await file.arrayBuffer());
+  const sc = parsePly(await file.arrayBuffer()); if (g!==S.gen) return;
   if (sc.n < 100) throw new Error('only '+sc.n+' usable points in this file');
   busy('Levelling the scan', null); await tick();
   const L = levelScan(sc);
@@ -661,12 +698,14 @@ async function openScan(file){
   S.photo = S.photoSrc = {w:1600, h:1200, data:null}; S.photoCanvas = null; S.depth = S.depthSrc = null;
   S.tanV = Math.tan(25*Math.PI/180); S.planes=[]; S.plane=null; S.ground=null; S.compMap=null; S.comps=[];
   S.fovSource = 'a 3D scan'; S.credit = `3D scan: ${file.name}, ${sc.n.toLocaleString()} points${L.levelled ? `, levelled on its floor${L.tilt>=1 ? ` (it was ${L.tilt.toFixed(0)}° off)` : ''}` : ''}. It stayed on this device.`;
-  S.picks=[]; S.labels=[]; S.faces=[]; S.anon=false; S.faceMask=null; S.rollAuto=0; S.roll=0;
+  S.undo=[]; undoArmed=true; S.placing=false; S.panMode=false; syncPan(); S.autoFrame=false; S.home=null; S.refFrozen=true; S.pitchTan=0;
+  S.picks=[]; S.labels=[]; S.faces=[]; S.faceMask=null; S.rollAuto=0; S.roll=0; S.compCache=null;
   S.target=[0,0,-L.D]; S.refDist=L.D; S.pivot=S.target.slice(); S.pan=[0,0,0]; S.userMoved=false;
-  if (!sc.hasColour && (P.colour==='photo'||P.colour==='muted')) P.colour='height';
+  if (!sc.hasColour && (P.colour==='photo'||P.colour==='muted')){ S.colourBeforeScan=P.colour; P.colour='height'; }
   const Lk=LOOKS[look]; S.yaw=Lk.yaw; S.pitch=Math.max(Lk.pitch, 12); S.zoom=Lk.zoom;
   invalidateCompare(); $('#compareBtn').hidden = true;
-  busy(null); banner(''); layout(); S.dirtyBuild=true; renderTray(); queueThumbs(); viewButton();
+  busy(null); banner(''); notice(`Opened a 3D scan: ${sc.n.toLocaleString()} points${L.levelled ? ', levelled on its floor' : ''}.`);
+  document.body.classList.add('scan'); layout(); S.dirtyBuild=true; renderTray(); queueThumbs(); viewButton();
 }
 
 // ---------------------------------------------------------------- choosing the subject
@@ -702,7 +741,7 @@ function growFrom(pick, id, map){
   if (G[seed] && !onUp){ let best=-1, bd=1e9; const r=Math.round(W*0.03);
     for (let y=Math.max(0,sy-r);y<Math.min(D.h,sy+r);y++) for (let x=Math.max(0,sx-r);x<Math.min(W,sx+r);x++){ const i=y*W+x; if (!G[i]){ const dd=(x-sx)**2+(y-sy)**2; if (dd<bd){bd=dd; best=i;} } }
     if (best>=0) seed=best; }
-  const tau = BANDS[S.band], step = 0.018 + 0.01*S.band;
+  const rel = (D.d[seed] + S.shiftAuto)/(0.5 + S.shiftAuto), tau = BANDS[S.band]*rel, step = (0.018 + 0.01*S.band)*rel;
   let lo, hi, seg = pick.seg;
   if (seg){
     // the outline model gives the shape; depth decides which parts of it really belong together
@@ -726,9 +765,18 @@ function growFrom(pick, id, map){
   return area;
 }
 function subjectMap(){
-  if (!S.picks.length) return autoComponents();
-  const map = new Int32Array(S.depth.w*S.depth.h).fill(-1);
-  S.picks.forEach((p,i)=>growFrom(p, i, map));
+  // cached: the subject only depends on the depth, the picks and the band, not on the look
+  const key = S.depthVer+'|'+S.band+'|'+S.autoCut+'|'+S.picks.map(p=>p.u.toFixed(4)+','+p.v.toFixed(4)+(p.seg?'s':'')+(p.box?p.box.join(','):'')).join(';');
+  if (S.compCache && S.compCache.key===key) return S.compCache.map;
+  let map;
+  if (!S.picks.length) map = autoComponents();
+  else {
+    map = new Int32Array(S.depth.w*S.depth.h).fill(-1); let area=0;
+    S.picks.forEach((p,i)=>{ area += growFrom(p, i, map); });
+    // picks that grew to almost nothing leave the photo with no subject; fall back to the nearest things
+    if (area < map.length*0.003) map = autoComponents();
+  }
+  S.compCache = {key, map};
   return map;
 }
 
@@ -739,13 +787,28 @@ async function visionFileset(){
   await loadScript('mp/vision_bundle.js');
   return visionFiles = await Vision.FilesetResolver.forVisionTasks(new URL('mp/wasm', location.href).href);
 }
+// The finder and the outline model share one download (about 23 MB), shown with real progress.
+let visionBuffers = null;
+async function fetchVisionModels(){
+  if (visionBuffers) return visionBuffers;
+  const files = [['mp/wasm/vision_wasm_internal.wasm', 11756954], ['models/efficientdet_lite0.tflite', 4602795], ['models/magic_touch.tflite', 6227884]];
+  const total = files.reduce((s,f)=>s+f[1],0); let got = 0; const out = [];
+  for (const [url] of files){
+    const rd = (await cachedFetch(url)).body.getReader(), chunks=[]; let n=0;
+    for(;;){ const {done,value}=await rd.read(); if (done) break; chunks.push(value); n+=value.length; got+=value.length;
+      busy(`Getting the finder, first time only: ${(got/1e6).toFixed(0)} of ${(total/1e6).toFixed(0)} MB`, got/total); }
+    const buf=new Uint8Array(n); let o=0; for (const c of chunks){ buf.set(c,o); o+=c.length; } out.push(buf);
+  }
+  return visionBuffers = {det:out[1], seg:out[2]};
+}
 async function loadSegmenter(){
   if (segmenter || segFailed) return segmenter;
   try {
-    busy('Getting the outline finder, first time only', null); await tick();
+    const bufs = await fetchVisionModels();
+    busy('Starting the outline finder', null); await tick();
     const fileset = await visionFileset();
     segmenter = await Vision.InteractiveSegmenterLegacy.createFromOptions(fileset, {
-      baseOptions:{modelAssetPath:new URL('models/magic_touch.tflite', location.href).href, delegate:'CPU'},
+      baseOptions:{modelAssetBuffer:bufs.seg, delegate:'CPU'},
       outputCategoryMask:true, outputConfidenceMasks:false});
   } catch(err){ console.error(err); segFailed = true; segmenter = null; }
   busy(null);
@@ -758,7 +821,9 @@ async function outlineFor(u, v, stroke){
     const res = seg.segment(S.photoCanvas, stroke ? {scribble:stroke} : {keypoint:{x:u, y:v}});
     const m = res.categoryMask, mw = m.width, mh = m.height, a = m.getAsUint8Array();
     // resample to the depth grid; the tapped pixel tells us which value means "selected"
-    const on = a[Math.min(mh-1,(v*mh)|0)*mw + Math.min(mw-1,(u*mw)|0)];
+    const at = (x,y) => a[Math.min(mh-1,(y*mh)|0)*mw + Math.min(mw-1,(x*mw)|0)];
+    let on = at(u,v);
+    if (stroke){ const votes={}; for (const p of stroke){ const k=at(p.x,p.y); votes[k]=(votes[k]||0)+1; } on = +Object.keys(votes).sort((p,q)=>votes[q]-votes[p])[0]; }
     const D=S.depth, out=new Uint8Array(D.w*D.h); let count=0;
     for (let y=0;y<D.h;y++) for (let x=0;x<D.w;x++){ const s=a[Math.min(mh-1,((y+.5)/D.h*mh)|0)*mw + Math.min(mw-1,((x+.5)/D.w*mw)|0)]; if (s===on){ out[y*D.w+x]=1; count++; } }
     res.close(); busy(null);
@@ -776,10 +841,11 @@ const SKIP = new Set(['dining table','chair','bench','couch','bed','potted plant
 async function loadDetector(){
   if (detector || detFailed) return detector;
   try {
-    busy('Getting the finder, first time only', null); await tick();
+    const bufs = await fetchVisionModels();
+    busy('Starting the finder', null); await tick();
     const fileset = await visionFileset();
     detector = await Vision.ObjectDetector.createFromOptions(fileset, {
-      baseOptions:{modelAssetPath:new URL('models/efficientdet_lite0.tflite', location.href).href, delegate:'CPU'},
+      baseOptions:{modelAssetBuffer:bufs.det, delegate:'CPU'},
       scoreThreshold:0.35, maxResults:12, runningMode:'IMAGE'});
   } catch(err){ console.error(err); detFailed = true; detector = null; }
   busy(null);
@@ -808,7 +874,10 @@ async function findThings(){
     const [x0,y0,x1,y1] = f.box, cx=(x0+x1)/2, pad=0.04;
     const stroke = [0.25,0.4,0.55,0.7].map(t=>({x:cx, y:y0+(y1-y0)*t}));
     const seg = await outlineFor(cx, (y0+y1)/2, stroke);
-    picks.push({u:cx, v:y0+(y1-y0)*0.4, seg, name:f.name,
+    let su=cx, sv=y0+(y1-y0)*0.4, best=-1; const D=S.depth;
+    for (let k=0;k<200;k++){ const uu=x0+(x1-x0)*(0.3+0.4*hash2(k,1,5)), vv=y0+(y1-y0)*(0.2+0.5*hash2(k,2,5));
+      const dd=D.d[Math.min(D.h-1,(vv*D.h)|0)*D.w+Math.min(D.w-1,(uu*D.w)|0)]; if (dd>best){ best=dd; su=uu; sv=vv; } }
+    picks.push({u:su, v:sv, seg, name:f.name,
       box:[Math.max(0,x0-pad),Math.max(0,y0-pad),Math.min(1,x1+pad),Math.min(1,y1+pad)]});
   }
   busy(null);
@@ -872,7 +941,9 @@ function buildCloud(cfg){
       if (hash2(cell,7,11) < drop) return;
     }
     // range noise grows with distance, along the beam
-    const zz = z + gauss(noise)*(0.002 + 0.0035*z)*(1 + 4*inFace);
+    // hashed per cell, so the dots stay put between rebuilds
+    const gn = Math.sqrt(-2*Math.log(hash2(cell,41,7)+1e-9))*Math.cos(6.283185*hash2(cell,43,9));
+    const zz = z + gn*(0.002 + 0.0035*z)*(1 + 4*inFace);
     const p = unproject(u,v,zz);
     push(p[0],p[1],p[2],r,g,b,kind,rnd,lum,inc,c);
     if (kind===0){ const ci2=cinfo[c]; ci2.n++; ci2.sx+=p[0]; ci2.sz+=p[2];
@@ -964,7 +1035,8 @@ function floorPlane3D(live){
     const err = live.reduce((s,c)=>s+Math.abs(pl.a*c.foot[0]+pl.c*c.foot[2]+pl.b-c.minY),0)/live.length;
     if (err < bestErr && err < 0.35*h){ bestErr=err; best=pl; }
   }
-  return best || {a:0, c:0, b:lowest};
+  // level in the world, which is tilted in the camera's frame when the photo was straightened
+  return best || {a:-Math.tan(S.roll), c:0, b:lowest};
 }
 function lsqFloor(rows){
   // least squares for y = a x + c z + b
@@ -1000,15 +1072,17 @@ function build(){
     S.autoLight = false; const ls=[];
     for (let i=0;i<R.n;i+=7) if (R.out[i*10+6]===0) ls.push(R.out[i*10+8]);
     ls.sort((a,b)=>a-b); const med = ls.length ? ls[ls.length>>1] : 0.5;
-    P.light = med < 0.16 ? 2 : med < 0.26 ? 1 : 0;
-    if (P.light) banner(P.light===2 ? 'The subject was in shadow, so its light is evened out. Change it under Adjust, Light.' : 'The subject was dark, so its light is lifted. Change it under Adjust, Light.');
+    P.light = S.lightAuto = med < 0.16 ? 2 : med < 0.26 ? 1 : 0;
+    if (P.light){ const cur=$('#notice'); notice((cur.hidden ? '' : cur.textContent+' ') + (P.light===2 ? 'The subject was in shadow, so its light is evened out (Adjust, Light).' : 'The subject was dark, so its light is lifted (Adjust, Light).')); }
     if (S.tab==='adjust') renderTray();
   }
   if (R.live.length){ const all=R.live.reduce((a,c)=>[a[0]+c.sx, a[1]+(c.minY+c.maxY)/2*c.n, a[2]+c.sz, a[3]+c.n],[0,0,0,0]);
     S.target=[all[0]/all[3], all[1]/all[3], all[2]/all[3]]; }
   else S.target=[0,0,-zOf(0.5)];
-  S.refDist = Math.abs(S.target[2]) || 2;
+  // zoom distance is fixed per photo, so changing a setting does not move the camera
+  if (!S.refFrozen){ S.refDist = Math.abs(S.target[2]) || 2; S.refFrozen = true; }
   if (!S.userMoved){ S.pivot = S.target.slice(); S.pan = [0,0,0]; }
+  if (S.reframe){ S.reframe = false; if (LOOKS[look].bgTint > 0 && !S.isSample && viewAtHome()) S.autoFrame = true; }
   const ex = extents(R.out, R.n); S.rng=ex.rng; S.yr=ex.yr;
   uploadCloud(R.out, R.n);
   if (S.autoFrame){ S.autoFrame = false; setTimeout(frameSubject, 0); }
@@ -1049,7 +1123,7 @@ void main(){
   if(uLight>0. && kind<1.5){
     // squeeze the brightness range toward a mid grey, keeping each dot's own hue and some texture
     float gl=max(g,1e-4), ng=.16*pow(gl/.16, 1.-.78*uLight);
-    c = mix(vec3(ng), c/gl*ng, smoothstep(.0008,.012,g)); g=ng; lumL=ng;
+    c = mix(vec3(ng), min(c/gl, vec3(3.))*ng, smoothstep(.0008,.012,g)); g=ng; lumL=ng;
   }
   if(uMode==0) c = mix(vec3(g), c, uSat);
   else if(uMode==1) c = lin(turbo(1.-r)) * (.3+.9*lumL);
@@ -1155,7 +1229,8 @@ function viewMatrix(yaw, pitch, zoom, pivot, pan){
   // yaw = pitch = 0, zoom = 1 and no pan is exactly the photo's own viewpoint. Turning happens about
   // the pivot; pan slides the camera in its own plane (and along its axis when the pivot is re-centred).
   const t = pivot || S.target, pn = pan || [0,0,0], back = (zoom-1)*S.refDist;
-  const R = M4.mul(M4.rz(S.roll), M4.mul(M4.rx(pitch*Math.PI/180), M4.ry(yaw*Math.PI/180)));
+  // straightening first, then the turn, so the view orbits about the true vertical
+  const R = M4.mul(M4.rx(pitch*Math.PI/180), M4.mul(M4.ry(yaw*Math.PI/180), M4.rz(S.roll)));
   return M4.mul(M4.tr(-pn[0],-pn[1],-back-pn[2]), M4.mul(M4.tr(t[0],t[1],t[2]), M4.mul(R, M4.tr(-t[0],-t[1],-t[2]))));
 }
 function viewTan(aspect){ const pa = S.photo ? S.photo.w/S.photo.h : 1; return aspect < pa ? S.tanV*pa/aspect : S.tanV; }
@@ -1268,6 +1343,7 @@ function boxBlur(src, w, h, ch, x0, y0, x1, y1, r, passes){
 const ANON = [{blur:.25, flat:0,   depth:.3}, {blur:.45, flat:.75, depth:.55}, {blur:.6, flat:1, depth:.9}];
 function applyAnon(){
   const P0=S.photoSrc, D0=S.depthSrc; if (!P0 || !D0) return;
+  S.depthVer++;
   if (!S.anon || !S.faces.length){ S.photo=P0; S.depth=D0; S.faceMask=null; S.dirtyBuild=true; return; }
   const L = ANON[S.anonLevel];
   const pd = new Float32Array(P0.data), dd = Float32Array.from(D0.d), mask = new Uint8Array(D0.w*D0.h);
@@ -1444,22 +1520,24 @@ const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&
 
 // ---------------------------------------------------------------- undo
 let undoArmed = true;
-function snapshot(){ return {P:{...P}, look, picks:S.picks.map(p=>({...p})), band:S.band, shape:S.shape}; }
+function snapshot(){ return {P:{...P}, look, picks:S.picks.map(p=>({...p})), band:S.band, shape:S.shape, level:S.level}; }
 function pushUndo(){ if (!undoArmed) return; S.undo.push(snapshot()); if (S.undo.length>40) S.undo.shift(); undoArmed=false; }
 function commit(){ undoArmed = true; persist(); renderTray(); }
 function undo(){
   const s = S.undo.pop(); if (!s) return;
   Object.assign(P, s.P); look=s.look; S.picks=s.picks; S.band=s.band;
   if (s.shape!==S.shape){ S.shape=s.shape; layout(); }
+  if (s.level!==S.level){ S.level=s.level; S.roll = S.level ? S.rollAuto : 0; }
   S.dirtyBuild=true; undoArmed=true; persist(); renderTray(); banner(modeText());
 }
-function persist(){ store('state', {P, look, shape:S.shape}); }
+function persist(){ store('state', {P, look, shape:S.shape, level:S.level}); }
 function isCustom(){ const L=LOOKS[look]; return LOOK_KEYS.some(k=>typeof L[k]==='number' ? Math.abs(L[k]-P[k])>0.02 : L[k]!==P[k]); }
 
 function applyLook(name, keepView){
   pushUndo(); look=name; const L=LOOKS[name];
   LOOK_KEYS.forEach(k=>{ P[k]=L[k]; });
-  if (!keepView){ S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pan=[0,0,0]; S.userMoved=false; }
+  if (keepView) P.light = S.lightAuto;          // Reset look also returns Light to what the photo needed
+  if (!keepView){ S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pan=[0,0,0]; S.userMoved=false; S.home=null; S.reframe = L.bgTint>0 && !S.isSample && !S.scan; }
   S.dirtyBuild=true; commit(); viewButton();
 }
 
@@ -1473,13 +1551,13 @@ function setTab(t){
   requestAnimationFrame(layout);
   if (t) store('tab', t);
 }
-document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click', ()=>setTab(b.dataset.tab)));
+document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click', ()=>{ notice(''); setTab(b.dataset.tab); }));
+$('#tray').addEventListener('click', ()=>notice(''), true);
 
 function modeText(){
   if (S.placing==='face') return 'Tap a face to cover it.';
   if (S.placing==='label') return 'Tap a person or thing to name it.';
-  if (S.tab==='subject') return S.picks.length ? 'Tap more things to add them. Tap a ring to remove it.' : 'Tap what matters in the picture.';
-  if (S.panMode) return 'Drag to slide the view. Double tap a spot to centre on it.';
+  if (S.tab==='subject') return S.picks.length ? 'Tap more things to add them. Tap a ring to remove one.' : 'Tap Find, or tap what matters in the picture.';
   return '';
 }
 
@@ -1497,16 +1575,17 @@ function renderTray(){
     paintThumbs();
   }
   else if (S.tab==='adjust'){
+    if (S.scan && (S.ctrl==='depth3d' || S.ctrl==='light')) S.ctrl='dots';
     const c = CTRL[S.ctrl];
     let body;
     if (c.chips){
       body = `<div class="scroller" style="margin-top:12px">${c.chips.map(([v,n])=>`<button class="chip ${LOOKS[look].colour===v?'def':''}" data-colour="${v}" aria-pressed="${P.colour===v}">${n}</button>`).join('')}</div>`;
     } else {
-      const near = Math.round(P[c.key]), def = Math.round(LOOKS[look][c.key]);
+      const def = c.key==='light' ? S.lightAuto : Math.round(LOOKS[look][c.key]);
       body = `<div class="stepper"><input type="range" id="ctl" min="0" max="${c.stops.length-1}" step="0.05" value="${P[c.key]}" aria-label="${c.name}">
-        <div class="stops">${c.stops.map(([n],i)=>`<button data-stop="${i}" aria-current="${Math.abs(P[c.key]-i)<0.15}" class="${i===def?'def':''}">${n}${i===def?' ·':''}</button>`).join('')}</div></div>`;
+        <div class="stops">${c.stops.map(([n],i)=>`<button data-stop="${i}" aria-current="${Math.abs(P[c.key]-i)<0.15}" class="${i===def?'def':''}">${n}${i===def?(c.key==='light'?' (auto)':' ·'):''}</button>`).join('')}</div></div>`;
     }
-    tr.innerHTML = `<div class="scroller">${CONTROLS.map(k=>`<button class="chip" data-ctrl="${k.key}" aria-pressed="${k.key===S.ctrl}">${k.name}</button>`).join('')}</div>
+    tr.innerHTML = `<div class="scroller">${CONTROLS.filter(k=>!(S.scan && (k.key==='depth3d'||k.key==='light'))).map(k=>`<button class="chip" data-ctrl="${k.key}" aria-pressed="${k.key===S.ctrl}">${k.name}</button>`).join('')}</div>
       ${body}<p class="hint">${sayBtn(c.hint)}<span>${c.hint}</span></p>
       <div class="sect row">${undoBtn}</div>`;
     tr.querySelectorAll('[data-ctrl]').forEach(b=>b.addEventListener('click',()=>{ S.ctrl=b.dataset.ctrl; renderTray(); }));
@@ -1522,26 +1601,28 @@ function renderTray(){
     tr.innerHTML = `<p class="hint" style="margin:0">${sayBtn('A scan keeps every point it measured, so there is no subject to pick. Use Backdrop under Adjust to thin out its floor.')}<span>A scan keeps every point it measured, so there is no subject to pick. Use Backdrop under Adjust to thin out its floor.</span></p>`;
   }
   else if (S.tab==='subject'){
-    tr.innerHTML = `<p class="hint" style="margin:0 0 10px">${sayBtn('Tap the thing that matters in the picture. It becomes the subject, even if something else is nearer. Tap more things to add them.')}<span>Tap the thing that matters. It becomes the subject, even if something else is nearer.</span></p>
+    const outlined = S.sharp || S.picks.some(p=>p.seg);
+    tr.innerHTML = `<p class="hint" style="margin:0 0 10px">${sayBtn('Tap Find to look for people and things, or tap the thing that matters in the picture. It becomes the subject, even if something else is nearer.')}<span>Tap Find, or tap the thing that matters. It becomes the subject even if something else is nearer.</span></p>
       <div class="row" style="margin-bottom:10px"><button class="btn primary" id="findThings">Find people and things</button></div>
+      ${S.picks.length ? `<div class="scroller" style="margin-bottom:8px">${S.picks.map((p,i)=>`<button class="chip" data-unpick="${i}" aria-label="Remove ${esc(pickName(p,i))}">${esc(pickName(p,i))} &#x2715;</button>`).join('')}</div>` : ''}
       <div class="scroller"><button class="chip" id="autoSub" aria-pressed="${!S.picks.length}">Nearest things</button>
       ${['Tighter','Normal','Looser'].map((n,i)=>`<button class="chip" data-band="${i}" aria-pressed="${S.band===i}">${n}</button>`).join('')}
-      <button class="chip" id="sharp" aria-pressed="${!!S.sharp}">Sharper outline</button>${undoBtn}</div>
-      <p class="hint">${S.sharp?'Uses an outline finder (18 MB, first time only) for cleaner edges.':'Tighter keeps only what sits at the same depth as your tap. Looser takes in more.'}</p>`;
-    $('#autoSub').addEventListener('click',()=>{ pushUndo(); S.picks=[]; S.dirtyBuild=true; commit(); banner(modeText()); });
+      <button class="chip" id="sharp" aria-pressed="${outlined}">Sharper outline</button>${undoBtn}</div>
+      <p class="hint">${outlined?'Outlines come from an outline finder (part of the 23 MB finder download).':'Tighter keeps only what sits at the same depth as your tap. Looser takes in more.'}</p>`;
+    $('#autoSub').addEventListener('click',()=>{ pushUndo(); S.picks=[]; S.dirtyBuild=true; S.reframe=true; commit(); banner(modeText()); });
+    tr.querySelectorAll('[data-unpick]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); S.picks.splice(+b.dataset.unpick,1); S.dirtyBuild=true; S.reframe=true; commit(); banner(modeText()); }));
     $('#findThings').addEventListener('click', async ()=>{
-      const picks = await findThings();
-      if (picks===null){ banner('The finder could not start here. Tap what matters instead.'); return; }
-      if (!picks.length){ banner('Nothing found. Tap what matters instead.'); return; }
-      pushUndo(); S.picks = picks; S.dirtyBuild = true; commit();
-      const people = picks.filter(p=>p.name==='person').length, other = picks.length-people;
-      const parts = []; if (people) parts.push(people+' '+(people===1?'person':'people')); if (other) parts.push(other+' '+(other===1?'thing':'things'));
-      banner('Found '+parts.join(' and ')+'. Tap a ring to remove one.');
+      const g=S.gen, picks = await findThings(); if (g!==S.gen) return;
+      if (picks===null){ notice('The finder could not start here. Tap what matters instead.'); return; }
+      if (!picks.length){ notice('Nothing found. Tap what matters instead.'); return; }
+      pushUndo(); S.picks = picks; S.dirtyBuild = true; S.reframe=true; commit();
+      notice('Found '+describePicks(picks)+'.');
     });
     tr.querySelectorAll('[data-band]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); S.band=+b.dataset.band; S.dirtyBuild=true; commit(); }));
-    $('#sharp').addEventListener('click', async ()=>{ S.sharp=!S.sharp; renderTray();
-      if (S.sharp && S.picks.length){ for (const p of S.picks) if (!p.seg) p.seg = await outlineFor(p.u,p.v); S.dirtyBuild=true; }
-      if (S.sharp && segFailed){ S.sharp=false; banner('The outline finder could not start here. Depth alone is being used.'); renderTray(); } });
+    $('#sharp').addEventListener('click', async ()=>{ const g=S.gen; S.sharp=!outlined; renderTray();
+      if (S.sharp && S.picks.length){ for (const p of S.picks) if (!p.seg){ const m = await outlineFor(p.u,p.v); if (g!==S.gen) return; p.seg = m; } S.dirtyBuild=true; }
+      if (!S.sharp){ S.picks.forEach(p=>{ delete p.seg; }); S.dirtyBuild=true; renderTray(); }
+      if (S.sharp && segFailed){ S.sharp=false; notice('The outline finder could not start here. Depth alone is being used.'); renderTray(); } });
   }
   else if (S.tab==='move'){
     const mv = S.move||'push', len = S.moveLen||6;
@@ -1573,7 +1654,7 @@ function renderTray(){
     S.labels.forEach((L,i)=>{ $('#label-'+i).addEventListener('input',e=>{ L.text=e.target.value; S.dirtyDraw=true; }); });
     tr.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{ S.labels.splice(+b.dataset.del,1); renderTray(); S.dirtyDraw=true; }));
   }
-  tr.querySelectorAll('.scroller [aria-pressed="true"]').forEach(b=>{ const sc=b.parentElement; sc.scrollLeft = b.offsetLeft - sc.clientWidth/2 + b.offsetWidth/2; });
+  if (S.tab==='adjust') tr.querySelectorAll('.scroller [aria-pressed="true"]').forEach(b=>{ const sc=b.parentElement; sc.scrollLeft = b.offsetLeft - sc.clientWidth/2 + b.offsetWidth/2; });
   const u=$('#undoBtn'); if (u) u.addEventListener('click', undo);
   tr.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say)));
 }
@@ -1643,7 +1724,14 @@ function renderPins(){
   if (S.tab!=='subject' || !S.depth || !S.P) return;
   const ox=parseFloat(cv.style.left), oy=parseFloat(cv.style.top);
   S.picks.forEach(p=>{ const s=project(unproject(p.u,p.v,zOf(depthAt(p.u,p.v))), S.cssW, S.cssH); if (!s) return;
-    const d=document.createElement('div'); d.className='pin'; d.style.left=(ox+s[0])+'px'; d.style.top=(oy+s[1])+'px'; box.appendChild(d); p.sx=s[0]; p.sy=s[1]; });
+    const d=document.createElement('div'); d.className='pin'; d.style.left=(ox+s[0])+'px'; d.style.top=(oy+s[1])+'px';
+    const i=S.picks.indexOf(p); d.innerHTML=`<b>${esc(pickName(p,i))}</b>`; box.appendChild(d); p.sx=s[0]; p.sy=s[1]; });
+}
+function pickName(p, i){ const n = p.name ? p.name.charAt(0).toUpperCase()+p.name.slice(1) : 'Tap '+(i+1); return n; }
+function describePicks(picks){
+  const people = picks.filter(p=>p.name==='person').length, other = picks.length-people, parts=[];
+  if (people) parts.push(people+' '+(people===1?'person':'people')); if (other) parts.push(other+' '+(other===1?'thing':'things'));
+  return parts.join(' and ');
 }
 
 // What was tapped, found from the photo's own depth rather than from the dots on screen: in the Void
@@ -1667,16 +1755,16 @@ async function onTap(cx, cy){
   if (S.tab==='subject' && S.scan) return;
   if (S.tab==='subject'){
     const hit = S.picks.findIndex(p=>p.sx!=null && Math.hypot(p.sx-cx,p.sy-cy)<22);
-    pushUndo();
+    const pushed = undoArmed; pushUndo(); const g = S.gen;
     if (hit>=0){ S.picks.splice(hit,1); }
     else {
       // tapping in photo view maps straight to the photo; otherwise use the nearest point
-      const hitP=pickPoint(cx,cy); if (!hitP){ undoArmed=true; S.undo.pop(); return; }
+      const hitP=pickPoint(cx,cy); if (!hitP){ if (pushed) S.undo.pop(); undoArmed=true; return; }
       const u=hitP.u, v=hitP.v;
-      const pick={u,v}; if (S.sharp) pick.seg = await outlineFor(u,v);
-      S.picks.push(pick); if (S.picks.length>4) S.picks.shift();
+      const pick={u,v}; if (S.sharp){ pick.seg = await outlineFor(u,v); if (g!==S.gen) return; }
+      S.picks.push(pick); if (S.picks.length>5){ S.picks.shift(); notice('Up to five at once, so the first one was let go.'); }
     }
-    S.dirtyBuild=true; commit(); banner(modeText()); return;
+    S.dirtyBuild=true; S.reframe=true; commit(); banner(modeText()); return;
   }
   if (S.placing==='face'){ const p=pickPoint(cx,cy); if (!p) return; addFaceAt(p.u, p.v, p.comp); invalidateCompare(); S.placing=false; setTab('people'); return; }
   if (S.placing==='label'){ const p=pickPoint(cx,cy); if (!p) return;
@@ -1690,7 +1778,7 @@ async function onTap(cx, cy){
 
 // ---------------------------------------------------------------- gestures
 // ---------------------------------------------------------------- panning and the centre of turning
-function rotOnly(){ return M4.mul(M4.rz(S.roll), M4.mul(M4.rx(S.pitch*Math.PI/180), M4.ry(S.yaw*Math.PI/180))); }
+function rotOnly(){ return M4.mul(M4.rx(S.pitch*Math.PI/180), M4.mul(M4.ry(S.yaw*Math.PI/180), M4.rz(S.roll))); }
 // Move the pivot to t without changing what is on screen, by folding the difference into the pan.
 function setPivotKeepingView(t){
   const V = viewMatrix(S.yaw,S.pitch,S.zoom,S.pivot,S.pan), T=[V[12],V[13],V[14]], Rt = M4.xf(rotOnly(), t), back=(S.zoom-1)*S.refDist;
@@ -1699,7 +1787,7 @@ function setPivotKeepingView(t){
 // After a slide, turn about whatever is now in the middle of the screen, at the old pivot's depth.
 function recentrePivot(){
   const V = viewMatrix(S.yaw,S.pitch,S.zoom,S.pivot,S.pan), pv = M4.xf(V, S.pivot), T=[V[12],V[13],V[14]];
-  const c = [0-T[0], 0-T[1], pv[2]-T[2]], Rinv = M4.mul(M4.ry(-S.yaw*Math.PI/180), M4.mul(M4.rx(-S.pitch*Math.PI/180), M4.rz(-S.roll)));
+  const c = [0-T[0], 0-T[1], pv[2]-T[2]], Rinv = M4.mul(M4.rz(-S.roll), M4.mul(M4.ry(-S.yaw*Math.PI/180), M4.rx(-S.pitch*Math.PI/180)));
   setPivotKeepingView(M4.xf(Rinv, c));
 }
 function panBy(dx, dy){
@@ -1724,7 +1812,7 @@ function centreOn(p){
 const ptrs=new Map(); let pinch0=0, zoom0=1, moved=0, lastTap=0, mid0=null, panDrag=false, didPan=false;
 const midOf = () => { const v=[...ptrs.values()]; return [(v[0].x+v[1].x)/2, (v[0].y+v[1].y)/2]; };
 cv.addEventListener('contextmenu', e=>e.preventDefault());
-cv.addEventListener('pointerdown', e=>{ try { cv.setPointerCapture(e.pointerId); } catch(err){} if (!ptrs.size) didPan=false; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); moved=0; glide++;
+cv.addEventListener('pointerdown', e=>{ notice(''); try { cv.setPointerCapture(e.pointerId); } catch(err){} if (!ptrs.size) didPan=false; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); moved=0; glide++;
   // pan with the Pan button on, a right or middle mouse button, or Shift held
   panDrag = S.panMode || e.button===1 || e.button===2 || e.shiftKey;
   if (ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch0=Math.hypot(a.x-b.x,a.y-b.y); zoom0=S.zoom; mid0=midOf(); } });
@@ -1749,7 +1837,9 @@ cv.addEventListener('keydown', e=>{ const k={ArrowLeft:[-4,0],ArrowRight:[4,0],A
   S.yaw+=k[0]; S.pitch=Math.max(-80,Math.min(80,S.pitch+k[1])); S.dirtyDraw=true; viewButton(); });
 
 // ---------------------------------------------------------------- picture buttons
-function viewButton(){ const L=LOOKS[look]; $('#photoView').hidden = !(S.userMoved||Math.abs(S.yaw-L.yaw)>0.5||Math.abs(S.pitch-L.pitch)>0.5||Math.abs(S.zoom-L.zoom)>0.01); }
+function homeView(){ const L=LOOKS[look]; return S.home || {yaw:L.yaw, pitch:L.pitch, zoom:L.zoom, pan:[0,0,0]}; }
+function viewAtHome(){ const h=homeView(); return Math.abs(S.yaw-h.yaw)<0.5 && Math.abs(S.pitch-h.pitch)<0.5 && Math.abs(S.zoom-h.zoom)<0.01 && S.pan.every((v,i)=>Math.abs(v-h.pan[i])<1e-3) && (S.home || !S.userMoved); }
+function viewButton(){ $('#photoView').hidden = viewAtHome(); }
 // Centre the subject and size it to fill about 60% of the frame height, like the reference shots.
 function frameSubject(){
   if (!S.count || !S.P || !S.comps.length) return;
@@ -1763,20 +1853,28 @@ function frameSubject(){
   S.pivot = S.target.slice(); S.pan=[0,0,0]; S.userMoved = true;
   draw(); const V=viewMatrix(S.yaw,S.pitch,S.zoom,S.pivot,S.pan), pv=M4.xf(V,[sx/n,sy/n,sz/n]);
   setPivotKeepingView([sx/n,sy/n,sz/n]); S.pan=[S.pan[0]+pv[0], S.pan[1]+pv[1], S.pan[2]];
+  S.home = {yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, pivot:S.pivot.slice(), pan:S.pan.slice()};
   S.dirtyDraw = true; viewButton();
 }
-function resetView(){ const L=LOOKS[look]; glide++; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pivot=S.target.slice(); S.pan=[0,0,0]; S.userMoved=false; S.spin=false; syncSpin(); S.dirtyDraw=true; viewButton(); }
+function resetView(){ const L=LOOKS[look], h=S.home; glide++; S.spin=false; syncSpin();
+  if (h){ S.yaw=h.yaw; S.pitch=h.pitch; S.zoom=h.zoom; S.pivot=h.pivot.slice(); S.pan=h.pan.slice(); S.userMoved=true; }
+  else { S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pivot=S.target.slice(); S.pan=[0,0,0]; S.userMoved=false; }
+  S.dirtyDraw=true; viewButton(); }
 function syncSpin(){ $('#spin').setAttribute('aria-pressed', S.spin); }
 $('#photoView').addEventListener('click', resetView);
 $('#spin').addEventListener('click', ()=>{ S.spin=!S.spin; syncSpin(); });
-$('#panBtn').addEventListener('click', ()=>{ S.panMode=!S.panMode; $('#panBtn').setAttribute('aria-pressed', S.panMode); banner(modeText()); });
+function syncPan(){ $('#panBtn').setAttribute('aria-pressed', S.panMode); $('#panPill').hidden = !S.panMode; }
+$('#panBtn').addEventListener('click', ()=>{ S.panMode=!S.panMode; syncPan(); });
+$('#panPill').addEventListener('click', ()=>{ S.panMode=false; syncPan(); });
 let compareURL=null;
 function invalidateCompare(){ if (compareURL){ URL.revokeObjectURL(compareURL); compareURL=null; } }
+let compareHeld=false;
 async function showCompare(on){
-  const im=$('#compare');
+  const im=$('#compare'); compareHeld=on;
   if (!on || !S.photo || !S.photo.data){ im.hidden=true; return; }
   if (!compareURL){ const c=document.createElement('canvas'); c.width=S.photo.w; c.height=S.photo.h; c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(S.photo.data),S.photo.w,S.photo.h),0,0);
     compareURL = URL.createObjectURL(await new Promise(r=>c.toBlob(r,'image/jpeg',0.9))); }
+  if (!compareHeld) return;
   const pa=S.photo.w/S.photo.h, fa=frameAspect(); let w=S.cssW, h=S.cssH;
   if (fa>pa) w=h*pa; else h=w/pa;
   Object.assign(im.style, {width:w+'px', height:h+'px', left:(parseFloat(cv.style.left)+(S.cssW-w)/2)+'px', top:(parseFloat(cv.style.top)+(S.cssH-h)/2)+'px'});
@@ -1797,12 +1895,16 @@ function menu(btn, id, items){
   m.hidden=false; btn.setAttribute('aria-expanded','true');
   return m;
 }
+$('#openBtn').addEventListener('click', e=>{ e.stopPropagation();
+  const m=menu($('#openBtn'), '#openMenu', [['photo','Photo','From your camera or gallery'],['scan','3D scan','A .ply file from Polycam, a lidar app or a splat trainer']]);
+  if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ m.hidden=true; $('#openBtn').setAttribute('aria-expanded','false');
+    (b.dataset.v==='scan' ? $('#fileScan') : $('#file')).click(); })); });
 $('#shapeBtn').addEventListener('click', e=>{ e.stopPropagation();
   const items=[['photo','Same as the photo','',S.shape==='photo'],['wide','Wide','16 by 9',S.shape==='wide'],['square','Square','',S.shape==='square'],['tall','Tall','9 by 16, for stories',S.shape==='tall']];
-  if (S.rollAuto) items.push(['level', S.level ? 'Straightened' : 'Straighten', S.level ? `Tilted ${(Math.abs(S.rollAuto)*180/Math.PI).toFixed(1)}°, levelled from the floor. Tap to undo.` : `Tilted ${(Math.abs(S.rollAuto)*180/Math.PI).toFixed(1)}°. Tap to level it.`, S.level]);
+  if (S.rollAuto) items.push(['level', S.level ? 'Straightened' : 'Straighten', S.level ? `Tilted ${(Math.abs(S.rollAuto)*180/Math.PI).toFixed(1)}°, levelled from its upright edges. Tap to undo.` : `Tilted ${(Math.abs(S.rollAuto)*180/Math.PI).toFixed(1)}°. Tap to level it.`, S.level]);
   const m=menu($('#shapeBtn'), '#shapeMenu', items);
   if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ m.hidden=true; $('#shapeBtn').setAttribute('aria-expanded','false');
-    if (b.dataset.v==='level'){ S.level=!S.level; S.roll = S.level ? S.rollAuto : 0; S.dirtyDraw=true; return; }
+    if (b.dataset.v==='level'){ pushUndo(); S.level=!S.level; S.roll = S.level ? S.rollAuto : 0; S.dirtyDraw=true; commit(); return; }
     pushUndo(); S.shape=b.dataset.v; commit(); layout(); })); });
 $('#saveBtn').addEventListener('click', e=>{ e.stopPropagation();
   const m=menu($('#saveBtn'), '#saveMenu', [['png','Picture','PNG, full size'],['video','Video','Opens camera moves'],['ply','3D points','PLY file for Blender, MeshLab']]);
@@ -1820,34 +1922,61 @@ $('#infoBtn').addEventListener('click', e=>{ e.stopPropagation(); const i=$('#in
 $('#info').addEventListener('click', e=>e.stopPropagation());
 
 // ---------------------------------------------------------------- opening a photo
+// Everything after a wait checks S.gen, so a result that arrives after another photo or scan was
+// opened is dropped instead of landing on the wrong picture.
 async function setPhoto(ph, D, credit){
-  S.scan=null; $('#compareBtn').hidden=false; S.roll=0; S.rollAuto=0;
+  const g = S.gen;
+  S.scan=null; document.body.classList.remove('scan'); $('#compareBtn').hidden=false; S.roll=0; S.rollAuto=0; S.pitchTan=0;
+  if (S.colourBeforeScan){ P.colour=S.colourBeforeScan; S.colourBeforeScan=null; }
   S.photoCanvas=ph.canvas; S.photoSrc=S.photo={w:ph.w,h:ph.h,data:ph.data}; S.tanV=ph.fov.tanV; S.fovSource=ph.fov.src; S.credit=credit||'';
+  S.isSample = /^Sample/.test(S.credit);
   invalidateCompare();
-  busy('Sharpening the depth edges', null); await tick();
+  S.undo=[]; undoArmed=true; S.placing=false; S.home=null; S.refFrozen=false; S.compCache=null; S.depthVer++;
+  S.panMode=false; syncPan(); banner(''); notice('');
+  busy('Sharpening the depth edges', null); await tick(); if (g!==S.gen) return;
   S.depthSrc=S.depth=refineDepth(D, ph.canvas);
-  S.planes=fitFloors(S.depth); S.plane=S.planes[0]||null; S.ground=groundMask(S.depth, S.planes); S.shiftAuto=estimateShift(S.plane);
-  SHIFT=curShift(); upFacingGround(S.depth, S.ground); S.autoCut=otsu(S.depth.d, S.ground);
-  // How far the camera was rolled (see rollFromVerticals).
-  { const ang = rollFromVerticals(ph.canvas); if (Math.abs(ang) > 0.4*Math.PI/180 && Math.abs(ang) < 12*Math.PI/180) S.rollAuto = ang; }
+  // tilt first: the pitch sets the horizon row that the depth range is measured on
+  const tv = tiltFromVerticals(ph.canvas, S.tanV);
+  if (tv && Math.abs(tv.roll) > 0.4*Math.PI/180 && Math.abs(tv.roll) < 12*Math.PI/180) S.rollAuto = tv.roll;
+  S.pitchTan = tv ? Math.max(-0.6, Math.min(0.6, tv.pitchTan)) : 0;
+  const vh = 0.5 + PITCH_SIGN*S.pitchTan/(2*S.tanV);
+  S.planes=fitFloors(S.depth); S.plane=S.planes[0]||null; S.shiftAuto=estimateShift(S.plane, vh);
+  // level surfaces vanish on one horizon, so floors 2 and 3 must share the main floor's
+  if (S.planes.length>1){ const t=S.shiftAuto, hz=p=>(-t-p.ga-p.al*0.5)/p.be, h0=hz(S.planes[0]); S.planes=S.planes.filter((p,k)=>k===0 || Math.abs(hz(p)-h0)<0.2); }
+  S.ground=groundMask(S.depth, S.planes);
+  // judge surfaces at the automatic depth range, whatever the 3D setting, and against the floor's own "up"
+  SHIFT=S.shiftAuto; let upv=null;
+  if (S.plane){ const rnd=seeded(8), rows=[]; for (let k=0;k<20000 && rows.length<1500;k++){ const i=(rnd()*S.ground.length)|0; if (S.ground[i]!==1) continue;
+      rows.push(unproject(((i%S.depth.w)+.5)/S.depth.w, (((i/S.depth.w)|0)+.5)/S.depth.h, zOf(S.depth.d[i]))); }
+    const fl = rows.length>200 ? lsqFloor(rows) : null; if (fl){ const l=Math.hypot(fl.a,1,fl.c); upv=[-fl.a/l, 1/l, -fl.c/l]; } }
+  upFacingGround(S.depth, S.ground, upv); S.autoCut=otsu(S.depth.d, S.ground); SHIFT=curShift();
   S.roll = S.level ? S.rollAuto : 0;
-  S.floorTouched=false; S.autoLight=true;
-  S.picks=[]; S.labels=[]; S.faces=[]; S.facesFound=false; S.faceMask=null; banner('');
-  if (S.anon){ await findFaces(); applyAnon(); }
+  S.floorTouched=false; S.autoLight=true; S.lightAuto=0;
+  S.picks=[]; S.labels=[]; S.faces=[]; S.facesFound=false; S.faceMask=null;
+  if (S.anon){ await findFaces(); if (g!==S.gen) return; applyAnon(); }
   // look for people and things first; depth alone decides only when nothing is found
-  if (S.autoFind){ const picks = await findThings(); if (picks && picks.length) S.picks = picks; }
-  const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pan=[0,0,0]; S.userMoved=false; viewButton();
-  S.autoFrame = L.bgTint > 0 && credit !== undefined && !/^Sample/.test(credit||'');   // the stage looks frame the subject
-  busy(null); layout(); S.dirtyBuild=true; renderTray(); queueThumbs();
+  let found = null;
+  if (S.autoFind){ found = await findThings(); if (g!==S.gen) return; if (found && found.length) S.picks = found; }
+  const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom; S.pan=[0,0,0]; S.userMoved=false;
+  S.autoFrame = L.bgTint > 0 && !S.isSample;       // the stage looks frame the subject
+  busy(null); layout(); S.dirtyBuild=true; renderTray(); queueThumbs(); viewButton();
+  const notes = [];
+  if (S.autoFind) notes.push(found && found.length ? 'Found '+describePicks(found)+'. Change it under Subject.' : found===null ? 'The finder could not start, so the nearest things are the subject.' : 'Nothing found, so the nearest things are the subject.');
+  if (S.roll) notes.push(`Straightened ${(Math.abs(S.roll)*180/Math.PI).toFixed(1)}°.`);
+  notice(notes.join(' '));
 }
 $('#file').addEventListener('change', async e=>{
   const f=e.target.files[0]; if (!f) return; e.target.value='';
-  if (/\.ply$/i.test(f.name)){ try { await openScan(f); } catch(err){ console.error(err); busy(null); banner('Could not read that scan: '+(err.message||err)); } return; }
+  const g = ++S.gen;
   try { busy('Opening the photo', null); await tick();
-    const ph = await decodePhoto(f);
-    const raw = await estimateDepth(ph.canvas);
+    const ph = await decodePhoto(f); if (g!==S.gen) return;
+    const raw = await estimateDepth(ph.canvas); if (g!==S.gen) return;
     await setPhoto(ph, normaliseDepth(raw), 'Your photo stayed on this device.');
-  } catch(err){ console.error(err); busy(null); banner('Could not read that photo: '+(err.message||err)); }
+  } catch(err){ console.error(err); busy(null); notice('Could not read that photo: '+(err.message||err)); }
+});
+$('#fileScan').addEventListener('change', async e=>{
+  const f=e.target.files[0]; if (!f) return; e.target.value='';
+  try { await openScan(f); } catch(err){ console.error(err); busy(null); notice('Could not read that scan: '+(err.message||err)); }
 });
 
 // ---------------------------------------------------------------- main loop
@@ -1868,6 +1997,7 @@ async function boot(){
   LOOK_KEYS.forEach(k=>{ P[k]=LOOKS[look][k]; }); P.light = 0;
   if (saved && saved.P) LOOK_KEYS.forEach(k=>{ if (saved.P[k]!=null && typeof saved.P[k]===typeof P[k]) P[k]=saved.P[k]; });
   S.shape = saved && saved.shape ? saved.shape : (MOBILE ? 'photo' : 'wide');
+  if (saved && typeof saved.level==='boolean') S.level = saved.level;
   const L=LOOKS[look]; S.yaw=L.yaw; S.pitch=L.pitch; S.zoom=L.zoom;
   setTab(recall('tab') || 'look');
   layout(); requestAnimationFrame(frame);
@@ -1882,16 +2012,15 @@ async function boot(){
     const px=dx.getImageData(0,0,d.width,d.height).data, raw=new Float32Array(d.width*d.height);
     for (let i=0;i<raw.length;i++) raw[i]=(px[i*4]*256+px[i*4+1])/65535;
     S.autoFind = false;             // the sample needs no finder, so opening the page downloads nothing extra
-    await setPhoto({canvas:c, w:c.width, h:c.height, data:x.getImageData(0,0,c.width,c.height).data, fov:{tanV:Math.tan(25*Math.PI/180), src:'museum photo, lens assumed'}},
+    try { await setPhoto({canvas:c, w:c.width, h:c.height, data:x.getImageData(0,0,c.width,c.height).data, fov:{tanV:Math.tan(25*Math.PI/180), src:'museum photo, lens assumed'}},
       normaliseDepth({w:d.width, h:d.height, d:raw}),
-      'Sample: Abraham Lincoln: The Man (Standing Lincoln), Augustus Saint-Gaudens, The Metropolitan Museum of Art, public domain (CC0).');
-    S.autoFind = true;
+      'Sample: Abraham Lincoln: The Man (Standing Lincoln), Augustus Saint-Gaudens, The Metropolitan Museum of Art, public domain (CC0).'); } finally { S.autoFind = true; }
     // a name over the sample's head, to show what names look like
     requestAnimationFrame(()=>{ const c0=S.comps.slice().sort((a,b)=>b.n-a.n)[0];
       if (c0){ const Lb={u:c0.topUV[0], v:c0.topUV[1], lift:(c0.maxY-c0.minY)*0.07, text:'Standing Lincoln'}; Lb.pos=labelWorld(Lb); S.labels=[Lb]; S.dirtyDraw=true; if (S.tab==='people') renderTray(); } });
   } catch(err){ console.error(err); banner('Tap Open to choose a photo.'); }
 }
-window.__fr = {S, P, LOOKS, build, setTab, queueThumbs, draw, findThings};   // for testing from the console
+window.__fr = {S, P, LOOKS, build, setTab, queueThumbs, draw, findThings, tiltFromVerticals};   // for testing from the console
 boot();
 
 })();
