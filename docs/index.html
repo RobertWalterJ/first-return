@@ -1385,6 +1385,7 @@ if(hiddenPart>.5){ if(uOrbit<.02){ gl_Position=vec4(2.,2.,2.,1.); } c *= uOrbit;
 if(uFx==1 || uFx==4){ float edge=uFxT*1.15, e=1.-smoothstep(0.,.02+.025*uFxK,abs(r-edge));
 if((uFx==1 && r>edge) || (uFx==4 && r<edge)) gl_Position=vec4(2.,2.,2.,1.);
 c = mix(c, lin(vec3(.55,1.,.9))*2.2*uExposure, e*min(.85,.7*uFxK)); }
+if(uFx==8){ float a0=mix(-.75,.75,uFxT), hl=exp(-pow((atan(P0.x,-P0.z)-a0)/.14,2.)); c *= mix(1., .6+2.*hl, min(1.,uFxK*1.3)); }
 if(fade < .004) gl_Position=vec4(2.,2.,2.,1.);
 c *= fade;
 if(uDof>0.){ float coc = 1. + uDof*abs(1./dist - 1./uFocusD)*uFocusD*9.; size *= coc; c /= coc*coc; round_ = 1.; }
@@ -1498,8 +1499,8 @@ gl.clearColor(0.004,0.005,0.006,0); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER
 const Lo = LOOKS[o.look], mix = Lo.mix||0, fx = o.fx||'none', splatLook = !!Lo.splat;
 const both = (mix>0 || fx==='resolve' || fx==='dissolve') && hasSplats();
 const L = splatLook && !mix ? LOOKS.void : Lo;
-const ptFx = {sweep:1, decay:2, glitch:3, resolve: both?4:1, build:5, dissolve: both?6:5, dust:7}[fx]||0;
-o.splatFx = {sweep:1, resolve:1, decay:2, glitch:3, build:5, dissolve:5, dust:7}[fx]||0; o.mix = mix;
+const ptFx = {sweep:1, decay:2, glitch:3, resolve: both?4:1, build:5, dissolve: both?6:5, dust:7, light:8}[fx]||0;
+o.splatFx = {sweep:1, resolve:1, decay:2, glitch:3, build:5, dissolve:5, dust:7, light:8}[fx]||0; o.mix = mix;
 const fxK = o.fxK!=null ? o.fxK : strength();
 const tv = M4.xf(V, S.target||[0,0,-2]); let focusD = Math.max(0.1, -tv[2]); o.dof = o.dof!=null ? o.dof : val('focus');
 if (fx==='focuspull'){ const e=(o.fxT||0), s=e*e*e*(e*(6*e-15)+10); focusD = focusD*(0.35+0.65*s); o.dof = Math.max(o.dof, 0.35+0.45*fxK); }
@@ -1588,6 +1589,10 @@ vec2 e1 = min(3.*sqrt(l1), 1024.)*d1, e2 = min(3.*sqrt(l2), 1024.)*vec2(d1.y,-d1
 gl_Position = vec4(clip.xy/clip.w + (aCorner.x*e1 + aCorner.y*e2)*2./uVp, 0., 1.);
 vPos = aCorner*3.;
 vec3 rgb = col.rgb*uExposure;
+if(uFx==8){ float a0=mix(-.75,.75,uFxT), hl=exp(-pow((atan(p.x,-p.z)-a0)/.16,2.));
+vec3 n = vec3(float((t1.w>>8)&255u), float((t1.w>>16)&255u), float(t1.w>>24))/127.5-1.; if(dot(n,-p)<0.) n=-n;
+vec3 L = normalize(vec3(sin(a0)*1.2, .45, .9)); float lit = .7+.5*max(0.,dot(normalize(n),L));
+rgb *= mix(1., lit*(.7+1.1*hl), min(1.,uFxK*1.2)); }
 if(uFocus > .5 && !subj) rgb *= .22;                          // Subject tab: everything else steps back, as it does for dots
 if(uFx==1){ float e = 1.-smoothstep(0., .02+.025*uFxK, abs(r-uFxT*1.15)); rgb = mix(rgb, vec3(.55,1.,.9), e*min(.8,.65*uFxK)); }   // the beam's edge
 if(uLin > .5) rgb = pow(max(rgb,0.), vec3(2.2));
@@ -1645,7 +1650,10 @@ const m20=(2*(x*z-w*y))*sx, m21=(2*(y*z+w*x))*sy, m22=(1-2*(x*x+y*y))*sz;
 const cxx=(m00*m00+m01*m01+m02*m02)*K, cxy=(m00*m10+m01*m11+m02*m12)*K, cxz=(m00*m20+m01*m21+m02*m22)*K;
 const cyy=(m10*m10+m11*m11+m12*m12)*K, cyz=(m10*m20+m11*m21+m12*m22)*K, czz=(m20*m20+m21*m21+m22*m22)*K;
 data[o+4] = (toHalf(cxx) | toHalf(cxy)<<16)>>>0; data[o+5] = (toHalf(cxz) | toHalf(cyy)<<16)>>>0; data[o+6] = (toHalf(cyz) | toHalf(czz)<<16)>>>0;
-data[o+7] = sp.flag[i];
+const ax = sx<=sy && sx<=sz ? 0 : sy<=sz ? 1 : 2;
+const cx0 = ax===0 ? [1-2*(y*y+z*z), 2*(x*y+w*z), 2*(x*z-w*y)] : ax===1 ? [2*(x*y-w*z), 1-2*(x*x+z*z), 2*(y*z+w*x)] : [2*(x*z+w*y), 2*(y*z-w*x), 1-2*(x*x+y*y)];
+const pk = v => Math.max(0, Math.min(255, Math.round((v+1)*127.5)));
+data[o+7] = (sp.flag[i] | pk(cx0[0])<<8 | pk(cx0[1])<<16 | pk(cx0[2])<<24)>>>0;
 }
 gl.bindTexture(gl.TEXTURE_2D, Sg.tex);
 gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32UI, 2048, rows, 0, gl.RGBA_INTEGER, gl.UNSIGNED_INT, data);
@@ -1841,6 +1849,7 @@ rise:  (t,k)=>({py:0.12*t*k, dp:10*t*k, dz:-0.1*t*k})           // the camera ri
 const MOVE_NAMES = [['push','Push in'],['pull','Pull out'],['slide','Slide'],['float','Float'],['drift','Drift'],['orbit','Orbit'],['rise','Rise']];
 const LOOPING = new Set(['float']);
 const ease = t => t*t*t*(t*(6*t-15)+10);
+const loopT = (move, t) => S.loop && !LOOPING.has(move) ? (t<0.5 ? 2*t : 2-2*t) : t;
 function poseAt(base, move, t){
 const tt = Math.min(1,Math.max(0,t)), m = MOVES[move](LOOPING.has(move) ? tt : ease(tt), strength()), R = S.refDist||2;
 return {yaw:base.yaw+(m.dy||0), pitch:Math.max(-80,Math.min(80,base.pitch+(m.dp||0))), zoom:Math.max(0.3, base.zoom*(1+(m.dz||0))),
@@ -1854,17 +1863,17 @@ if (!peek) document.body.classList.add('locked');
 banner(portion<1 ? 'Playing the start of the move' : 'Playing the move');
 S.fxNow = S.fx||'none';
 await new Promise(res=>{ const t0=performance.now(); const step=()=>{ const el=performance.now()-t0, t=Math.min(1,el/dur)*portion;
-Object.assign(S, poseAt(base, move, t)); S.fxT=t; S.fxTime=el/1000; draw(); renderLabels(); renderPins();
+const lt = loopT(move, t); Object.assign(S, poseAt(base, move, lt)); S.fxT=lt; S.fxTime=el/1000; draw(); renderLabels(); renderPins();
 $('#recfill').style.width=(Math.min(1,el/dur)*100)+'%'; if (el<dur && !S.stopReq) requestAnimationFrame(step); else res(); }; requestAnimationFrame(step); });
 S.recording=false; S.peeking=false; S.stopReq=false; S.fxNow='none'; $('#recbar').hidden=true; $('#stopBtn').hidden=true; document.body.classList.remove('locked'); Object.assign(S, base); S.dirtyDraw=true; banner(modeText());
 }
 $('#stopBtn').addEventListener('click', ()=>{ S.stopReq = true; });
 async function recordMove(move, secs){
 if (S.recording || !S.count) return;
-const base=viewBase(), fps=30, hold=Math.round(fps*(LOOPING.has(move)?0:0.4)), frames=Math.round(secs*fps)+2*hold;
+const base=viewBase(), fps=30, hold=Math.round(fps*(LOOPING.has(move)||S.loop?0:0.4)), frames=Math.round(secs*fps)+2*hold;
 const [W,H] = exportSize(MOBILE ? 1280 : 1920, 1920);
 const rc=document.createElement('canvas'); rc.width=W; rc.height=H; const rx=rc.getContext('2d');
-const frameAt = i => { const t=(i-hold)/(frames-2*hold-1); Object.assign(S, poseAt(base, move, t)); S.fxT=Math.min(1,Math.max(0,t)); S.fxTime=i/fps; draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
+const frameAt = i => { const t = S.loop||LOOPING.has(move) ? i/frames : (i-hold)/(frames-2*hold-1), lt=loopT(move, Math.min(1,Math.max(0,t))); Object.assign(S, poseAt(base, move, lt)); S.fxT=lt; S.fxTime=i/fps; draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
 S.recording=true; S.exporting=true; S.stopReq=false; S.fxNow=S.fx||'none'; S.spin=false; syncSpin(); $('#recbar').hidden=false; $('#stopBtn').hidden=false; document.body.classList.add('locked'); stayAwake(true);
 let blob=null, ext='mp4';
 try {
@@ -2005,7 +2014,7 @@ if (s.shape!==S.shape){ S.shape=s.shape; layout(); }
 if (s.level!==S.level){ S.level=s.level; S.roll = S.level ? S.rollAuto : 0; }
 S.dirtyBuild=true; undoArmed=true; persist(); renderTray(); banner(modeText());
 }
-function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine, move:S.move, moveLen:S.moveLen, fx:S.fx, strength:S.strength, exportLong:S.adv.exportLong}); queueSessionSave(); }
+function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine, move:S.move, moveLen:S.moveLen, fx:S.fx, strength:S.strength, loop:!!S.loop, exportLong:S.adv.exportLong}); queueSessionSave(); }
 function myLooks(){ const v=recall('myLooks'); return Array.isArray(v) ? v : []; }
 function saveMyLooks(list){ store('myLooks', list); }
 function activePreset(){ const m = S.activeMine && myLooks().find(x=>x.id===S.activeMine); return m ? {...LOOKS[m.base], ...m.values, name:m.name} : LOOKS[look]; }
@@ -2177,9 +2186,10 @@ tr.innerHTML = `<h3>Move</h3><div class="scroller">${MOVE_NAMES.map(([v,n])=>`<b
 <h3 style="margin-top:10px">Strength</h3>
 <div class="scroller">${STRENGTH.map(([v,n])=>`<button class="chip" data-strength="${v}" aria-pressed="${st===v}">${n}</button>`).join('')}</div>
 <p class="hint">${sayBtn(moveHint)}<span>${moveHint}</span></p>
-<div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button><button class="chip" id="lenChip" aria-label="Length ${len} seconds, tap to change">Length ${len} s</button></div>`;
+<div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button><button class="chip" id="lenChip" aria-label="Length ${len} seconds, tap to change">Length ${len} s</button><button class="chip" id="loopChip" aria-pressed="${!!S.loop}">Loop</button></div>`;
 const peek = async () => { if (S.peeking){ S.stopReq=true; await S.playP; } S.playP = previewMove(S.move||'push', S.moveLen||6, Math.min(1, 4/(S.moveLen||6)), true); };
 tr.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>{ S.move=b.dataset.move; persist(); renderTray(); peek(); }));
+$('#loopChip').addEventListener('click',()=>{ S.loop=!S.loop; persist(); renderTray(); });
 $('#lenChip').addEventListener('click',()=>{ const i=MOVE_LENGTHS.indexOf(S.moveLen||6); S.moveLen=MOVE_LENGTHS[(i+1)%MOVE_LENGTHS.length]; persist(); renderTray(); });
 tr.querySelectorAll('[data-strength]').forEach(b=>b.addEventListener('click',()=>{ S.strength=b.dataset.strength; persist(); renderTray(); peek(); }));
 tr.querySelectorAll('[data-fx]').forEach(b=>b.addEventListener('click',()=>{ S.fx=b.dataset.fx; persist(); renderTray(); if (S.fx!=='none') peek(); }));
@@ -2513,6 +2523,7 @@ const FX = [['none','None','Just the move.'],
 ['dissolve','Dissolve','The dots quietly give way to the real photo, a little at a time.'],
 ['dust','Dust','Everything drifts very slightly, like dust in still air.'],
 ['focuspull','Focus pull','Focus starts close to the camera and slowly settles on the subject.'],
+['light','Light pass','A soft light passes slowly across the scene, falling on the shapes as it goes.'],
 ['sweep','Sweep','A scanning beam moves outward and the picture appears behind it.'],
 ['resolve','Resolve','The beam moves outward and turns the dots into the real photo as it passes.'],
 ['decay','Decay','The picture comes apart: pieces let go one after another and drift away.'],
@@ -2637,6 +2648,7 @@ if (saved && saved.activeMine && myLooks().some(m=>m.id===saved.activeMine)) S.a
 if (saved && MOVES[saved.move]) S.move = saved.move;
 if (saved && MOVE_LENGTHS.includes(saved.moveLen)) S.moveLen = saved.moveLen;
 if (saved && STRENGTH.some(s=>s[0]===saved.strength)) S.strength = saved.strength;
+if (saved && typeof saved.loop==='boolean') S.loop = saved.loop;
 if (saved && FX.some(f=>f[0]===saved.fx)) S.fx = saved.fx;
 if (saved && PIC_SIZES.includes(saved.exportLong)) S.adv.exportLong = saved.exportLong;
 { const g = recall('group'); if (GROUPS.some(x=>x.id===g)) S.group = g; }

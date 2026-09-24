@@ -66,6 +66,7 @@ void main(){
   if(uFx==1 || uFx==4){ float edge=uFxT*1.15, e=1.-smoothstep(0.,.02+.025*uFxK,abs(r-edge));
     if((uFx==1 && r>edge) || (uFx==4 && r<edge)) gl_Position=vec4(2.,2.,2.,1.);
     c = mix(c, lin(vec3(.55,1.,.9))*2.2*uExposure, e*min(.85,.7*uFxK)); }
+  if(uFx==8){ float a0=mix(-.75,.75,uFxT), hl=exp(-pow((atan(P0.x,-P0.z)-a0)/.14,2.)); c *= mix(1., .6+2.*hl, min(1.,uFxK*1.3)); }
   if(fade < .004) gl_Position=vec4(2.,2.,2.,1.);
   c *= fade;
   // depth of field: the blur circle grows with distance from the focus plane, and its light spreads out
@@ -195,8 +196,8 @@ function renderView(W, H, o){
   const Lo = LOOKS[o.look], mix = Lo.mix||0, fx = o.fx||'none', splatLook = !!Lo.splat;
   const both = (mix>0 || fx==='resolve' || fx==='dissolve') && hasSplats();
   const L = splatLook && !mix ? LOOKS.void : Lo;
-  const ptFx = {sweep:1, decay:2, glitch:3, resolve: both?4:1, build:5, dissolve: both?6:5, dust:7}[fx]||0;
-  o.splatFx = {sweep:1, resolve:1, decay:2, glitch:3, build:5, dissolve:5, dust:7}[fx]||0; o.mix = mix;
+  const ptFx = {sweep:1, decay:2, glitch:3, resolve: both?4:1, build:5, dissolve: both?6:5, dust:7, light:8}[fx]||0;
+  o.splatFx = {sweep:1, resolve:1, decay:2, glitch:3, build:5, dissolve:5, dust:7, light:8}[fx]||0; o.mix = mix;
   const fxK = o.fxK!=null ? o.fxK : strength();
   // focus on the subject; Focus pull starts close to the camera and settles on it
   const tv = M4.xf(V, S.target||[0,0,-2]); let focusD = Math.max(0.1, -tv[2]); o.dof = o.dof!=null ? o.dof : val('focus');

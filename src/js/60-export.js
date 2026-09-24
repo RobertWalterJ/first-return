@@ -84,6 +84,8 @@ const MOVES = {
 const MOVE_NAMES = [['push','Push in'],['pull','Pull out'],['slide','Slide'],['float','Float'],['drift','Drift'],['orbit','Orbit'],['rise','Rise']];
 const LOOPING = new Set(['float']);
 const ease = t => t*t*t*(t*(6*t-15)+10);
+// Loop plays a move out and back (Float already ends where it began), so the clip repeats with no jump
+const loopT = (move, t) => S.loop && !LOOPING.has(move) ? (t<0.5 ? 2*t : 2-2*t) : t;
 function poseAt(base, move, t){
   const tt = Math.min(1,Math.max(0,t)), m = MOVES[move](LOOPING.has(move) ? tt : ease(tt), strength()), R = S.refDist||2;
   return {yaw:base.yaw+(m.dy||0), pitch:Math.max(-80,Math.min(80,base.pitch+(m.dp||0))), zoom:Math.max(0.3, base.zoom*(1+(m.dz||0))),
@@ -101,7 +103,7 @@ async function previewMove(move, secs, portion=1, peek=false){
   banner(portion<1 ? 'Playing the start of the move' : 'Playing the move');
   S.fxNow = S.fx||'none';
   await new Promise(res=>{ const t0=performance.now(); const step=()=>{ const el=performance.now()-t0, t=Math.min(1,el/dur)*portion;
-    Object.assign(S, poseAt(base, move, t)); S.fxT=t; S.fxTime=el/1000; draw(); renderLabels(); renderPins();
+    const lt = loopT(move, t); Object.assign(S, poseAt(base, move, lt)); S.fxT=lt; S.fxTime=el/1000; draw(); renderLabels(); renderPins();
     $('#recfill').style.width=(Math.min(1,el/dur)*100)+'%'; if (el<dur && !S.stopReq) requestAnimationFrame(step); else res(); }; requestAnimationFrame(step); });
   S.recording=false; S.peeking=false; S.stopReq=false; S.fxNow='none'; $('#recbar').hidden=true; $('#stopBtn').hidden=true; document.body.classList.remove('locked'); Object.assign(S, base); S.dirtyDraw=true; banner(modeText());
 }
@@ -111,10 +113,11 @@ $('#stopBtn').addEventListener('click', ()=>{ S.stopReq = true; });
 // slower export, never a jerky video. Older browsers fall back to recording the screen in real time.
 async function recordMove(move, secs){
   if (S.recording || !S.count) return;
-  const base=viewBase(), fps=30, hold=Math.round(fps*(LOOPING.has(move)?0:0.4)), frames=Math.round(secs*fps)+2*hold;
+  const base=viewBase(), fps=30, hold=Math.round(fps*(LOOPING.has(move)||S.loop?0:0.4)), frames=Math.round(secs*fps)+2*hold;
   const [W,H] = exportSize(MOBILE ? 1280 : 1920, 1920);
   const rc=document.createElement('canvas'); rc.width=W; rc.height=H; const rx=rc.getContext('2d');
-  const frameAt = i => { const t=(i-hold)/(frames-2*hold-1); Object.assign(S, poseAt(base, move, t)); S.fxT=Math.min(1,Math.max(0,t)); S.fxTime=i/fps; draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
+  // a loop's last frame stops one short of its first, so the repeat is seamless
+  const frameAt = i => { const t = S.loop||LOOPING.has(move) ? i/frames : (i-hold)/(frames-2*hold-1), lt=loopT(move, Math.min(1,Math.max(0,t))); Object.assign(S, poseAt(base, move, lt)); S.fxT=lt; S.fxTime=i/fps; draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
   S.recording=true; S.exporting=true; S.stopReq=false; S.fxNow=S.fx||'none'; S.spin=false; syncSpin(); $('#recbar').hidden=false; $('#stopBtn').hidden=false; document.body.classList.add('locked'); stayAwake(true);
   let blob=null, ext='mp4';
   try {

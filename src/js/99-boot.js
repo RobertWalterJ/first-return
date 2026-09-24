@@ -11,6 +11,7 @@ async function boot(){
   if (saved && MOVES[saved.move]) S.move = saved.move;
   if (saved && MOVE_LENGTHS.includes(saved.moveLen)) S.moveLen = saved.moveLen;
   if (saved && STRENGTH.some(s=>s[0]===saved.strength)) S.strength = saved.strength;
+  if (saved && typeof saved.loop==='boolean') S.loop = saved.loop;
   if (saved && FX.some(f=>f[0]===saved.fx)) S.fx = saved.fx;
   if (saved && PIC_SIZES.includes(saved.exportLong)) S.adv.exportLong = saved.exportLong;
   { const g = recall('group'); if (GROUPS.some(x=>x.id===g)) S.group = g; }

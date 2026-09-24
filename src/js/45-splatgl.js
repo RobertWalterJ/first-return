@@ -50,6 +50,10 @@ void main(){
   gl_Position = vec4(clip.xy/clip.w + (aCorner.x*e1 + aCorner.y*e2)*2./uVp, 0., 1.);
   vPos = aCorner*3.;
   vec3 rgb = col.rgb*uExposure;
+  if(uFx==8){ float a0=mix(-.75,.75,uFxT), hl=exp(-pow((atan(p.x,-p.z)-a0)/.16,2.));
+    vec3 n = vec3(float((t1.w>>8)&255u), float((t1.w>>16)&255u), float(t1.w>>24))/127.5-1.; if(dot(n,-p)<0.) n=-n;
+    vec3 L = normalize(vec3(sin(a0)*1.2, .45, .9)); float lit = .7+.5*max(0.,dot(normalize(n),L));
+    rgb *= mix(1., lit*(.7+1.1*hl), min(1.,uFxK*1.2)); }
   if(uFocus > .5 && !subj) rgb *= .22;                          // Subject tab: everything else steps back, as it does for dots
   if(uFx==1){ float e = 1.-smoothstep(0., .02+.025*uFxK, abs(r-uFxT*1.15)); rgb = mix(rgb, vec3(.55,1.,.9), e*min(.8,.65*uFxK)); }   // the beam's edge
   if(uLin > .5) rgb = pow(max(rgb,0.), vec3(2.2));
@@ -114,7 +118,11 @@ function uploadSplats(sp){
     const cxx=(m00*m00+m01*m01+m02*m02)*K, cxy=(m00*m10+m01*m11+m02*m12)*K, cxz=(m00*m20+m01*m21+m02*m22)*K;
     const cyy=(m10*m10+m11*m11+m12*m12)*K, cyz=(m10*m20+m11*m21+m12*m22)*K, czz=(m20*m20+m21*m21+m22*m22)*K;
     data[o+4] = (toHalf(cxx) | toHalf(cxy)<<16)>>>0; data[o+5] = (toHalf(cxz) | toHalf(cyy)<<16)>>>0; data[o+6] = (toHalf(cyz) | toHalf(czz)<<16)>>>0;
-    data[o+7] = sp.flag[i];
+    // the surface direction is the splat's thinnest axis, packed into the spare bytes after the flag
+    const ax = sx<=sy && sx<=sz ? 0 : sy<=sz ? 1 : 2;
+    const cx0 = ax===0 ? [1-2*(y*y+z*z), 2*(x*y+w*z), 2*(x*z-w*y)] : ax===1 ? [2*(x*y-w*z), 1-2*(x*x+z*z), 2*(y*z+w*x)] : [2*(x*z+w*y), 2*(y*z-w*x), 1-2*(x*x+y*y)];
+    const pk = v => Math.max(0, Math.min(255, Math.round((v+1)*127.5)));
+    data[o+7] = (sp.flag[i] | pk(cx0[0])<<8 | pk(cx0[1])<<16 | pk(cx0[2])<<24)>>>0;
   }
   gl.bindTexture(gl.TEXTURE_2D, Sg.tex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32UI, 2048, rows, 0, gl.RGBA_INTEGER, gl.UNSIGNED_INT, data);

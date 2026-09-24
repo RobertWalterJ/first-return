@@ -21,7 +21,7 @@ function undo(){
   if (s.level!==S.level){ S.level=s.level; S.roll = S.level ? S.rollAuto : 0; }
   S.dirtyBuild=true; undoArmed=true; persist(); renderTray(); banner(modeText());
 }
-function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine, move:S.move, moveLen:S.moveLen, fx:S.fx, strength:S.strength, exportLong:S.adv.exportLong}); queueSessionSave(); }
+function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine, move:S.move, moveLen:S.moveLen, fx:S.fx, strength:S.strength, loop:!!S.loop, exportLong:S.adv.exportLong}); queueSessionSave(); }
 // ---------------------------------------------------------------- my looks: save, apply, share
 function myLooks(){ const v=recall('myLooks'); return Array.isArray(v) ? v : []; }
 function saveMyLooks(list){ store('myLooks', list); }
@@ -200,11 +200,12 @@ function renderTray(){
       <h3 style="margin-top:10px">Strength</h3>
       <div class="scroller">${STRENGTH.map(([v,n])=>`<button class="chip" data-strength="${v}" aria-pressed="${st===v}">${n}</button>`).join('')}</div>
       <p class="hint">${sayBtn(moveHint)}<span>${moveHint}</span></p>
-      <div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button><button class="chip" id="lenChip" aria-label="Length ${len} seconds, tap to change">Length ${len} s</button></div>`;
+      <div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button><button class="chip" id="lenChip" aria-label="Length ${len} seconds, tap to change">Length ${len} s</button><button class="chip" id="loopChip" aria-pressed="${!!S.loop}">Loop</button></div>`;
     // a tapped chip plays the opening of the real move at its real speed
     // a new tap cuts off the look still playing, so trying options never means waiting
     const peek = async () => { if (S.peeking){ S.stopReq=true; await S.playP; } S.playP = previewMove(S.move||'push', S.moveLen||6, Math.min(1, 4/(S.moveLen||6)), true); };
     tr.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>{ S.move=b.dataset.move; persist(); renderTray(); peek(); }));
+    $('#loopChip').addEventListener('click',()=>{ S.loop=!S.loop; persist(); renderTray(); });
     $('#lenChip').addEventListener('click',()=>{ const i=MOVE_LENGTHS.indexOf(S.moveLen||6); S.moveLen=MOVE_LENGTHS[(i+1)%MOVE_LENGTHS.length]; persist(); renderTray(); });
     tr.querySelectorAll('[data-strength]').forEach(b=>b.addEventListener('click',()=>{ S.strength=b.dataset.strength; persist(); renderTray(); peek(); }));
     tr.querySelectorAll('[data-fx]').forEach(b=>b.addEventListener('click',()=>{ S.fx=b.dataset.fx; persist(); renderTray(); if (S.fx!=='none') peek(); }));
@@ -572,6 +573,7 @@ const FX = [['none','None','Just the move.'],
   ['dissolve','Dissolve','The dots quietly give way to the real photo, a little at a time.'],
   ['dust','Dust','Everything drifts very slightly, like dust in still air.'],
   ['focuspull','Focus pull','Focus starts close to the camera and slowly settles on the subject.'],
+  ['light','Light pass','A soft light passes slowly across the scene, falling on the shapes as it goes.'],
   ['sweep','Sweep','A scanning beam moves outward and the picture appears behind it.'],
   ['resolve','Resolve','The beam moves outward and turns the dots into the real photo as it passes.'],
   ['decay','Decay','The picture comes apart: pieces let go one after another and drift away.'],
