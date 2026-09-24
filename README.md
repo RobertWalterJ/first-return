@@ -25,7 +25,7 @@ See `AUDIT.md` for the design, science and capabilities review behind this versi
 4. **Floors and subject:** up to three floor planes (RANSAC), plus any large upward-facing surface running off the bottom of the frame (docks, decks, tables), are treated as floor. The subject is found by MediaPipe's EfficientDet Lite0 detector with each find outlined by Magic Touch and checked against depth; failing that, the nearest non-floor things (Otsu cut). Taps grow through depth. Small subjects get an extra sampling pass so they hold detail when framed close.
 5. **Cloud:** stratified samples, or scan rings with real beam elevations, back-projected. Points on depth cliffs are dropped, range noise is added, and scan rings lose returns on dark surfaces and at glancing angles. The synthetic floor sits on the fitted 3D plane.
 6. **Render:** WebGL2 points in linear light, half-float targets, eye-dome lighting, two-width bloom and ACES tone mapping. Recovers if the phone drops the graphics context.
-7. **Faces:** UltraFace RFB-320 on aspect-correct tiles. Anonymising blurs or flattens the colour, smooths the depth and thins the points.
+7. **Faces:** YuNet (OpenCV Zoo) on the letterboxed photo plus overlapping tiles. Medium and Strong (default Medium) fill each face with its own average colour, smooth the depth and thin the points; Light only blurs, which recognition software can sometimes undo.
 8. **Video:** WebCodecs with mp4-muxer, frame by frame. MediaRecorder is the fallback.
 
 ## Editing
@@ -35,5 +35,6 @@ Edit `src/shell.html` (markup and CSS) and `src/js/*.js` (joined in name order),
 - Sample: *Abraham Lincoln: The Man (Standing Lincoln)*, Augustus Saint-Gaudens, The Metropolitan Museum of Art, CC0.
 - Depth Anything V2 Small, Apache 2.0 (onnx-community export).
 - MediaPipe Tasks Vision, the Magic Touch model and EfficientDet Lite0, Apache 2.0.
-- UltraFace (Linzaer), MIT, from the ONNX model zoo.
+- YuNet face detector (OpenCV Zoo), MIT.
+- coi-serviceworker (Guido Zuidhof), MIT: enables multi-core processing on GitHub Pages.
 - ONNX Runtime Web 1.20.1, MIT. mp4-muxer 5.2.2, MIT.
