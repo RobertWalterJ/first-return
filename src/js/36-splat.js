@@ -93,7 +93,7 @@ function photoSplats(){
   const c2=document.createElement('canvas'); c2.width=gw; c2.height=gh; const x2=c2.getContext('2d',{willReadFrequently:true}); x2.imageSmoothingQuality='high'; x2.drawImage(c1,0,0,gw,gh);
   const px=x2.getImageData(0,0,gw,gh).data;
   const map=S.compMap, fill = val('hidden')>=0.5 && map && map.some(v=>v>=0) ? hiddenFill(map) : null;
-  const sp = newSplats(gw*gh*(fill?2:1)); let m=0;
+  const sp = newSplats(gw*gh*2); let m=0;
   const Z = new Float32Array(W*H); for (let i=0;i<W*H;i++) Z[i]=zOf(D.d[i]);
   const P = (x,y) => unproject((x+.5)/W, (y+.5)/H, Z[y*W+x]);
   const K = 0.62, foot0 = 2*S.tanV/H*step;          // splat spread relative to spacing; footprint per unit depth
@@ -112,7 +112,7 @@ function photoSplats(){
   const facing = (p, z, r, g, b, a, flag, grow) => { const f=foot0*z*K*grow; put(p,[1,0,0],[0,1,0],[0,0,1],f,f,f*0.15,r,g,b,a,flag); };
   for (let gy=0; gy<gh; gy++) for (let gx=0; gx<gw; gx++){
     const x=Math.min(W-1,gx*step), y=Math.min(H-1,gy*step), i=y*W+x, z=Z[i], p=P(x,y);
-    const ci=(gy*gw+gx)*4, r=px[ci], g=px[ci+1], b=px[ci+2];
+    const ci=(gy*gw+gx)*4, r=px[ci], g=px[ci+1], b=px[ci+2], sf = map && map[i]>=0 ? 2 : 0;
     // one-sided differences, taking the side that stays on the same surface
     const xr=Math.min(W-1,x+step), xl=Math.max(0,x-step), yd=Math.min(H-1,y+step), yu=Math.max(0,y-step);
     const zr=Math.abs(Z[y*W+xr]-z), zl=Math.abs(z-Z[y*W+xl]), zd=Math.abs(Z[yd*W+x]-z), zu=Math.abs(z-Z[yu*W+x]);
@@ -126,13 +126,41 @@ function photoSplats(){
       for (let k=1;k<=3;k++){ for (const [xx,yy] of [[x+k*step,y],[x-k*step,y],[x,y+k*step],[x,y-k*step]]){
         if (xx<0||yy<0||xx>=W||yy>=H) continue; const zz=Z[yy*W+xx]; if (zz<zmin) zmin=zz; if (zz>zmax) zmax=zz; } }
       const zs = z-zmin < zmax-z ? zmin : zmax;
-      facing(unproject((x+.5)/W,(y+.5)/H,zs), zs, r, g, b, 255, 0, 1); continue;
+      facing(unproject((x+.5)/W,(y+.5)/H,zs), zs, r, g, b, 255, sf, 1); continue;
     }
     const e1=nrm(tx), n=nrm(cross(tx,ty)), e2=cross(n,e1), lx=len(tx), ly=Math.max(Math.abs(dot(ty,e2)), 0.35*len(ty));
     // very steep surfaces (seen nearly edge on) are capped, so a smeared edge does not become a curtain
     const cap2 = foot0*z*6;
     // some thickness, so a surface seen nearly edge on still closes up instead of showing gaps
-    put(p, e1, e2, n, Math.min(lx,cap2)*K, Math.min(ly,cap2)*K, Math.min(lx,ly)*0.3, r, g, b, 255, 0);
+    put(p, e1, e2, n, Math.min(lx,cap2)*K, Math.min(ly,cap2)*K, Math.min(lx,ly)*0.3, r, g, b, 255, sf);
+  }
+  // Behind every other depth edge too (not only picked subjects): the far surface is grown a short way in
+  // under the near one, one ring at a time from the pixels just across the edge, so turning the view shows
+  // background there instead of a black tear. The idea of layered-depth 3D photos, done cheaply.
+  if (val('hidden')>=0.5){
+    const n=gw*gh, Zg=new Float32Array(n), fz=new Float32Array(n), fc=new Float32Array(n*3), st=new Uint8Array(n);
+    for (let gy=0; gy<gh; gy++) for (let gx=0; gx<gw; gx++) Zg[gy*gw+gx]=Z[Math.min(H-1,gy*step)*W+Math.min(W-1,gx*step)];
+    let front=[];
+    const seed=(j)=>{ if (st[j]) return; st[j]=1; fz[j]=Zg[j]; fc[j*3]=px[j*4]; fc[j*3+1]=px[j*4+1]; fc[j*3+2]=px[j*4+2]; front.push(j); };
+    for (let gy=0; gy<gh; gy++) for (let gx=0; gx<gw; gx++){ const i=gy*gw+gx;
+      if (gx+1<gw){ const j=i+1; if (Zg[j]>Zg[i]*1.06) seed(j); else if (Zg[i]>Zg[j]*1.06) seed(i); }
+      if (gy+1<gh){ const j=i+gw; if (Zg[j]>Zg[i]*1.06) seed(j); else if (Zg[i]>Zg[j]*1.06) seed(i); } }
+    const band = Math.max(4, Math.round(0.03*Math.max(gw,gh)));
+    for (let pass=0; pass<band && front.length; pass++){
+      const next=[];
+      for (const p of front){ const px0=p%gw;
+        for (const q of [px0>0?p-1:-1, px0<gw-1?p+1:-1, p>=gw?p-gw:-1, p<n-gw?p+gw:-1]){
+          if (q<0 || st[q]) continue;
+          let sz=0, sr=0, sg=0, sb=0, c=0; const qx=q%gw;
+          for (const k of [qx>0?q-1:-1, qx<gw-1?q+1:-1, q>=gw?q-gw:-1, q<n-gw?q+gw:-1]) if (k>=0 && st[k]){ sz+=fz[k]; sr+=fc[k*3]; sg+=fc[k*3+1]; sb+=fc[k*3+2]; c++; }
+          const zf = sz/c; if (!(Zg[q] < zf*0.95)) continue;     // only under something nearer
+          st[q]=2; fz[q]=zf; fc[q*3]=sr/c; fc[q*3+1]=sg/c; fc[q*3+2]=sb/c; next.push(q);
+          const x=Math.min(W-1,(q%gw)*step), y=Math.min(H-1,((q/gw)|0)*step);
+          if (fill && fill.region[y*W+x]) continue;             // the subject's own fill covers it
+          facing(unproject((x+.5)/W,(y+.5)/H,zf), zf, fc[q*3], fc[q*3+1], fc[q*3+2], 255, 1, 1.3);
+        } }
+      front = next;
+    }
   }
   if (fill){
     for (let gy=0; gy<gh; gy++) for (let gx=0; gx<gw; gx++){
@@ -155,6 +183,29 @@ function currentSplats(){
 function hasSplats(){ return S.scan ? !!S.scan.splats : !!(S.photo && S.depth); }
 
 // ---------------------------------------------------------------- saving splats
+// .spz (Niantic, version 2): gzip over a 16-byte header then positions (24-bit fixed point), opacities,
+// colours, sizes and rotations, packed per attribute. Roughly a tenth of the .ply. Right, up, back frame,
+// which is this app's own, so nothing is turned.
+async function saveSplatSpz(){
+  const sp = currentSplats(); if (!sp || !sp.n) return;
+  busy('Making the splat file', null); await tick();
+  const N=sp.n; let ext=0; for (let i=0;i<N*3;i++) ext=Math.max(ext, Math.abs(sp.pos[i]));
+  const fb = Math.max(4, Math.min(16, 22 - Math.ceil(Math.log2(Math.max(1, ext)))));    // as fine as the scene's size allows
+  const raw=new Uint8Array(16+N*19), dv=new DataView(raw.buffer); dv.setUint32(0,0x5053474e,true); dv.setUint32(4,2,true); dv.setUint32(8,N,true); raw[12]=0; raw[13]=fb;
+  const oP=16, oA=oP+N*9, oC=oA+N, oS=oC+N*3, oR=oS+N*3, one=1<<fb;
+  for (let i=0;i<N;i++){
+    for (let k=0;k<3;k++){ let v=Math.round(sp.pos[i*3+k]*one); v=Math.max(-8388608, Math.min(8388607, v)) & 0xffffff; const o=oP+i*9+k*3; raw[o]=v&255; raw[o+1]=(v>>8)&255; raw[o+2]=(v>>16)&255;
+      raw[oC+i*3+k]=clamp255(Math.round(((sp.rgba[i*4+k]/255-.5)/SH_C0*0.15+.5)*255));
+      raw[oS+i*3+k]=clamp255(Math.round((Math.log(Math.max(1e-9, sp.scl[i*3+k]))+10)*16)); }
+    raw[oA+i]=sp.rgba[i*4+3];
+    let w=sp.rot[i*4], x=sp.rot[i*4+1], y=sp.rot[i*4+2], z=sp.rot[i*4+3]; const l=Math.hypot(w,x,y,z)||1; if (w<0){ w=-w; x=-x; y=-y; z=-z; }
+    raw[oR+i*3]=clamp255(Math.round((x/l+1)*127.5)); raw[oR+i*3+1]=clamp255(Math.round((y/l+1)*127.5)); raw[oR+i*3+2]=clamp255(Math.round((z/l+1)*127.5));
+  }
+  const blob = await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
+  const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href=url; a.download='first-return.spz'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 30000); busy(null);
+  notice(`Saved first-return.spz, ${N.toLocaleString()} splats, ${(blob.size/1e6).toFixed(1)} MB. It opens in SuperSplat, Scaniverse and here.`);
+}
 // Standard 3DGS .ply (position, base colour, opacity, log sizes, rotation), turned into the usual
 // y-down, z-forward frame so SuperSplat, Polycam and other splat viewers show it the right way up.
 async function saveSplatPly(){

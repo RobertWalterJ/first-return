@@ -155,7 +155,7 @@ async function openScan(file){
   S.picks=[]; S.labels=[]; S.faces=[]; S.faceMask=null; S.rollAuto=0; S.roll=0; S.compCache=null;
   S.target=[0,0,-L.D]; S.refDist=L.D; S.pivot=S.target.slice(); S.pan=[0,0,0]; S.userMoved=false;
   if (!sc.hasColour && (P.colour==='photo'||P.colour==='muted')){ S.colourBeforeScan=P.colour; P.colour='height'; }
-  if (LOOKS[look].splat && !sc.splats){ look='void'; LOOK_KEYS.forEach(k=>{ P[k]=LOOKS.void[k]; }); }
+  if (LOOKS[look].splat && (!sc.splats || LOOKS[look].mix)){ look='void'; LOOK_KEYS.forEach(k=>{ P[k]=LOOKS.void[k]; }); }
   const Lk=LOOKS[look]; S.yaw=Lk.yaw; S.pitch=Math.max(Lk.pitch, 12); S.zoom=Lk.zoom;
   invalidateCompare(); $('#compareBtn').hidden = true;
   busy(null); banner(''); notice(`Opened a 3D scan: ${sc.n.toLocaleString()} points${L.levelled ? ', levelled on its floor' : ''}.`);

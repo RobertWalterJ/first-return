@@ -66,23 +66,38 @@ async function savePly(){
 }
 
 // ---------------------------------------------------------------- camera moves
+// Moves are small and slow by default, the drift of documentary footage: long durations, smootherstep
+// easing (a slower start and stop than a plain ease), and a Strength that scales every move and effect
+// together. Old moves at Strong match what they used to be. dz zoom, dy turn, dp tilt, px/py slide
+// (in units of the subject's distance).
+const STRENGTH = [['gentle','Gentle',0.4],['medium','Medium',0.75],['strong','Strong',1.25]];
+const strength = () => (STRENGTH.find(s=>s[0]===S.strength)||STRENGTH[0])[2];
 const MOVES = {
-  push:  t=>({dz:-0.32*t}),
-  orbit: t=>({dy:-14+28*t}),
-  drift: t=>({dz:-0.26*t, dy:-8+16*t, dp:4-4*t}),
-  rise:  t=>({dy:22*t, dp:16*t, dz:-0.12*t})
+  push:  (t,k)=>({dz:-0.32*k*t}),
+  pull:  (t,k)=>({dz:0.28*k*t}),
+  slide: (t,k)=>({px:(t-0.5)*0.22*k, dy:(0.5-t)*7*k}),          // a sideways dolly, turning a little to hold the subject
+  float: (t,k)=>({dy:Math.sin(t*2*Math.PI)*6*k, dp:Math.sin(t*4*Math.PI)*2.2*k, dz:-0.05*k*Math.sin(t*Math.PI)}),   // ends where it began: loops
+  orbit: (t,k)=>({dy:(-14+28*t)*k}),
+  drift: (t,k)=>({dz:-0.26*t*k, dy:(-8+16*t)*k, dp:(4-4*t)*k}),
+  rise:  (t,k)=>({py:0.12*t*k, dp:10*t*k, dz:-0.1*t*k})           // the camera rises and looks down a touch
 };
-const ease = t => 0.5-0.5*Math.cos(Math.PI*t);
-function poseAt(base, move, t){ const m=MOVES[move](ease(Math.min(1,Math.max(0,t))));
-  return {yaw:base.yaw+(m.dy||0), pitch:Math.max(-80,Math.min(80,base.pitch+(m.dp||0))), zoom:Math.max(0.3, base.zoom*(1+(m.dz||0)))}; }
+const MOVE_NAMES = [['push','Push in'],['pull','Pull out'],['slide','Slide'],['float','Float'],['drift','Drift'],['orbit','Orbit'],['rise','Rise']];
+const LOOPING = new Set(['float']);
+const ease = t => t*t*t*(t*(6*t-15)+10);
+function poseAt(base, move, t){
+  const tt = Math.min(1,Math.max(0,t)), m = MOVES[move](LOOPING.has(move) ? tt : ease(tt), strength()), R = S.refDist||2;
+  return {yaw:base.yaw+(m.dy||0), pitch:Math.max(-80,Math.min(80,base.pitch+(m.dp||0))), zoom:Math.max(0.3, base.zoom*(1+(m.dz||0))),
+    pan:[base.pan[0]+(m.px||0)*R, base.pan[1]+(m.py||0)*R, base.pan[2]]}; }
+const viewBase = () => ({yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, pan:S.pan.slice()});
 
-async function previewMove(move, secs){
+// portion: play only the opening of the move at its real speed (a quick look when a chip is tapped)
+async function previewMove(move, secs, portion=1){
   if (S.recording || !S.count) return;
-  const base={yaw:S.yaw,pitch:S.pitch,zoom:S.zoom}, dur=secs*1000;
-  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked'); banner('Playing the move');
+  const base=viewBase(), dur=secs*1000*portion;
+  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked'); banner(portion<1 ? 'Playing the start of the move' : 'Playing the move');
   S.fxNow = S.fx||'none';
-  await new Promise(res=>{ const t0=performance.now(); const step=()=>{ const el=performance.now()-t0;
-    Object.assign(S, poseAt(base, move, el/dur)); S.fxT=Math.min(1,el/dur); S.fxTime=el/1000; draw(); renderLabels(); renderPins();
+  await new Promise(res=>{ const t0=performance.now(); const step=()=>{ const el=performance.now()-t0, t=Math.min(1,el/dur)*portion;
+    Object.assign(S, poseAt(base, move, t)); S.fxT=t; S.fxTime=el/1000; draw(); renderLabels(); renderPins();
     $('#recfill').style.width=(Math.min(1,el/dur)*100)+'%'; if (el<dur) requestAnimationFrame(step); else res(); }; requestAnimationFrame(step); });
   S.recording=false; S.fxNow='none'; $('#recbar').hidden=true; document.body.classList.remove('locked'); Object.assign(S, base); S.dirtyDraw=true; banner(modeText());
 }
@@ -91,7 +106,7 @@ async function previewMove(move, secs){
 // slower export, never a jerky video. Older browsers fall back to recording the screen in real time.
 async function recordMove(move, secs){
   if (S.recording || !S.count) return;
-  const base={yaw:S.yaw,pitch:S.pitch,zoom:S.zoom}, fps=30, hold=Math.round(fps*0.4), frames=Math.round(secs*fps)+2*hold;
+  const base=viewBase(), fps=30, hold=Math.round(fps*(LOOPING.has(move)?0:0.4)), frames=Math.round(secs*fps)+2*hold;
   const [W,H] = exportSize(MOBILE ? 1280 : 1920, 1920);
   const rc=document.createElement('canvas'); rc.width=W; rc.height=H; const rx=rc.getContext('2d');
   const frameAt = i => { const t=(i-hold)/(frames-2*hold-1); Object.assign(S, poseAt(base, move, t)); S.fxT=Math.min(1,Math.max(0,t)); S.fxTime=i/fps; draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };

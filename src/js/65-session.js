@@ -68,9 +68,11 @@ async function restoreSession(){
       if (S.adv.fov) S.tanV = Math.tan(S.adv.fov*Math.PI/360);
       if (S.adv.roll!=null) S.roll = S.adv.roll*Math.PI/180;
       S.labels = (ok.labels||[]).map(L=>{ const o={...L}; if (!o.fixed) delete o.fixed; o.pos = labelWorld(o); return o; });
-      const V = ok.view; S.autoFrame = false; S.reframe = false;
-      Object.assign(S, {yaw:V.yaw, pitch:V.pitch, zoom:V.zoom, pan:V.pan, pivot:V.pivot, home:V.home, userMoved:V.userMoved});
-      if (V.refDist){ S.refDist = V.refDist; S.refFrozen = true; }
+      // a saved view is used only if it is made of real numbers (an unfinished framing once saved NaN)
+      const V = ok.view, good = V && [V.yaw, V.pitch, V.zoom, ...(V.pan||[]), ...(V.pivot||[])].every(Number.isFinite) && V.pan.length===3 && V.pivot.length===3;
+      if (good){ S.autoFrame = false; S.reframe = false;
+        Object.assign(S, {yaw:V.yaw, pitch:V.pitch, zoom:V.zoom, pan:V.pan, pivot:V.pivot, home:V.home, userMoved:V.userMoved});
+        if (V.refDist > 0){ S.refDist = V.refDist; S.refFrozen = true; } }
     }
     S.dirtyBuild = true; busy(null); renderTray(); viewButton();
     notice('Back where you left off. Open starts something new.');

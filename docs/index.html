@@ -80,6 +80,7 @@ body.scan .tab[data-tab="subject"], body.scan .tab[data-tab="people"]{opacity:.5
 .scroller{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
 .chip{flex:none;border:1px solid var(--line2);background:var(--raise);border-radius:18px;padding:8px 13px;font-size:14px;line-height:1.1;white-space:nowrap;position:relative}
 .chip[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:#0f2621}
+.chipgap{flex:none;width:6px}
 .chip.pat{display:inline-flex;align-items:center;gap:8px;padding:6px 13px 6px 8px}
 .paticon{width:26px;height:26px;fill:currentColor;opacity:.85}
 .chip.def::after{content:"";position:absolute;right:5px;top:5px;width:5px;height:5px;border-radius:50%;background:var(--dim)}
@@ -259,6 +260,11 @@ const LOOKS = {
   // the photo itself as Gaussian splats (or a splat scan as it was captured); the dot controls do not apply
   real:    {name:'Photoreal', dots:3.05, size:1.9, glow:1, bright:2, colour:'photo', depth3d:2, backdrop:1.05, floor:0, edges:0, hidden:1,
             pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:0, pitch:0, zoom:1, splat:1},
+  // mixed: the subject as the photo on the Void stage of dots, or the world as the photo around a subject of dots
+  psub:    {name:'Photo subject', dots:3.05, size:1.9, glow:1.0, bright:2.3, colour:'photo', depth3d:2, backdrop:1.05, floor:1.3, edges:0, hidden:1,
+            pattern:'scatter', bgTint:1, bgGain:.45, bgSize:2.4, sparkle:0, yaw:0, pitch:0, zoom:1.3, splat:1, mix:1},
+  pworld:  {name:'Photo world', dots:3.05, size:1.4, glow:.5, bright:2.4, colour:'photo', depth3d:2, backdrop:1.05, floor:0, edges:0, hidden:1,
+            pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:0, pitch:0, zoom:1, splat:1, mix:2},
 };
 const LOOK_KEYS = ['dots','size','glow','bright','colour','depth3d','backdrop','floor','edges','hidden','pattern'];
 
@@ -768,7 +774,7 @@ async function openScan(file){
   S.picks=[]; S.labels=[]; S.faces=[]; S.faceMask=null; S.rollAuto=0; S.roll=0; S.compCache=null;
   S.target=[0,0,-L.D]; S.refDist=L.D; S.pivot=S.target.slice(); S.pan=[0,0,0]; S.userMoved=false;
   if (!sc.hasColour && (P.colour==='photo'||P.colour==='muted')){ S.colourBeforeScan=P.colour; P.colour='height'; }
-  if (LOOKS[look].splat && !sc.splats){ look='void'; LOOK_KEYS.forEach(k=>{ P[k]=LOOKS.void[k]; }); }
+  if (LOOKS[look].splat && (!sc.splats || LOOKS[look].mix)){ look='void'; LOOK_KEYS.forEach(k=>{ P[k]=LOOKS.void[k]; }); }
   const Lk=LOOKS[look]; S.yaw=Lk.yaw; S.pitch=Math.max(Lk.pitch, 12); S.zoom=Lk.zoom;
   invalidateCompare(); $('#compareBtn').hidden = true;
   busy(null); banner(''); notice(`Opened a 3D scan: ${sc.n.toLocaleString()} points${L.levelled ? ', levelled on its floor' : ''}.`);
@@ -1390,7 +1396,7 @@ function photoSplats(){
   const c2=document.createElement('canvas'); c2.width=gw; c2.height=gh; const x2=c2.getContext('2d',{willReadFrequently:true}); x2.imageSmoothingQuality='high'; x2.drawImage(c1,0,0,gw,gh);
   const px=x2.getImageData(0,0,gw,gh).data;
   const map=S.compMap, fill = val('hidden')>=0.5 && map && map.some(v=>v>=0) ? hiddenFill(map) : null;
-  const sp = newSplats(gw*gh*(fill?2:1)); let m=0;
+  const sp = newSplats(gw*gh*2); let m=0;
   const Z = new Float32Array(W*H); for (let i=0;i<W*H;i++) Z[i]=zOf(D.d[i]);
   const P = (x,y) => unproject((x+.5)/W, (y+.5)/H, Z[y*W+x]);
   const K = 0.62, foot0 = 2*S.tanV/H*step;          // splat spread relative to spacing; footprint per unit depth
@@ -1409,7 +1415,7 @@ function photoSplats(){
   const facing = (p, z, r, g, b, a, flag, grow) => { const f=foot0*z*K*grow; put(p,[1,0,0],[0,1,0],[0,0,1],f,f,f*0.15,r,g,b,a,flag); };
   for (let gy=0; gy<gh; gy++) for (let gx=0; gx<gw; gx++){
     const x=Math.min(W-1,gx*step), y=Math.min(H-1,gy*step), i=y*W+x, z=Z[i], p=P(x,y);
-    const ci=(gy*gw+gx)*4, r=px[ci], g=px[ci+1], b=px[ci+2];
+    const ci=(gy*gw+gx)*4, r=px[ci], g=px[ci+1], b=px[ci+2], sf = map && map[i]>=0 ? 2 : 0;
     // one-sided differences, taking the side that stays on the same surface
     const xr=Math.min(W-1,x+step), xl=Math.max(0,x-step), yd=Math.min(H-1,y+step), yu=Math.max(0,y-step);
     const zr=Math.abs(Z[y*W+xr]-z), zl=Math.abs(z-Z[y*W+xl]), zd=Math.abs(Z[yd*W+x]-z), zu=Math.abs(z-Z[yu*W+x]);
@@ -1423,13 +1429,41 @@ function photoSplats(){
       for (let k=1;k<=3;k++){ for (const [xx,yy] of [[x+k*step,y],[x-k*step,y],[x,y+k*step],[x,y-k*step]]){
         if (xx<0||yy<0||xx>=W||yy>=H) continue; const zz=Z[yy*W+xx]; if (zz<zmin) zmin=zz; if (zz>zmax) zmax=zz; } }
       const zs = z-zmin < zmax-z ? zmin : zmax;
-      facing(unproject((x+.5)/W,(y+.5)/H,zs), zs, r, g, b, 255, 0, 1); continue;
+      facing(unproject((x+.5)/W,(y+.5)/H,zs), zs, r, g, b, 255, sf, 1); continue;
     }
     const e1=nrm(tx), n=nrm(cross(tx,ty)), e2=cross(n,e1), lx=len(tx), ly=Math.max(Math.abs(dot(ty,e2)), 0.35*len(ty));
     // very steep surfaces (seen nearly edge on) are capped, so a smeared edge does not become a curtain
     const cap2 = foot0*z*6;
     // some thickness, so a surface seen nearly edge on still closes up instead of showing gaps
-    put(p, e1, e2, n, Math.min(lx,cap2)*K, Math.min(ly,cap2)*K, Math.min(lx,ly)*0.3, r, g, b, 255, 0);
+    put(p, e1, e2, n, Math.min(lx,cap2)*K, Math.min(ly,cap2)*K, Math.min(lx,ly)*0.3, r, g, b, 255, sf);
+  }
+  // Behind every other depth edge too (not only picked subjects): the far surface is grown a short way in
+  // under the near one, one ring at a time from the pixels just across the edge, so turning the view shows
+  // background there instead of a black tear. The idea of layered-depth 3D photos, done cheaply.
+  if (val('hidden')>=0.5){
+    const n=gw*gh, Zg=new Float32Array(n), fz=new Float32Array(n), fc=new Float32Array(n*3), st=new Uint8Array(n);
+    for (let gy=0; gy<gh; gy++) for (let gx=0; gx<gw; gx++) Zg[gy*gw+gx]=Z[Math.min(H-1,gy*step)*W+Math.min(W-1,gx*step)];
+    let front=[];
+    const seed=(j)=>{ if (st[j]) return; st[j]=1; fz[j]=Zg[j]; fc[j*3]=px[j*4]; fc[j*3+1]=px[j*4+1]; fc[j*3+2]=px[j*4+2]; front.push(j); };
+    for (let gy=0; gy<gh; gy++) for (let gx=0; gx<gw; gx++){ const i=gy*gw+gx;
+      if (gx+1<gw){ const j=i+1; if (Zg[j]>Zg[i]*1.06) seed(j); else if (Zg[i]>Zg[j]*1.06) seed(i); }
+      if (gy+1<gh){ const j=i+gw; if (Zg[j]>Zg[i]*1.06) seed(j); else if (Zg[i]>Zg[j]*1.06) seed(i); } }
+    const band = Math.max(4, Math.round(0.03*Math.max(gw,gh)));
+    for (let pass=0; pass<band && front.length; pass++){
+      const next=[];
+      for (const p of front){ const px0=p%gw;
+        for (const q of [px0>0?p-1:-1, px0<gw-1?p+1:-1, p>=gw?p-gw:-1, p<n-gw?p+gw:-1]){
+          if (q<0 || st[q]) continue;
+          let sz=0, sr=0, sg=0, sb=0, c=0; const qx=q%gw;
+          for (const k of [qx>0?q-1:-1, qx<gw-1?q+1:-1, q>=gw?q-gw:-1, q<n-gw?q+gw:-1]) if (k>=0 && st[k]){ sz+=fz[k]; sr+=fc[k*3]; sg+=fc[k*3+1]; sb+=fc[k*3+2]; c++; }
+          const zf = sz/c; if (!(Zg[q] < zf*0.95)) continue;     // only under something nearer
+          st[q]=2; fz[q]=zf; fc[q*3]=sr/c; fc[q*3+1]=sg/c; fc[q*3+2]=sb/c; next.push(q);
+          const x=Math.min(W-1,(q%gw)*step), y=Math.min(H-1,((q/gw)|0)*step);
+          if (fill && fill.region[y*W+x]) continue;             // the subject's own fill covers it
+          facing(unproject((x+.5)/W,(y+.5)/H,zf), zf, fc[q*3], fc[q*3+1], fc[q*3+2], 255, 1, 1.3);
+        } }
+      front = next;
+    }
   }
   if (fill){
     for (let gy=0; gy<gh; gy++) for (let gx=0; gx<gw; gx++){
@@ -1452,6 +1486,29 @@ function currentSplats(){
 function hasSplats(){ return S.scan ? !!S.scan.splats : !!(S.photo && S.depth); }
 
 // ---------------------------------------------------------------- saving splats
+// .spz (Niantic, version 2): gzip over a 16-byte header then positions (24-bit fixed point), opacities,
+// colours, sizes and rotations, packed per attribute. Roughly a tenth of the .ply. Right, up, back frame,
+// which is this app's own, so nothing is turned.
+async function saveSplatSpz(){
+  const sp = currentSplats(); if (!sp || !sp.n) return;
+  busy('Making the splat file', null); await tick();
+  const N=sp.n; let ext=0; for (let i=0;i<N*3;i++) ext=Math.max(ext, Math.abs(sp.pos[i]));
+  const fb = Math.max(4, Math.min(16, 22 - Math.ceil(Math.log2(Math.max(1, ext)))));    // as fine as the scene's size allows
+  const raw=new Uint8Array(16+N*19), dv=new DataView(raw.buffer); dv.setUint32(0,0x5053474e,true); dv.setUint32(4,2,true); dv.setUint32(8,N,true); raw[12]=0; raw[13]=fb;
+  const oP=16, oA=oP+N*9, oC=oA+N, oS=oC+N*3, oR=oS+N*3, one=1<<fb;
+  for (let i=0;i<N;i++){
+    for (let k=0;k<3;k++){ let v=Math.round(sp.pos[i*3+k]*one); v=Math.max(-8388608, Math.min(8388607, v)) & 0xffffff; const o=oP+i*9+k*3; raw[o]=v&255; raw[o+1]=(v>>8)&255; raw[o+2]=(v>>16)&255;
+      raw[oC+i*3+k]=clamp255(Math.round(((sp.rgba[i*4+k]/255-.5)/SH_C0*0.15+.5)*255));
+      raw[oS+i*3+k]=clamp255(Math.round((Math.log(Math.max(1e-9, sp.scl[i*3+k]))+10)*16)); }
+    raw[oA+i]=sp.rgba[i*4+3];
+    let w=sp.rot[i*4], x=sp.rot[i*4+1], y=sp.rot[i*4+2], z=sp.rot[i*4+3]; const l=Math.hypot(w,x,y,z)||1; if (w<0){ w=-w; x=-x; y=-y; z=-z; }
+    raw[oR+i*3]=clamp255(Math.round((x/l+1)*127.5)); raw[oR+i*3+1]=clamp255(Math.round((y/l+1)*127.5)); raw[oR+i*3+2]=clamp255(Math.round((z/l+1)*127.5));
+  }
+  const blob = await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('gzip'))).blob();
+  const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href=url; a.download='first-return.spz'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 30000); busy(null);
+  notice(`Saved first-return.spz, ${N.toLocaleString()} splats, ${(blob.size/1e6).toFixed(1)} MB. It opens in SuperSplat, Scaniverse and here.`);
+}
 // Standard 3DGS .ply (position, base colour, opacity, log sizes, rotation), turned into the usual
 // y-down, z-forward frame so SuperSplat, Polycam and other splat viewers show it the right way up.
 async function saveSplatPly(){
@@ -1488,7 +1545,7 @@ let gl = null, G = null;          // G holds every GL object so it can be rebuil
 
 const PTS_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aCol; layout(location=2) in vec4 aMeta;
-uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight, uOrbit, uFxT, uTime; uniform int uMode, uFx;
+uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight, uOrbit, uFxT, uTime, uFxK; uniform int uMode, uFx, uMix;
 uniform vec2 uR, uY;
 float hsh(float n){ return fract(sin(n*12.9898+4.1)*43758.5453); }
 out vec3 vCol; flat out float vRound;
@@ -1503,11 +1560,19 @@ vec3 lin(vec3 c){ return pow(max(c,0.),vec3(2.2)); }
 void main(){
   float kind=aMeta.x, rnd=aMeta.y, lum=aMeta.z, inc=aMeta.w;
   float r = clamp((length(aPos)-uR.x)/(uR.y-uR.x),0.,1.);
-  // video effects: 2 decay (dots let go and drift off), 3 glitch (bands slip sideways)
+  // video effects, scaled by strength uFxK: 2 decay (dots let go and drift off), 3 glitch (bands slip
+  // sideways), 5 build up (dots gather one by one), 6 dissolve (dots fade out as the photo fades in),
+  // 7 dust (a slow, slight drift)
   vec3 P0 = aPos; float fade = 1.;
   if(uFx==2){ float st=rnd*.7, k=clamp((uFxT-st)/(1.-st),0.,1.); vec3 dir=normalize(vec3(hsh(rnd*91.)-.5, hsh(rnd*37.)-.25, hsh(rnd*53.)-.5));
-    P0 += dir*k*k*length(P0)*.3; fade = 1.-smoothstep(.3,.9,k); }
-  if(uFx==3){ float band=floor(P0.y*18.+floor(uTime*7.)*3.), on=step(.9, hsh(band+floor(uTime*11.))); P0.x += on*(hsh(band*3.1)-.5)*(uR.y-uR.x)*.08; }
+    P0 += dir*k*k*length(P0)*.3*uFxK; fade = 1.-smoothstep(.3,.9,k); }
+  if(uFx==3){ float band=floor(P0.y*18.+floor(uTime*7.)*3.), on=step(1.-.1*uFxK, hsh(band+floor(uTime*11.))); P0.x += on*(hsh(band*3.1)-.5)*(uR.y-uR.x)*.08*uFxK; }
+  if(uFx==5) fade = smoothstep(rnd, rnd+.12, uFxT*1.12);
+  if(uFx==6) fade = 1.-smoothstep(rnd, rnd+.12, uFxT*1.12);
+  if(uFx==7){ float a=uTime*.5; P0 += vec3(sin(a+rnd*41.), .7*sin(a*.8+rnd*23.), cos(a*.9+rnd*31.))*length(P0)*.006*uFxK; }
+  // mixed looks: 1 the subject is drawn as photo, so its dots stand aside; 2 the reverse
+  bool isSubj = kind<.5 || (kind>3.5);
+  if((uMix==1 && isSubj) || (uMix==2 && !isSubj)) fade = 0.;
   vec4 vp = uView*vec4(P0,1.); gl_Position = uProj*vp;
   float dist = max(-vp.z, 1e-3);
   vec3 c = lin(aCol); float g = dot(c, vec3(.2126,.7152,.0722)); float lumL = pow(lum,2.2);
@@ -1537,9 +1602,10 @@ void main(){
   }
   if(hiddenPart>.5){ if(uOrbit<.02){ gl_Position=vec4(2.,2.,2.,1.); } c *= uOrbit; }
   // 1 sweep: only what the beam has reached; 4 resolve: only what it has not yet turned into the photo
-  if(uFx==1 || uFx==4){ float edge=uFxT*1.15, e=1.-smoothstep(0.,.035,abs(r-edge));
+  if(uFx==1 || uFx==4){ float edge=uFxT*1.15, e=1.-smoothstep(0.,.02+.025*uFxK,abs(r-edge));
     if((uFx==1 && r>edge) || (uFx==4 && r<edge)) gl_Position=vec4(2.,2.,2.,1.);
-    c = mix(c, lin(vec3(.55,1.,.9))*2.2*uExposure, e*.85); }
+    c = mix(c, lin(vec3(.55,1.,.9))*2.2*uExposure, e*min(.85,.7*uFxK)); }
+  if(fade < .004) gl_Position=vec4(2.,2.,2.,1.);
   c *= fade;
   // points smaller than a pixel still draw one pixel, so dim them to keep brightness honest
   if(size < 1.) c *= size*size;
@@ -1548,13 +1614,15 @@ void main(){
 }`;
 const PTS_FS = `#version 300 es
 precision mediump float; in vec3 vCol; flat in float vRound; out vec4 o;
-void main(){ if(vRound>.5){ vec2 p=gl_PointCoord*2.-1.; if(dot(p,p)>1.) discard; } o=vec4(vCol,1.); }`;
+void main(){ if(vRound>.5){ vec2 p=gl_PointCoord*2.-1.; if(dot(p,p)>1.) discard; } o=vec4(vCol,0.); }`;   // alpha 0: a dot, not photo
 const QUAD_VS = `#version 300 es
 out vec2 vUv; void main(){ vec2 p=vec2((gl_VertexID<<1)&2, gl_VertexID&2); vUv=p; gl_Position=vec4(p*2.-1.,0.,1.); }`;
 const BRIGHT_FS = `#version 300 es
 precision highp float; in vec2 vUv; uniform sampler2D uTex; uniform vec2 uTexel; out vec4 o;
-void main(){ vec2 h=uTexel*.5; vec3 c=(texture(uTex,vUv+vec2(-h.x,-h.y)).rgb+texture(uTex,vUv+vec2(h.x,-h.y)).rgb+texture(uTex,vUv+vec2(-h.x,h.y)).rgb+texture(uTex,vUv+vec2(h.x,h.y)).rgb)*.25;
- float m=max(c.r,max(c.g,c.b)); o=vec4(c*smoothstep(.35,1.2,m),1.); }`;
+void main(){ vec2 h=uTexel*.5; vec4 s=(texture(uTex,vUv+vec2(-h.x,-h.y))+texture(uTex,vUv+vec2(h.x,-h.y))+texture(uTex,vUv+vec2(-h.x,h.y))+texture(uTex,vUv+vec2(h.x,h.y)))*.25;
+ vec3 c=s.rgb; float m=max(c.r,max(c.g,c.b));
+ // the photo glows far less than dots do, or a bright sky washes over everything
+ o=vec4(c*smoothstep(.35,1.2,m)*mix(1.,.3,s.a),1.); }`;
 const BLUR_FS = `#version 300 es
 precision highp float; in vec2 vUv; uniform sampler2D uTex; uniform vec2 uDir; out vec4 o;
 void main(){ vec3 s=texture(uTex,vUv).rgb*.227;
@@ -1575,19 +1643,21 @@ void main(){
     c=vec3(texture(uScene,uv+vec2(sp,0.)).r, texture(uScene,uv).g, texture(uScene,uv-vec2(sp,0.)).b);
     vec2 blk=floor(vUv*vec2(16.,9.)); if(h(blk+t*1.37) > 1.-.05*uGlitch) c*=.05;
   } else c=texture(uScene,vUv).rgb;
-  if(uEdl>0.){
+  float photo=texture(uScene,uv).a;       // how much of this pixel is photo (splats) rather than dots
+  if(uEdl>0. && photo<.99){
     // eye-dome lighting: darken a point when its neighbours on screen are nearer than it
     float d=texture(uDepth,vUv).r;
     if(d<1.){ float zc=lz(d), s=0.; vec2 px=2./uRes;
       for(int i=0;i<8;i++){ float a=float(i)*.785398; vec2 off=vec2(cos(a),sin(a))*px;
         float dn=texture(uDepth,vUv+off).r; float zn = dn<1. ? lz(dn) : zc+8.; s+=max(0.,zc-zn); }
-      c*=exp(-s/8.*uEdl*110.); }
+      c*=mix(exp(-s/8.*uEdl*110.), 1., photo); }
   }
   vec3 bloom = uGlow*(texture(uGlowA,uv).rgb*.9 + texture(uGlowB,uv).rgb*1.3);
   vec2 q=(vUv-.5)*vec2(uRes.x/uRes.y,1.);
-  // Photoreal keeps the photo's own colours; the dot looks go through a filmic curve
-  if(uRaw>.5){ c += bloom*.35; c*=1.-.25*smoothstep(.55,1.25,length(q)); c=clamp(c,0.,1.); }
-  else { c += bloom; c*=1.-.4*smoothstep(.45,1.2,length(q)); c=pow(aces(c),vec3(1./2.2)); }
+  // The photo keeps its own colours; dots go through a filmic curve. Per pixel, so a frame can hold both.
+  vec3 raw = clamp((c + bloom)*(1.-.25*smoothstep(.55,1.25,length(q))), 0., 1.);
+  vec3 film = pow(aces((c + bloom)*(1.-.4*smoothstep(.45,1.2,length(q)))), vec3(1./2.2));
+  c = mix(film, raw, clamp(photo,0.,1.));
   if(uGlitch>0.) c*=1.-.1*uGlitch*step(.5,fract(vUv.y*uRes.y*.5));
   c+=(h(vUv*uRes)-.5)/255.; o=vec4(c,1.); }`;
 
@@ -1656,13 +1726,15 @@ function renderView(W, H, o){
   const aspect = W/H, V = o.thumb ? viewMatrix(o.yaw, o.pitch, o.zoom, S.target, null) : viewMatrix(o.yaw, o.pitch, o.zoom, S.pivot, S.pan), Pm = projMatrix(aspect);
   if (!o.thumb){ S.V=V; S.P=Pm; }
   gl.bindFramebuffer(gl.FRAMEBUFFER, T.sF); gl.viewport(0,0,W,H);
-  gl.clearColor(0.004,0.005,0.006,1); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.clearColor(0.004,0.005,0.006,0); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   // Photoreal draws the splats; the Resolve effect draws both, the dots giving way to the photo as the
   // beam passes. Every other look draws the dots.
-  const fx = o.fx||'none', splatLook = !!LOOKS[o.look].splat, both = fx==='resolve' && hasSplats();
-  const L = splatLook ? LOOKS.void : LOOKS[o.look];
-  const ptFx = {sweep:1, decay:2, glitch:3, resolve: both?4:1}[fx]||0;
-  o.splatFx = {sweep:1, resolve:1, decay:2, glitch:3}[fx]||0;
+  const Lo = LOOKS[o.look], mix = Lo.mix||0, fx = o.fx||'none', splatLook = !!Lo.splat;
+  const both = (mix>0 || fx==='resolve' || fx==='dissolve') && hasSplats();
+  const L = splatLook && !mix ? LOOKS.void : Lo;
+  const ptFx = {sweep:1, decay:2, glitch:3, resolve: both?4:1, build:5, dissolve: both?6:5, dust:7}[fx]||0;
+  o.splatFx = {sweep:1, resolve:1, decay:2, glitch:3, build:5, dissolve:5, dust:7}[fx]||0; o.mix = mix;
+  const fxK = o.fxK!=null ? o.fxK : strength();
   if (o.cloud.count && (!splatLook || both)){
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
     gl.useProgram(G.P.p); const u=G.P.u;
@@ -1678,11 +1750,11 @@ function renderView(W, H, o){
     gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8 + slid*8));
     gl.uniform1i(u.uMode, {photo:0,muted:0,range:1,height:2,grey:3,phosphor:4}[o.colour]||0);
     gl.uniform2f(u.uR, S.rng[0], S.rng[1]); gl.uniform2f(u.uY, S.yr[0], S.yr[1]);
-    gl.uniform1i(u.uFx, ptFx); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0);
+    gl.uniform1i(u.uFx, ptFx); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, both ? mix : 0);
     gl.bindVertexArray(o.cloud.vao); gl.drawArrays(gl.POINTS, 0, o.cloud.count); gl.bindVertexArray(null);
     gl.disable(gl.DEPTH_TEST);
   }
-  if ((splatLook || both) && hasSplats()) drawSplats(W, H, V, Pm, o, !splatLook || both);
+  if ((splatLook || both) && hasSplats()) drawSplats(W, H, V, Pm, o, both, fxK);
   gl.bindVertexArray(G.quad);
   const pass = (p, f, w, h, bind) => { gl.bindFramebuffer(gl.FRAMEBUFFER,f); gl.viewport(0,0,w,h); gl.useProgram(p.p); bind(p.u); gl.drawArrays(gl.TRIANGLES,0,3); };
   const tx = (unit, t) => { gl.activeTexture(gl.TEXTURE0+unit); gl.bindTexture(gl.TEXTURE_2D,t); };
@@ -1694,7 +1766,7 @@ function renderView(W, H, o){
   pass(G.Bl, T.cF, T.qw, T.qh, u=>{ tx(0,T.d); gl.uniform1i(u.uTex,0); gl.uniform2f(u.uDir,0,2.2*k/T.qh); });
   pass(G.C, null, W, H, u=>{ tx(0,T.sT); tx(1,T.a); tx(2,T.c); tx(3,T.dT);
     gl.uniform1i(u.uScene,0); gl.uniform1i(u.uGlowA,1); gl.uniform1i(u.uGlowB,2); gl.uniform1i(u.uDepth,3);
-    const raw = splatLook && !both, glitch = fx==='glitch' ? .45 + .55*Math.max(0, Math.sin((o.fxTime||0)*2.3)*Math.sin((o.fxTime||0)*5.1)) : fx==='decay' ? .25*Math.max(0,(o.fxT||0)-.6)/.4 : 0;
+    const raw = splatLook && !both, gk = Math.min(1, fxK), glitch = fx==='glitch' ? gk*(.45 + .55*Math.max(0, Math.sin((o.fxTime||0)*2.3)*Math.sin((o.fxTime||0)*5.1))) : fx==='decay' ? gk*.25*Math.max(0,(o.fxT||0)-.6)/.4 : 0;
     gl.uniform1f(u.uRaw, raw?1:0); gl.uniform1f(u.uGlitch, glitch); gl.uniform1f(u.uTime, o.fxTime||0);
     gl.uniform1f(u.uGlow,o.glow); gl.uniform1f(u.uEdl, raw ? 0 : o.edges); gl.uniform1f(u.uNear,0.05); gl.uniform1f(u.uFar,400.); gl.uniform2f(u.uRes,W,H); });
   gl.bindVertexArray(null);
@@ -1717,7 +1789,7 @@ cv.addEventListener('webglcontextrestored', ()=>{ if (initGL()){ if (S.cpu) uplo
 const SPLAT_VS = `#version 300 es
 precision highp float; precision highp int;
 uniform highp usampler2D uData; uniform mat4 uProj, uView; uniform vec2 uFocal, uVp, uR;
-uniform float uCovK, uExposure, uOrbit, uFxT, uTime, uLin; uniform int uFx;
+uniform float uCovK, uExposure, uOrbit, uFxT, uTime, uLin, uFxK; uniform int uFx, uMix;
 layout(location=0) in vec2 aCorner; layout(location=1) in uint aIndex;
 out vec4 vCol; out vec2 vPos;
 float hsh(float n){ return fract(sin(n*12.9898+4.1)*43758.5453); }
@@ -1733,12 +1805,17 @@ void main(){
   float rnd = hf(aIndex), grow = 1.;
   float r = clamp((length(p)-uR.x)/(uR.y-uR.x), 0., 1.);
   if((t1.w & 1u) == 1u) col.a *= uOrbit;                       // hidden parts show as the view turns
+  bool subj = (t1.w & 2u) == 2u;                                  // mixed looks: 1 photo subject only, 2 everything else
+  if((uMix==1 && !subj) || (uMix==2 && subj)) col.a = 0.;
   if(uFx==1){ if(r > uFxT*1.15) col.a = 0.; }                   // sweep and resolve: only what the beam has reached
   if(uFx==2){ float st=rnd*.7, k=clamp((uFxT-st)/(1.-st), 0., 1.);   // decay: each splat lets go in turn and drifts off
     vec3 dir = normalize(vec3(hf(aIndex*3u+1u)-.5, hf(aIndex*3u+2u)-.25, hf(aIndex*3u+3u)-.5));
-    p += dir*k*k*length(p)*.3; col.a *= 1.-smoothstep(.3,.9,k); grow = 1.-.75*k; }
-  if(uFx==3){ float band=floor(p.y*18.+floor(uTime*7.)*3.), on=step(.9, hsh(band+floor(uTime*11.)));   // glitch: bands slip sideways
-    p.x += on*(hsh(band*3.1)-.5)*(uR.y-uR.x)*.08; }
+    p += dir*k*k*length(p)*.3*uFxK; col.a *= 1.-smoothstep(.3,.9,k); grow = 1.-.75*k; }
+  // build up and dissolve: splats gather one by one, on a slower curve because several overlap every pixel
+  if(uFx==5) col.a *= smoothstep(rnd, rnd+.12, pow(uFxT,1.8)*1.12);
+  if(uFx==7){ float a=uTime*.5; p += vec3(sin(a+rnd*41.), .7*sin(a*.8+rnd*23.), cos(a*.9+rnd*31.))*length(p)*.003*uFxK; }   // dust
+  if(uFx==3){ float band=floor(p.y*18.+floor(uTime*7.)*3.), on=step(1.-.1*uFxK, hsh(band+floor(uTime*11.)));   // glitch: bands slip sideways
+    p.x += on*(hsh(band*3.1)-.5)*(uR.y-uR.x)*.08*uFxK; }
   vec4 cam = uView*vec4(p,1.), clip = uProj*cam; float cb = 1.2*clip.w;
   if(cam.z > -.02 || col.a < .004 || abs(clip.x) > cb || abs(clip.y) > cb){ gl_Position = vec4(0.,0.,2.,1.); return; }
   vec2 u1=unpackHalf2x16(t1.x), u2=unpackHalf2x16(t1.y), u3=unpackHalf2x16(t1.z);
@@ -1754,7 +1831,7 @@ void main(){
   gl_Position = vec4(clip.xy/clip.w + (aCorner.x*e1 + aCorner.y*e2)*2./uVp, 0., 1.);
   vPos = aCorner*3.;
   vec3 rgb = col.rgb*uExposure;
-  if(uFx==1){ float e = 1.-smoothstep(0., .035, abs(r-uFxT*1.15)); rgb = mix(rgb, vec3(.55,1.,.9), e*.8); }   // the beam's edge
+  if(uFx==1){ float e = 1.-smoothstep(0., .02+.025*uFxK, abs(r-uFxT*1.15)); rgb = mix(rgb, vec3(.55,1.,.9), e*min(.8,.65*uFxK)); }   // the beam's edge
   if(uLin > .5) rgb = pow(max(rgb,0.), vec3(2.2));
   vCol = vec4(rgb, col.a);
 }`;
@@ -1839,17 +1916,17 @@ function sortNow(V){
 }
 // Draw into the current scene target. sync: sort right now (exports, thumbnails); otherwise the worker
 // catches up a frame or two behind while the view moves.
-function drawSplats(W, H, V, Pm, o, lin){
+function drawSplats(W, H, V, Pm, o, lin, fxK=1){
   const sp = currentSplats(); if (!sp || !sp.n) return;
   uploadSplats(sp); const Sg = G.splat;
   if (o.sync || Sg.sortedFor===null) sortNow(V); else askSort(V);
   const u = G.SP.u; gl.useProgram(G.SP.p);
   gl.uniformMatrix4fv(u.uProj,false,Pm); gl.uniformMatrix4fv(u.uView,false,V);
   gl.uniform2f(u.uFocal, Pm[0]*W/2, Pm[5]*H/2); gl.uniform2f(u.uVp, W, H); gl.uniform2f(u.uR, S.rng[0], S.rng[1]);
-  gl.uniform1f(u.uCovK, Sg.covK); gl.uniform1f(u.uExposure, o.bright/1.25); gl.uniform1f(u.uLin, lin?1:0);
+  gl.uniform1f(u.uCovK, Sg.covK); gl.uniform1f(u.uExposure, lin ? 1 : o.bright/1.25);   // next to dots the photo keeps its own exposure; Brightness is for the dots gl.uniform1f(u.uLin, 0);   // splats stay in the photo's own colour space; the final pass knows which pixels are photo
   const slid = o.thumb ? 0 : Math.hypot(S.pan[0], S.pan[1])/(S.refDist||2);
   gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8 + slid*8));
-  gl.uniform1i(u.uFx, o.splatFx||0); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0);
+  gl.uniform1i(u.uFx, o.splatFx||0); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, o.mix||0);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, Sg.tex); gl.uniform1i(u.uData, 0);
   gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   gl.bindVertexArray(Sg.vao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, Sg.n); gl.bindVertexArray(null);
@@ -2019,23 +2096,38 @@ async function savePly(){
 }
 
 // ---------------------------------------------------------------- camera moves
+// Moves are small and slow by default, the drift of documentary footage: long durations, smootherstep
+// easing (a slower start and stop than a plain ease), and a Strength that scales every move and effect
+// together. Old moves at Strong match what they used to be. dz zoom, dy turn, dp tilt, px/py slide
+// (in units of the subject's distance).
+const STRENGTH = [['gentle','Gentle',0.4],['medium','Medium',0.75],['strong','Strong',1.25]];
+const strength = () => (STRENGTH.find(s=>s[0]===S.strength)||STRENGTH[0])[2];
 const MOVES = {
-  push:  t=>({dz:-0.32*t}),
-  orbit: t=>({dy:-14+28*t}),
-  drift: t=>({dz:-0.26*t, dy:-8+16*t, dp:4-4*t}),
-  rise:  t=>({dy:22*t, dp:16*t, dz:-0.12*t})
+  push:  (t,k)=>({dz:-0.32*k*t}),
+  pull:  (t,k)=>({dz:0.28*k*t}),
+  slide: (t,k)=>({px:(t-0.5)*0.22*k, dy:(0.5-t)*7*k}),          // a sideways dolly, turning a little to hold the subject
+  float: (t,k)=>({dy:Math.sin(t*2*Math.PI)*6*k, dp:Math.sin(t*4*Math.PI)*2.2*k, dz:-0.05*k*Math.sin(t*Math.PI)}),   // ends where it began: loops
+  orbit: (t,k)=>({dy:(-14+28*t)*k}),
+  drift: (t,k)=>({dz:-0.26*t*k, dy:(-8+16*t)*k, dp:(4-4*t)*k}),
+  rise:  (t,k)=>({py:0.12*t*k, dp:10*t*k, dz:-0.1*t*k})           // the camera rises and looks down a touch
 };
-const ease = t => 0.5-0.5*Math.cos(Math.PI*t);
-function poseAt(base, move, t){ const m=MOVES[move](ease(Math.min(1,Math.max(0,t))));
-  return {yaw:base.yaw+(m.dy||0), pitch:Math.max(-80,Math.min(80,base.pitch+(m.dp||0))), zoom:Math.max(0.3, base.zoom*(1+(m.dz||0)))}; }
+const MOVE_NAMES = [['push','Push in'],['pull','Pull out'],['slide','Slide'],['float','Float'],['drift','Drift'],['orbit','Orbit'],['rise','Rise']];
+const LOOPING = new Set(['float']);
+const ease = t => t*t*t*(t*(6*t-15)+10);
+function poseAt(base, move, t){
+  const tt = Math.min(1,Math.max(0,t)), m = MOVES[move](LOOPING.has(move) ? tt : ease(tt), strength()), R = S.refDist||2;
+  return {yaw:base.yaw+(m.dy||0), pitch:Math.max(-80,Math.min(80,base.pitch+(m.dp||0))), zoom:Math.max(0.3, base.zoom*(1+(m.dz||0))),
+    pan:[base.pan[0]+(m.px||0)*R, base.pan[1]+(m.py||0)*R, base.pan[2]]}; }
+const viewBase = () => ({yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, pan:S.pan.slice()});
 
-async function previewMove(move, secs){
+// portion: play only the opening of the move at its real speed (a quick look when a chip is tapped)
+async function previewMove(move, secs, portion=1){
   if (S.recording || !S.count) return;
-  const base={yaw:S.yaw,pitch:S.pitch,zoom:S.zoom}, dur=secs*1000;
-  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked'); banner('Playing the move');
+  const base=viewBase(), dur=secs*1000*portion;
+  S.recording=true; S.spin=false; syncSpin(); $('#recbar').hidden=false; document.body.classList.add('locked'); banner(portion<1 ? 'Playing the start of the move' : 'Playing the move');
   S.fxNow = S.fx||'none';
-  await new Promise(res=>{ const t0=performance.now(); const step=()=>{ const el=performance.now()-t0;
-    Object.assign(S, poseAt(base, move, el/dur)); S.fxT=Math.min(1,el/dur); S.fxTime=el/1000; draw(); renderLabels(); renderPins();
+  await new Promise(res=>{ const t0=performance.now(); const step=()=>{ const el=performance.now()-t0, t=Math.min(1,el/dur)*portion;
+    Object.assign(S, poseAt(base, move, t)); S.fxT=t; S.fxTime=el/1000; draw(); renderLabels(); renderPins();
     $('#recfill').style.width=(Math.min(1,el/dur)*100)+'%'; if (el<dur) requestAnimationFrame(step); else res(); }; requestAnimationFrame(step); });
   S.recording=false; S.fxNow='none'; $('#recbar').hidden=true; document.body.classList.remove('locked'); Object.assign(S, base); S.dirtyDraw=true; banner(modeText());
 }
@@ -2044,7 +2136,7 @@ async function previewMove(move, secs){
 // slower export, never a jerky video. Older browsers fall back to recording the screen in real time.
 async function recordMove(move, secs){
   if (S.recording || !S.count) return;
-  const base={yaw:S.yaw,pitch:S.pitch,zoom:S.zoom}, fps=30, hold=Math.round(fps*0.4), frames=Math.round(secs*fps)+2*hold;
+  const base=viewBase(), fps=30, hold=Math.round(fps*(LOOPING.has(move)?0:0.4)), frames=Math.round(secs*fps)+2*hold;
   const [W,H] = exportSize(MOBILE ? 1280 : 1920, 1920);
   const rc=document.createElement('canvas'); rc.width=W; rc.height=H; const rx=rc.getContext('2d');
   const frameAt = i => { const t=(i-hold)/(frames-2*hold-1); Object.assign(S, poseAt(base, move, t)); S.fxT=Math.min(1,Math.max(0,t)); S.fxTime=i/fps; draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
@@ -2166,9 +2258,11 @@ async function restoreSession(){
       if (S.adv.fov) S.tanV = Math.tan(S.adv.fov*Math.PI/360);
       if (S.adv.roll!=null) S.roll = S.adv.roll*Math.PI/180;
       S.labels = (ok.labels||[]).map(L=>{ const o={...L}; if (!o.fixed) delete o.fixed; o.pos = labelWorld(o); return o; });
-      const V = ok.view; S.autoFrame = false; S.reframe = false;
-      Object.assign(S, {yaw:V.yaw, pitch:V.pitch, zoom:V.zoom, pan:V.pan, pivot:V.pivot, home:V.home, userMoved:V.userMoved});
-      if (V.refDist){ S.refDist = V.refDist; S.refFrozen = true; }
+      // a saved view is used only if it is made of real numbers (an unfinished framing once saved NaN)
+      const V = ok.view, good = V && [V.yaw, V.pitch, V.zoom, ...(V.pan||[]), ...(V.pivot||[])].every(Number.isFinite) && V.pan.length===3 && V.pivot.length===3;
+      if (good){ S.autoFrame = false; S.reframe = false;
+        Object.assign(S, {yaw:V.yaw, pitch:V.pitch, zoom:V.zoom, pan:V.pan, pivot:V.pivot, home:V.home, userMoved:V.userMoved});
+        if (V.refDist > 0){ S.refDist = V.refDist; S.refFrozen = true; } }
     }
     S.dirtyBuild = true; busy(null); renderTray(); viewButton();
     notice('Back where you left off. Open starts something new.');
@@ -2201,7 +2295,7 @@ function undo(){
   if (s.level!==S.level){ S.level=s.level; S.roll = S.level ? S.rollAuto : 0; }
   S.dirtyBuild=true; undoArmed=true; persist(); renderTray(); banner(modeText());
 }
-function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine, move:S.move, moveLen:S.moveLen, fx:S.fx, exportLong:S.adv.exportLong}); queueSessionSave(); }
+function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine, move:S.move, moveLen:S.moveLen, fx:S.fx, strength:S.strength, exportLong:S.adv.exportLong}); queueSessionSave(); }
 // ---------------------------------------------------------------- my looks: save, apply, share
 function myLooks(){ const v=recall('myLooks'); return Array.isArray(v) ? v : []; }
 function saveMyLooks(list){ store('myLooks', list); }
@@ -2280,8 +2374,8 @@ function renderTray(){
   if (S.tab==='look'){
     const mine = myLooks(), custom = isCustom();
     tr.innerHTML = `<h3>Look ${custom?'<span class="chip" style="padding:3px 8px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent);border-color:var(--accent)">Changed</span>':''}<span class="sp"></span></h3>
-      <div class="looks">${Object.entries(LOOKS).filter(([k])=>k!=='real'||hasSplats()).map(([k,L])=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${L.name}</b></button>`).join('')}</div>
-      ${LOOKS[look].splat ? '' : `<h3 style="margin-top:12px">Dot pattern</h3>
+      <div class="looks">${Object.entries(LOOKS).filter(([k])=>lookAvailable(k)).map(([k,L])=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${L.name}</b></button>`).join('')}</div>
+      ${LOOKS[look].splat && !LOOKS[look].mix ? '' : `<h3 style="margin-top:12px">Dot pattern</h3>
       <div class="scroller pats">${CTRL.pattern.chips.map(([v,n])=>`<button class="chip pat" data-pat="${v}" aria-pressed="${P.pattern===v}" ${S.scan?'disabled':''}>${PAT_ICON[v]}${n}</button>`).join('')}</div>${S.scan?'<p class="hint" style="margin:4px 0 0">A 3D scan keeps the points it measured, so the pattern applies to photos only.</p>':''}`}
       <div class="sect row"><button class="chip" id="resetLook" ${custom?'':'disabled'}>Reset look</button>${undoBtn}</div>
       <div class="sect"><h3>My looks</h3>
@@ -2367,16 +2461,20 @@ function renderTray(){
   }
   else if (S.tab==='move'){
     const mv = S.move||'push', len = S.moveLen||6;
-    tr.innerHTML = `<div class="scroller">${[['push','Push in'],['orbit','Orbit'],['drift','Drift'],['rise','Rise']].map(([v,n])=>`<button class="chip" data-move="${v}" aria-pressed="${mv===v}">${n}</button>`).join('')}</div>
-      <div class="scroller" style="margin-top:8px">${[4,6,10].map(s=>`<button class="chip" data-len="${s}" aria-pressed="${len===s}">${s} seconds</button>`).join('')}</div>
-      <h3 style="margin-top:12px">Effect</h3>
-      <div class="scroller">${FX.filter(([v])=>v!=='resolve'||hasSplats()).map(([v,n])=>`<button class="chip" data-fx="${v}" aria-pressed="${(S.fx||'none')===v}">${n}</button>`).join('')}</div>
-      <p class="hint">${sayBtn(FX.find(f=>f[0]===(S.fx||'none'))[2])}<span>${FX.find(f=>f[0]===(S.fx||'none'))[2]}</span></p>
-      <div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button></div>
-      <p class="hint">${sayBtn('The move starts from the view on screen, so line it up first.')}<span>Starts from the view on screen, so line it up first.</span></p>`;
-    tr.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>{ S.move=b.dataset.move; persist(); renderTray(); previewMove(S.move, Math.min(4,S.moveLen||6)); }));
+    const fx = FX.find(f=>f[0]===(S.fx||'none')) || FX[0], st = S.strength||'gentle', fxs = FX.filter(([v])=>!FX_NEEDS_SPLATS.has(v)||hasSplats());
+    const moveHint = 'The move starts from the view on screen, so line it up first. '+fx[2];
+    tr.innerHTML = `<h3>Move</h3><div class="scroller">${MOVE_NAMES.map(([v,n])=>`<button class="chip" data-move="${v}" aria-pressed="${mv===v}">${n}</button>`).join('')}</div>
+      <h3 style="margin-top:10px">Effect</h3><div class="scroller">${fxs.map(([v,n])=>`<button class="chip" data-fx="${v}" aria-pressed="${fx[0]===v}">${n}</button>`).join('')}</div>
+      <h3 style="margin-top:10px">Strength and length</h3>
+      <div class="scroller">${STRENGTH.map(([v,n])=>`<button class="chip" data-strength="${v}" aria-pressed="${st===v}">${n}</button>`).join('')}<span class="chipgap"></span>${MOVE_LENGTHS.map(s=>`<button class="chip" data-len="${s}" aria-pressed="${len===s}">${s} s</button>`).join('')}</div>
+      <p class="hint">${sayBtn(moveHint)}<span>${fx[2]}</span></p>
+      <div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button></div>`;
+    // a tapped chip plays the opening of the real move at its real speed
+    const peek = () => previewMove(S.move||'push', S.moveLen||6, Math.min(1, 4/(S.moveLen||6)));
+    tr.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>{ S.move=b.dataset.move; persist(); renderTray(); peek(); }));
     tr.querySelectorAll('[data-len]').forEach(b=>b.addEventListener('click',()=>{ S.moveLen=+b.dataset.len; persist(); renderTray(); }));
-    tr.querySelectorAll('[data-fx]').forEach(b=>b.addEventListener('click',()=>{ S.fx=b.dataset.fx; persist(); renderTray(); if (S.fx!=='none') previewMove(S.move||'push', Math.min(4,S.moveLen||6)); }));
+    tr.querySelectorAll('[data-strength]').forEach(b=>b.addEventListener('click',()=>{ S.strength=b.dataset.strength; persist(); renderTray(); peek(); }));
+    tr.querySelectorAll('[data-fx]').forEach(b=>b.addEventListener('click',()=>{ S.fx=b.dataset.fx; persist(); renderTray(); if (S.fx!=='none') peek(); }));
     $('#playMove').addEventListener('click',()=>previewMove(S.move||'push', S.moveLen||6));
     $('#recMove').addEventListener('click',()=>recordMove(S.move||'push', S.moveLen||6));
   }
@@ -2409,7 +2507,9 @@ function afterPlacing(){ if (S.tab!=='people') setTab('people'); else { $('#stag
 function setPlacing(kind){ S.placing = S.placing===kind ? false : kind; $('#stage').classList.toggle('picking', !!S.placing || S.tab==='subject');
   renderTray(); banner(modeText()); renderPins(); }
 const SPLAT_KEYS = ['bright','glow','depth3d','hidden'];
-function groupKeys(g){ const G=GROUPS.find(x=>x.id===g)||GROUPS[0]; return G.keys.filter(k=>!(S.scan && (k==='depth3d'||k==='light'||k==='hidden'||k==='floor')) && (!LOOKS[look].splat || SPLAT_KEYS.includes(k))); }
+// Photoreal needs splats; the mixed looks also need a subject, so not scans
+function lookAvailable(k){ const L=LOOKS[k]; return !L.splat || (hasSplats() && (!L.mix || !S.scan)); }
+function groupKeys(g){ const G=GROUPS.find(x=>x.id===g)||GROUPS[0]; return G.keys.filter(k=>!(S.scan && (k==='depth3d'||k==='light'||k==='hidden'||k==='floor')) && (!LOOKS[look].splat || LOOKS[look].mix || SPLAT_KEYS.includes(k))); }
 function groupRow(){ return `<div class="seg" role="tablist">${GROUPS.filter(g=>g.id==='advanced'||groupKeys(g.id).length).map(g=>`<button class="segb" data-group="${g.id}" aria-selected="${S.group===g.id}">${g.name}</button>`).join('')}</div>`; }
 function wireGroupRow(tr){ tr.querySelectorAll('[data-group]').forEach(b=>b.addEventListener('click',()=>{ S.group=b.dataset.group; if (S.group!=='advanced') S.ctrl=groupKeys(S.group)[0]; store('group', S.group); renderTray(); showDebug(); })); }
 // ---------------------------------------------------------------- Advanced: diagnostic views and direct settings
@@ -2472,7 +2572,7 @@ function queueThumbs(){ thumbsFor = null; const job=++thumbJob; setTimeout(()=>m
 function makeThumbs(job){
   if (job!==thumbJob) return;
   if (!gl || !G || !S.photo || (!S.compMap && !S.scan) || S.dirtyBuild){ setTimeout(()=>makeThumbs(job), 300); return; }
-  const mine = myLooks(), keys = Object.keys(LOOKS).filter(k=>k!=='real'||hasSplats()).concat(mine.map(m=>m.id)); const out = {};
+  const mine = myLooks(), keys = Object.keys(LOOKS).filter(lookAvailable).concat(mine.map(m=>m.id)); const out = {};
   const next = i => {
     if (job!==thumbJob) return;
     if (i>=keys.length){ thumbsFor = out; paintThumbs(); return; }
@@ -2654,16 +2754,21 @@ function viewButton(){ $('#photoView').hidden = viewAtHome(); }
 // Centre the subject and size it to fill about 60% of the frame height, like the reference shots.
 function frameSubject(){
   if (!S.count || !S.P || !S.comps.length) return;
+  // with no size on screen (the page in the background) the sums below divide by zero and the view
+  // becomes NaN, a blank picture; wait until the picture is shown again
+  if (!(S.cssW>0 && S.cssH>0 && cv.width>0 && cv.height>0)){ S.framePending = true; return; }
   draw();
   const MV=M4.mul(S.P,S.V), out=S.cpu; let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9, sx=0,sy=0,sz=0,n=0;
   for (let i=0;i<S.count;i+=3){ const o=i*10; if (out[o+6]!==0) continue; const c=M4.xf(MV,[out[o],out[o+1],out[o+2]]); if (c[3]<=0) continue;
     x0=Math.min(x0,c[0]); x1=Math.max(x1,c[0]); y0=Math.min(y0,c[1]); y1=Math.max(y1,c[1]); sx+=out[o]; sy+=out[o+1]; sz+=out[o+2]; n++; }
   if (n<50) return;
   const h = Math.max((y1-y0)/2, (x1-x0)/2*S.cssW/S.cssH);           // share of the frame the subject spans now
+  if (!(h>0 && isFinite(h))) return;
   S.zoom = Math.max(0.45, Math.min(2.5, S.zoom * h / 0.6));
   S.pivot = S.target.slice(); S.pan=[0,0,0]; S.userMoved = true;
   draw(); const V=viewMatrix(S.yaw,S.pitch,S.zoom,S.pivot,S.pan), pv=M4.xf(V,[sx/n,sy/n,sz/n]);
   setPivotKeepingView([sx/n,sy/n,sz/n]); S.pan=[S.pan[0]+pv[0], S.pan[1]+pv[1], S.pan[2]];
+  if (![S.zoom, ...S.pan, ...S.pivot].every(isFinite)){ S.zoom=LOOKS[look].zoom; S.pan=[0,0,0]; S.pivot=S.target.slice(); S.userMoved=false; S.home=null; return; }
   S.home = {yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, pivot:S.pivot.slice(), pan:S.pan.slice()};
   S.dirtyDraw = true; viewButton();
 }
@@ -2719,21 +2824,26 @@ $('#shapeBtn').addEventListener('click', e=>{ e.stopPropagation();
     pushUndo(); S.shape=b.dataset.v; commit(); layout(); })); });
 const PIC_SIZES = [null, 1080, 2048, 2880, 4096];
 // Effects play over a camera move, in preview and in the video.
-const FX = [['none','None','The view just moves.'],
-  ['sweep','Sweep','A scanning beam sweeps outward from the camera and the picture appears behind it.'],
-  ['resolve','Resolve','The beam sweeps outward and turns the dots into the real photo as it passes.'],
+const FX = [['none','None','Just the move.'],
+  ['build','Build up','The picture gathers slowly, dot by dot, from nothing.'],
+  ['dissolve','Dissolve','The dots quietly give way to the real photo, a little at a time.'],
+  ['dust','Dust','Everything drifts very slightly, like dust in still air.'],
+  ['sweep','Sweep','A scanning beam moves outward and the picture appears behind it.'],
+  ['resolve','Resolve','The beam moves outward and turns the dots into the real photo as it passes.'],
   ['decay','Decay','The picture comes apart: pieces let go one after another and drift away.'],
   ['glitch','Glitch','Bands tear sideways, colours split and blocks drop out, in bursts.']];
+const FX_NEEDS_SPLATS = new Set(['dissolve','resolve']);
+const MOVE_LENGTHS = [4, 6, 10, 20, 30];
 $('#saveBtn').addEventListener('click', e=>{ e.stopPropagation();
   const px = S.adv.exportLong || (MOBILE ? 2048 : 2880);
   const m=menu($('#saveBtn'), '#saveMenu', [['png','Picture',`PNG, ${px} pixels on the long side`],
     ['size', `Picture size: ${S.adv.exportLong || 'Auto'}`, 'Tap to change. Videos stop at 1920.'],
-    ['video','Video','Opens camera moves and effects'],['ply','3D points','PLY file for Blender, MeshLab'], ...(hasSplats() ? [['splat','Splat file','PLY for SuperSplat and other splat viewers']] : [])]);
+    ['video','Video','Opens camera moves and effects'],['ply','3D points','PLY file for Blender, MeshLab'], ...(hasSplats() ? [['spz','Splat file','.spz, small, for SuperSplat and splat apps'],['splat','Splat file, full','.ply, larger, for any 3DGS tool']] : [])]);
   if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',ev=>{
     if (b.dataset.v==='size'){ ev.stopPropagation(); const i=PIC_SIZES.indexOf(S.adv.exportLong); S.adv.exportLong=PIC_SIZES[(i+1)%PIC_SIZES.length]; persist();
       m.hidden=true; $('#saveBtn').click(); return; }       // reopen with the new size showing
     m.hidden=true; $('#saveBtn').setAttribute('aria-expanded','false');
-    if (b.dataset.v==='png') savePicture(); else if (b.dataset.v==='ply') savePly(); else if (b.dataset.v==='splat') saveSplatPly(); else if (S.tab!=='move') setTab('move'); })); });
+    if (b.dataset.v==='png') savePicture(); else if (b.dataset.v==='ply') savePly(); else if (b.dataset.v==='splat') saveSplatPly(); else if (b.dataset.v==='spz') saveSplatSpz(); else if (S.tab!=='move') setTab('move'); })); });
 document.addEventListener('click', ()=>{ document.querySelectorAll('.menu').forEach(x=>x.hidden=true); document.querySelectorAll('.tb[aria-haspopup]').forEach(b=>b.setAttribute('aria-expanded','false')); });
 $('#infoBtn').addEventListener('click', e=>{ e.stopPropagation(); const i=$('#info'); i.hidden=!i.hidden; $('#infoBtn').setAttribute('aria-expanded', !i.hidden);
   if (!i.hidden){ const text='First Return turns a photo into a lidar style point cloud. Depth is worked out on your device, and the photo never leaves it.';
@@ -2834,6 +2944,7 @@ $('#fileScan').addEventListener('change', async e=>{
 
 // ---------------------------------------------------------------- main loop
 function frame(){
+  if (S.framePending && S.cssW>0 && S.cssH>0 && !S.recording){ S.framePending=false; frameSubject(); }
   if (gl && G){
     if (S.dirtyBuild && !S.recording) build();
     if (S.spin && !S.recording){ S.yaw+=0.25; S.dirtyDraw=true; viewButton(); }
@@ -2853,7 +2964,8 @@ async function boot(){
   if (saved && typeof saved.level==='boolean') S.level = saved.level;
   if (saved && saved.activeMine && myLooks().some(m=>m.id===saved.activeMine)) S.activeMine = saved.activeMine;
   if (saved && MOVES[saved.move]) S.move = saved.move;
-  if (saved && [4,6,10].includes(saved.moveLen)) S.moveLen = saved.moveLen;
+  if (saved && MOVE_LENGTHS.includes(saved.moveLen)) S.moveLen = saved.moveLen;
+  if (saved && STRENGTH.some(s=>s[0]===saved.strength)) S.strength = saved.strength;
   if (saved && FX.some(f=>f[0]===saved.fx)) S.fx = saved.fx;
   if (saved && PIC_SIZES.includes(saved.exportLong)) S.adv.exportLong = saved.exportLong;
   { const g = recall('group'); if (GROUPS.some(x=>x.id===g)) S.group = g; }

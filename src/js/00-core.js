@@ -56,6 +56,11 @@ const LOOKS = {
   // the photo itself as Gaussian splats (or a splat scan as it was captured); the dot controls do not apply
   real:    {name:'Photoreal', dots:3.05, size:1.9, glow:1, bright:2, colour:'photo', depth3d:2, backdrop:1.05, floor:0, edges:0, hidden:1,
             pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:0, pitch:0, zoom:1, splat:1},
+  // mixed: the subject as the photo on the Void stage of dots, or the world as the photo around a subject of dots
+  psub:    {name:'Photo subject', dots:3.05, size:1.9, glow:1.0, bright:2.3, colour:'photo', depth3d:2, backdrop:1.05, floor:1.3, edges:0, hidden:1,
+            pattern:'scatter', bgTint:1, bgGain:.45, bgSize:2.4, sparkle:0, yaw:0, pitch:0, zoom:1.3, splat:1, mix:1},
+  pworld:  {name:'Photo world', dots:3.05, size:1.4, glow:.5, bright:2.4, colour:'photo', depth3d:2, backdrop:1.05, floor:0, edges:0, hidden:1,
+            pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:0, pitch:0, zoom:1, splat:1, mix:2},
 };
 const LOOK_KEYS = ['dots','size','glow','bright','colour','depth3d','backdrop','floor','edges','hidden','pattern'];
 

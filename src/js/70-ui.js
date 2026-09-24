@@ -21,7 +21,7 @@ function undo(){
   if (s.level!==S.level){ S.level=s.level; S.roll = S.level ? S.rollAuto : 0; }
   S.dirtyBuild=true; undoArmed=true; persist(); renderTray(); banner(modeText());
 }
-function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine, move:S.move, moveLen:S.moveLen, fx:S.fx, exportLong:S.adv.exportLong}); queueSessionSave(); }
+function persist(){ store('state', {P, look, shape:S.shape, level:S.level, activeMine:S.activeMine, move:S.move, moveLen:S.moveLen, fx:S.fx, strength:S.strength, exportLong:S.adv.exportLong}); queueSessionSave(); }
 // ---------------------------------------------------------------- my looks: save, apply, share
 function myLooks(){ const v=recall('myLooks'); return Array.isArray(v) ? v : []; }
 function saveMyLooks(list){ store('myLooks', list); }
@@ -100,8 +100,8 @@ function renderTray(){
   if (S.tab==='look'){
     const mine = myLooks(), custom = isCustom();
     tr.innerHTML = `<h3>Look ${custom?'<span class="chip" style="padding:3px 8px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent);border-color:var(--accent)">Changed</span>':''}<span class="sp"></span></h3>
-      <div class="looks">${Object.entries(LOOKS).filter(([k])=>k!=='real'||hasSplats()).map(([k,L])=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${L.name}</b></button>`).join('')}</div>
-      ${LOOKS[look].splat ? '' : `<h3 style="margin-top:12px">Dot pattern</h3>
+      <div class="looks">${Object.entries(LOOKS).filter(([k])=>lookAvailable(k)).map(([k,L])=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${L.name}</b></button>`).join('')}</div>
+      ${LOOKS[look].splat && !LOOKS[look].mix ? '' : `<h3 style="margin-top:12px">Dot pattern</h3>
       <div class="scroller pats">${CTRL.pattern.chips.map(([v,n])=>`<button class="chip pat" data-pat="${v}" aria-pressed="${P.pattern===v}" ${S.scan?'disabled':''}>${PAT_ICON[v]}${n}</button>`).join('')}</div>${S.scan?'<p class="hint" style="margin:4px 0 0">A 3D scan keeps the points it measured, so the pattern applies to photos only.</p>':''}`}
       <div class="sect row"><button class="chip" id="resetLook" ${custom?'':'disabled'}>Reset look</button>${undoBtn}</div>
       <div class="sect"><h3>My looks</h3>
@@ -187,16 +187,20 @@ function renderTray(){
   }
   else if (S.tab==='move'){
     const mv = S.move||'push', len = S.moveLen||6;
-    tr.innerHTML = `<div class="scroller">${[['push','Push in'],['orbit','Orbit'],['drift','Drift'],['rise','Rise']].map(([v,n])=>`<button class="chip" data-move="${v}" aria-pressed="${mv===v}">${n}</button>`).join('')}</div>
-      <div class="scroller" style="margin-top:8px">${[4,6,10].map(s=>`<button class="chip" data-len="${s}" aria-pressed="${len===s}">${s} seconds</button>`).join('')}</div>
-      <h3 style="margin-top:12px">Effect</h3>
-      <div class="scroller">${FX.filter(([v])=>v!=='resolve'||hasSplats()).map(([v,n])=>`<button class="chip" data-fx="${v}" aria-pressed="${(S.fx||'none')===v}">${n}</button>`).join('')}</div>
-      <p class="hint">${sayBtn(FX.find(f=>f[0]===(S.fx||'none'))[2])}<span>${FX.find(f=>f[0]===(S.fx||'none'))[2]}</span></p>
-      <div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button></div>
-      <p class="hint">${sayBtn('The move starts from the view on screen, so line it up first.')}<span>Starts from the view on screen, so line it up first.</span></p>`;
-    tr.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>{ S.move=b.dataset.move; persist(); renderTray(); previewMove(S.move, Math.min(4,S.moveLen||6)); }));
+    const fx = FX.find(f=>f[0]===(S.fx||'none')) || FX[0], st = S.strength||'gentle', fxs = FX.filter(([v])=>!FX_NEEDS_SPLATS.has(v)||hasSplats());
+    const moveHint = 'The move starts from the view on screen, so line it up first. '+fx[2];
+    tr.innerHTML = `<h3>Move</h3><div class="scroller">${MOVE_NAMES.map(([v,n])=>`<button class="chip" data-move="${v}" aria-pressed="${mv===v}">${n}</button>`).join('')}</div>
+      <h3 style="margin-top:10px">Effect</h3><div class="scroller">${fxs.map(([v,n])=>`<button class="chip" data-fx="${v}" aria-pressed="${fx[0]===v}">${n}</button>`).join('')}</div>
+      <h3 style="margin-top:10px">Strength and length</h3>
+      <div class="scroller">${STRENGTH.map(([v,n])=>`<button class="chip" data-strength="${v}" aria-pressed="${st===v}">${n}</button>`).join('')}<span class="chipgap"></span>${MOVE_LENGTHS.map(s=>`<button class="chip" data-len="${s}" aria-pressed="${len===s}">${s} s</button>`).join('')}</div>
+      <p class="hint">${sayBtn(moveHint)}<span>${fx[2]}</span></p>
+      <div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button></div>`;
+    // a tapped chip plays the opening of the real move at its real speed
+    const peek = () => previewMove(S.move||'push', S.moveLen||6, Math.min(1, 4/(S.moveLen||6)));
+    tr.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>{ S.move=b.dataset.move; persist(); renderTray(); peek(); }));
     tr.querySelectorAll('[data-len]').forEach(b=>b.addEventListener('click',()=>{ S.moveLen=+b.dataset.len; persist(); renderTray(); }));
-    tr.querySelectorAll('[data-fx]').forEach(b=>b.addEventListener('click',()=>{ S.fx=b.dataset.fx; persist(); renderTray(); if (S.fx!=='none') previewMove(S.move||'push', Math.min(4,S.moveLen||6)); }));
+    tr.querySelectorAll('[data-strength]').forEach(b=>b.addEventListener('click',()=>{ S.strength=b.dataset.strength; persist(); renderTray(); peek(); }));
+    tr.querySelectorAll('[data-fx]').forEach(b=>b.addEventListener('click',()=>{ S.fx=b.dataset.fx; persist(); renderTray(); if (S.fx!=='none') peek(); }));
     $('#playMove').addEventListener('click',()=>previewMove(S.move||'push', S.moveLen||6));
     $('#recMove').addEventListener('click',()=>recordMove(S.move||'push', S.moveLen||6));
   }
@@ -229,7 +233,9 @@ function afterPlacing(){ if (S.tab!=='people') setTab('people'); else { $('#stag
 function setPlacing(kind){ S.placing = S.placing===kind ? false : kind; $('#stage').classList.toggle('picking', !!S.placing || S.tab==='subject');
   renderTray(); banner(modeText()); renderPins(); }
 const SPLAT_KEYS = ['bright','glow','depth3d','hidden'];
-function groupKeys(g){ const G=GROUPS.find(x=>x.id===g)||GROUPS[0]; return G.keys.filter(k=>!(S.scan && (k==='depth3d'||k==='light'||k==='hidden'||k==='floor')) && (!LOOKS[look].splat || SPLAT_KEYS.includes(k))); }
+// Photoreal needs splats; the mixed looks also need a subject, so not scans
+function lookAvailable(k){ const L=LOOKS[k]; return !L.splat || (hasSplats() && (!L.mix || !S.scan)); }
+function groupKeys(g){ const G=GROUPS.find(x=>x.id===g)||GROUPS[0]; return G.keys.filter(k=>!(S.scan && (k==='depth3d'||k==='light'||k==='hidden'||k==='floor')) && (!LOOKS[look].splat || LOOKS[look].mix || SPLAT_KEYS.includes(k))); }
 function groupRow(){ return `<div class="seg" role="tablist">${GROUPS.filter(g=>g.id==='advanced'||groupKeys(g.id).length).map(g=>`<button class="segb" data-group="${g.id}" aria-selected="${S.group===g.id}">${g.name}</button>`).join('')}</div>`; }
 function wireGroupRow(tr){ tr.querySelectorAll('[data-group]').forEach(b=>b.addEventListener('click',()=>{ S.group=b.dataset.group; if (S.group!=='advanced') S.ctrl=groupKeys(S.group)[0]; store('group', S.group); renderTray(); showDebug(); })); }
 // ---------------------------------------------------------------- Advanced: diagnostic views and direct settings
@@ -292,7 +298,7 @@ function queueThumbs(){ thumbsFor = null; const job=++thumbJob; setTimeout(()=>m
 function makeThumbs(job){
   if (job!==thumbJob) return;
   if (!gl || !G || !S.photo || (!S.compMap && !S.scan) || S.dirtyBuild){ setTimeout(()=>makeThumbs(job), 300); return; }
-  const mine = myLooks(), keys = Object.keys(LOOKS).filter(k=>k!=='real'||hasSplats()).concat(mine.map(m=>m.id)); const out = {};
+  const mine = myLooks(), keys = Object.keys(LOOKS).filter(lookAvailable).concat(mine.map(m=>m.id)); const out = {};
   const next = i => {
     if (job!==thumbJob) return;
     if (i>=keys.length){ thumbsFor = out; paintThumbs(); return; }
@@ -474,16 +480,21 @@ function viewButton(){ $('#photoView').hidden = viewAtHome(); }
 // Centre the subject and size it to fill about 60% of the frame height, like the reference shots.
 function frameSubject(){
   if (!S.count || !S.P || !S.comps.length) return;
+  // with no size on screen (the page in the background) the sums below divide by zero and the view
+  // becomes NaN, a blank picture; wait until the picture is shown again
+  if (!(S.cssW>0 && S.cssH>0 && cv.width>0 && cv.height>0)){ S.framePending = true; return; }
   draw();
   const MV=M4.mul(S.P,S.V), out=S.cpu; let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9, sx=0,sy=0,sz=0,n=0;
   for (let i=0;i<S.count;i+=3){ const o=i*10; if (out[o+6]!==0) continue; const c=M4.xf(MV,[out[o],out[o+1],out[o+2]]); if (c[3]<=0) continue;
     x0=Math.min(x0,c[0]); x1=Math.max(x1,c[0]); y0=Math.min(y0,c[1]); y1=Math.max(y1,c[1]); sx+=out[o]; sy+=out[o+1]; sz+=out[o+2]; n++; }
   if (n<50) return;
   const h = Math.max((y1-y0)/2, (x1-x0)/2*S.cssW/S.cssH);           // share of the frame the subject spans now
+  if (!(h>0 && isFinite(h))) return;
   S.zoom = Math.max(0.45, Math.min(2.5, S.zoom * h / 0.6));
   S.pivot = S.target.slice(); S.pan=[0,0,0]; S.userMoved = true;
   draw(); const V=viewMatrix(S.yaw,S.pitch,S.zoom,S.pivot,S.pan), pv=M4.xf(V,[sx/n,sy/n,sz/n]);
   setPivotKeepingView([sx/n,sy/n,sz/n]); S.pan=[S.pan[0]+pv[0], S.pan[1]+pv[1], S.pan[2]];
+  if (![S.zoom, ...S.pan, ...S.pivot].every(isFinite)){ S.zoom=LOOKS[look].zoom; S.pan=[0,0,0]; S.pivot=S.target.slice(); S.userMoved=false; S.home=null; return; }
   S.home = {yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, pivot:S.pivot.slice(), pan:S.pan.slice()};
   S.dirtyDraw = true; viewButton();
 }
@@ -539,21 +550,26 @@ $('#shapeBtn').addEventListener('click', e=>{ e.stopPropagation();
     pushUndo(); S.shape=b.dataset.v; commit(); layout(); })); });
 const PIC_SIZES = [null, 1080, 2048, 2880, 4096];
 // Effects play over a camera move, in preview and in the video.
-const FX = [['none','None','The view just moves.'],
-  ['sweep','Sweep','A scanning beam sweeps outward from the camera and the picture appears behind it.'],
-  ['resolve','Resolve','The beam sweeps outward and turns the dots into the real photo as it passes.'],
+const FX = [['none','None','Just the move.'],
+  ['build','Build up','The picture gathers slowly, dot by dot, from nothing.'],
+  ['dissolve','Dissolve','The dots quietly give way to the real photo, a little at a time.'],
+  ['dust','Dust','Everything drifts very slightly, like dust in still air.'],
+  ['sweep','Sweep','A scanning beam moves outward and the picture appears behind it.'],
+  ['resolve','Resolve','The beam moves outward and turns the dots into the real photo as it passes.'],
   ['decay','Decay','The picture comes apart: pieces let go one after another and drift away.'],
   ['glitch','Glitch','Bands tear sideways, colours split and blocks drop out, in bursts.']];
+const FX_NEEDS_SPLATS = new Set(['dissolve','resolve']);
+const MOVE_LENGTHS = [4, 6, 10, 20, 30];
 $('#saveBtn').addEventListener('click', e=>{ e.stopPropagation();
   const px = S.adv.exportLong || (MOBILE ? 2048 : 2880);
   const m=menu($('#saveBtn'), '#saveMenu', [['png','Picture',`PNG, ${px} pixels on the long side`],
     ['size', `Picture size: ${S.adv.exportLong || 'Auto'}`, 'Tap to change. Videos stop at 1920.'],
-    ['video','Video','Opens camera moves and effects'],['ply','3D points','PLY file for Blender, MeshLab'], ...(hasSplats() ? [['splat','Splat file','PLY for SuperSplat and other splat viewers']] : [])]);
+    ['video','Video','Opens camera moves and effects'],['ply','3D points','PLY file for Blender, MeshLab'], ...(hasSplats() ? [['spz','Splat file','.spz, small, for SuperSplat and splat apps'],['splat','Splat file, full','.ply, larger, for any 3DGS tool']] : [])]);
   if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',ev=>{
     if (b.dataset.v==='size'){ ev.stopPropagation(); const i=PIC_SIZES.indexOf(S.adv.exportLong); S.adv.exportLong=PIC_SIZES[(i+1)%PIC_SIZES.length]; persist();
       m.hidden=true; $('#saveBtn').click(); return; }       // reopen with the new size showing
     m.hidden=true; $('#saveBtn').setAttribute('aria-expanded','false');
-    if (b.dataset.v==='png') savePicture(); else if (b.dataset.v==='ply') savePly(); else if (b.dataset.v==='splat') saveSplatPly(); else if (S.tab!=='move') setTab('move'); })); });
+    if (b.dataset.v==='png') savePicture(); else if (b.dataset.v==='ply') savePly(); else if (b.dataset.v==='splat') saveSplatPly(); else if (b.dataset.v==='spz') saveSplatSpz(); else if (S.tab!=='move') setTab('move'); })); });
 document.addEventListener('click', ()=>{ document.querySelectorAll('.menu').forEach(x=>x.hidden=true); document.querySelectorAll('.tb[aria-haspopup]').forEach(b=>b.setAttribute('aria-expanded','false')); });
 $('#infoBtn').addEventListener('click', e=>{ e.stopPropagation(); const i=$('#info'); i.hidden=!i.hidden; $('#infoBtn').setAttribute('aria-expanded', !i.hidden);
   if (!i.hidden){ const text='First Return turns a photo into a lidar style point cloud. Depth is worked out on your device, and the photo never leaves it.';
@@ -654,6 +670,7 @@ $('#fileScan').addEventListener('change', async e=>{
 
 // ---------------------------------------------------------------- main loop
 function frame(){
+  if (S.framePending && S.cssW>0 && S.cssH>0 && !S.recording){ S.framePending=false; frameSubject(); }
   if (gl && G){
     if (S.dirtyBuild && !S.recording) build();
     if (S.spin && !S.recording){ S.yaw+=0.25; S.dirtyDraw=true; viewButton(); }

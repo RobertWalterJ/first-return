@@ -7,7 +7,7 @@
 const SPLAT_VS = `#version 300 es
 precision highp float; precision highp int;
 uniform highp usampler2D uData; uniform mat4 uProj, uView; uniform vec2 uFocal, uVp, uR;
-uniform float uCovK, uExposure, uOrbit, uFxT, uTime, uLin; uniform int uFx;
+uniform float uCovK, uExposure, uOrbit, uFxT, uTime, uLin, uFxK; uniform int uFx, uMix;
 layout(location=0) in vec2 aCorner; layout(location=1) in uint aIndex;
 out vec4 vCol; out vec2 vPos;
 float hsh(float n){ return fract(sin(n*12.9898+4.1)*43758.5453); }
@@ -23,12 +23,17 @@ void main(){
   float rnd = hf(aIndex), grow = 1.;
   float r = clamp((length(p)-uR.x)/(uR.y-uR.x), 0., 1.);
   if((t1.w & 1u) == 1u) col.a *= uOrbit;                       // hidden parts show as the view turns
+  bool subj = (t1.w & 2u) == 2u;                                  // mixed looks: 1 photo subject only, 2 everything else
+  if((uMix==1 && !subj) || (uMix==2 && subj)) col.a = 0.;
   if(uFx==1){ if(r > uFxT*1.15) col.a = 0.; }                   // sweep and resolve: only what the beam has reached
   if(uFx==2){ float st=rnd*.7, k=clamp((uFxT-st)/(1.-st), 0., 1.);   // decay: each splat lets go in turn and drifts off
     vec3 dir = normalize(vec3(hf(aIndex*3u+1u)-.5, hf(aIndex*3u+2u)-.25, hf(aIndex*3u+3u)-.5));
-    p += dir*k*k*length(p)*.3; col.a *= 1.-smoothstep(.3,.9,k); grow = 1.-.75*k; }
-  if(uFx==3){ float band=floor(p.y*18.+floor(uTime*7.)*3.), on=step(.9, hsh(band+floor(uTime*11.)));   // glitch: bands slip sideways
-    p.x += on*(hsh(band*3.1)-.5)*(uR.y-uR.x)*.08; }
+    p += dir*k*k*length(p)*.3*uFxK; col.a *= 1.-smoothstep(.3,.9,k); grow = 1.-.75*k; }
+  // build up and dissolve: splats gather one by one, on a slower curve because several overlap every pixel
+  if(uFx==5) col.a *= smoothstep(rnd, rnd+.12, pow(uFxT,1.8)*1.12);
+  if(uFx==7){ float a=uTime*.5; p += vec3(sin(a+rnd*41.), .7*sin(a*.8+rnd*23.), cos(a*.9+rnd*31.))*length(p)*.003*uFxK; }   // dust
+  if(uFx==3){ float band=floor(p.y*18.+floor(uTime*7.)*3.), on=step(1.-.1*uFxK, hsh(band+floor(uTime*11.)));   // glitch: bands slip sideways
+    p.x += on*(hsh(band*3.1)-.5)*(uR.y-uR.x)*.08*uFxK; }
   vec4 cam = uView*vec4(p,1.), clip = uProj*cam; float cb = 1.2*clip.w;
   if(cam.z > -.02 || col.a < .004 || abs(clip.x) > cb || abs(clip.y) > cb){ gl_Position = vec4(0.,0.,2.,1.); return; }
   vec2 u1=unpackHalf2x16(t1.x), u2=unpackHalf2x16(t1.y), u3=unpackHalf2x16(t1.z);
@@ -44,7 +49,7 @@ void main(){
   gl_Position = vec4(clip.xy/clip.w + (aCorner.x*e1 + aCorner.y*e2)*2./uVp, 0., 1.);
   vPos = aCorner*3.;
   vec3 rgb = col.rgb*uExposure;
-  if(uFx==1){ float e = 1.-smoothstep(0., .035, abs(r-uFxT*1.15)); rgb = mix(rgb, vec3(.55,1.,.9), e*.8); }   // the beam's edge
+  if(uFx==1){ float e = 1.-smoothstep(0., .02+.025*uFxK, abs(r-uFxT*1.15)); rgb = mix(rgb, vec3(.55,1.,.9), e*min(.8,.65*uFxK)); }   // the beam's edge
   if(uLin > .5) rgb = pow(max(rgb,0.), vec3(2.2));
   vCol = vec4(rgb, col.a);
 }`;
@@ -129,17 +134,17 @@ function sortNow(V){
 }
 // Draw into the current scene target. sync: sort right now (exports, thumbnails); otherwise the worker
 // catches up a frame or two behind while the view moves.
-function drawSplats(W, H, V, Pm, o, lin){
+function drawSplats(W, H, V, Pm, o, lin, fxK=1){
   const sp = currentSplats(); if (!sp || !sp.n) return;
   uploadSplats(sp); const Sg = G.splat;
   if (o.sync || Sg.sortedFor===null) sortNow(V); else askSort(V);
   const u = G.SP.u; gl.useProgram(G.SP.p);
   gl.uniformMatrix4fv(u.uProj,false,Pm); gl.uniformMatrix4fv(u.uView,false,V);
   gl.uniform2f(u.uFocal, Pm[0]*W/2, Pm[5]*H/2); gl.uniform2f(u.uVp, W, H); gl.uniform2f(u.uR, S.rng[0], S.rng[1]);
-  gl.uniform1f(u.uCovK, Sg.covK); gl.uniform1f(u.uExposure, o.bright/1.25); gl.uniform1f(u.uLin, lin?1:0);
+  gl.uniform1f(u.uCovK, Sg.covK); gl.uniform1f(u.uExposure, lin ? 1 : o.bright/1.25);   // next to dots the photo keeps its own exposure; Brightness is for the dots gl.uniform1f(u.uLin, 0);   // splats stay in the photo's own colour space; the final pass knows which pixels are photo
   const slid = o.thumb ? 0 : Math.hypot(S.pan[0], S.pan[1])/(S.refDist||2);
   gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8 + slid*8));
-  gl.uniform1i(u.uFx, o.splatFx||0); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0);
+  gl.uniform1i(u.uFx, o.splatFx||0); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, o.mix||0);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, Sg.tex); gl.uniform1i(u.uData, 0);
   gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   gl.bindVertexArray(Sg.vao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, Sg.n); gl.bindVertexArray(null);
