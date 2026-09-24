@@ -79,17 +79,25 @@ const MOVES = {
   float: (t,k)=>({dy:Math.sin(t*2*Math.PI)*6*k, dp:Math.sin(t*4*Math.PI)*2.2*k, dz:-0.05*k*Math.sin(t*Math.PI)}),   // ends where it began: loops
   orbit: (t,k)=>({dy:(-14+28*t)*k}),
   drift: (t,k)=>({dz:-0.26*t*k, dy:(-8+16*t)*k, dp:(4-4*t)*k}),
-  rise:  (t,k)=>({py:0.12*t*k, dp:10*t*k, dz:-0.1*t*k})           // the camera rises and looks down a touch
+  rise:  (t,k)=>({py:0.12*t*k, dp:10*t*k, dz:-0.1*t*k}),          // the camera rises and looks down a touch
+  // Into the scene: the camera itself travels forward (pz, in units of the subject's distance), not a zoom,
+  // so near things pass by and the space opens up. Walk in adds the faint rise and fall of steps and a
+  // slow glance aside; Glide in is the smooth, drone-like version.
+  walk:  (t,k,secs)=>({pz:-0.6*k*t, py:0.0045*k*Math.sin(t*secs*1.8*2*Math.PI) - 0.02*k*t, dy:Math.sin(t*Math.PI)*5*k, dp:-1.5*k*t}),
+  glide: (t,k)=>({pz:-0.55*k*t, py:0.06*k*t, dy:Math.sin(t*Math.PI)*3*k, dp:-2*k*t})
 };
-const MOVE_NAMES = [['push','Push in'],['pull','Pull out'],['slide','Slide'],['float','Float'],['drift','Drift'],['orbit','Orbit'],['rise','Rise']];
+const MOVE_NAMES = [['walk','Walk in'],['glide','Glide in'],['push','Push in'],['pull','Pull out'],['slide','Slide'],['float','Float'],['drift','Drift'],['orbit','Orbit'],['rise','Rise']];
 const LOOPING = new Set(['float']);
+// walking keeps an even pace, only softened at the very start and end
+const WALKING = new Set(['walk','glide']);   // (a flat photo cannot be walked past, so the walk arrives calmly rather than lunging)
 const ease = t => t*t*t*(t*(6*t-15)+10);
 // Loop plays a move out and back (Float already ends where it began), so the clip repeats with no jump
 const loopT = (move, t) => S.loop && !LOOPING.has(move) ? (t<0.5 ? 2*t : 2-2*t) : t;
-function poseAt(base, move, t){
-  const tt = Math.min(1,Math.max(0,t)), m = MOVES[move](LOOPING.has(move) ? tt : ease(tt), strength()), R = S.refDist||2;
+function poseAt(base, move, t, secs=6){
+  const tt = Math.min(1,Math.max(0,t)), e = LOOPING.has(move) ? tt : WALKING.has(move) ? 0.35*tt+0.65*ease(tt) : ease(tt);
+  const m = MOVES[move](e, strength(), secs), R = S.refDist||2;
   return {yaw:base.yaw+(m.dy||0), pitch:Math.max(-80,Math.min(80,base.pitch+(m.dp||0))), zoom:Math.max(0.3, base.zoom*(1+(m.dz||0))),
-    pan:[base.pan[0]+(m.px||0)*R, base.pan[1]+(m.py||0)*R, base.pan[2]]}; }
+    pan:[base.pan[0]+(m.px||0)*R, base.pan[1]+(m.py||0)*R, base.pan[2]+(m.pz||0)*R]}; }
 const viewBase = () => ({yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, pan:S.pan.slice()});
 
 // portion: play only the opening of the move at its real speed (a quick look when a chip is tapped)
@@ -103,7 +111,7 @@ async function previewMove(move, secs, portion=1, peek=false){
   banner(portion<1 ? 'Playing the start of the move' : 'Playing the move');
   S.fxNow = S.fx||'none';
   await new Promise(res=>{ const t0=performance.now(); const step=()=>{ const el=performance.now()-t0, t=Math.min(1,el/dur)*portion;
-    const lt = loopT(move, t); Object.assign(S, poseAt(base, move, lt)); S.fxT=lt; S.fxTime=el/1000; draw(); renderLabels(); renderPins();
+    const lt = loopT(move, t); Object.assign(S, poseAt(base, move, lt, secs)); S.fxT=lt; S.fxTime=el/1000; draw(); renderLabels(); renderPins();
     $('#recfill').style.width=(Math.min(1,el/dur)*100)+'%'; if (el<dur && !S.stopReq) requestAnimationFrame(step); else res(); }; requestAnimationFrame(step); });
   S.recording=false; S.peeking=false; S.stopReq=false; S.fxNow='none'; $('#recbar').hidden=true; $('#stopBtn').hidden=true; document.body.classList.remove('locked'); Object.assign(S, base); S.dirtyDraw=true; banner(modeText());
 }
@@ -117,7 +125,7 @@ async function recordMove(move, secs){
   const [W,H] = exportSize(MOBILE ? 1280 : 1920, 1920);
   const rc=document.createElement('canvas'); rc.width=W; rc.height=H; const rx=rc.getContext('2d');
   // a loop's last frame stops one short of its first, so the repeat is seamless
-  const frameAt = i => { const t = S.loop||LOOPING.has(move) ? i/frames : (i-hold)/(frames-2*hold-1), lt=loopT(move, Math.min(1,Math.max(0,t))); Object.assign(S, poseAt(base, move, lt)); S.fxT=lt; S.fxTime=i/fps; draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
+  const frameAt = i => { const t = S.loop||LOOPING.has(move) ? i/frames : (i-hold)/(frames-2*hold-1), lt=loopT(move, Math.min(1,Math.max(0,t))); Object.assign(S, poseAt(base, move, lt, secs)); S.fxT=lt; S.fxTime=i/fps; draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
   S.recording=true; S.exporting=true; S.stopReq=false; S.fxNow=S.fx||'none'; S.spin=false; syncSpin(); $('#recbar').hidden=false; $('#stopBtn').hidden=false; document.body.classList.add('locked'); stayAwake(true);
   let blob=null, ext='mp4';
   try {

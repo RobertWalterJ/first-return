@@ -7,7 +7,7 @@
 const SPLAT_VS = `#version 300 es
 precision highp float; precision highp int;
 uniform highp usampler2D uData; uniform mat4 uProj, uView; uniform vec2 uFocal, uVp, uR;
-uniform float uCovK, uExposure, uOrbit, uFxT, uTime, uLin, uFxK, uFocus, uDof, uFocusD; uniform int uFx, uMix;
+uniform float uCovK, uExposure, uOrbit, uFxT, uTime, uLin, uFxK, uFocus, uDof, uFocusD, uNearF; uniform int uFx, uMix;
 layout(location=0) in vec2 aCorner; layout(location=1) in uint aIndex;
 out vec4 vCol; out vec2 vPos;
 float hsh(float n){ return fract(sin(n*12.9898+4.1)*43758.5453); }
@@ -35,6 +35,7 @@ void main(){
   if(uFx==3){ float band=floor(p.y*18.+floor(uTime*7.)*3.), on=step(1.-.1*uFxK, hsh(band+floor(uTime*11.)));   // glitch: bands slip sideways
     p.x += on*(hsh(band*3.1)-.5)*(uR.y-uR.x)*.08*uFxK; }
   vec4 cam = uView*vec4(p,1.), clip = uProj*cam; float cb = 1.2*clip.w;
+  col.a *= smoothstep(uNearF, uNearF*4., -cam.z);                // passing through: splats at the lens fade, not smear
   if(cam.z > -.02 || col.a < .004 || abs(clip.x) > cb || abs(clip.y) > cb){ gl_Position = vec4(0.,0.,2.,1.); return; }
   vec2 u1=unpackHalf2x16(t1.x), u2=unpackHalf2x16(t1.y), u3=unpackHalf2x16(t1.z);
   mat3 Vrk = mat3(u1.x,u1.y,u2.x, u1.y,u2.y,u3.x, u2.x,u3.x,u3.y) * (uCovK*grow*grow);
@@ -154,9 +155,9 @@ function drawSplats(W, H, V, Pm, o, lin, fxK=1){
   gl.uniform1f(u.uCovK, Sg.covK); gl.uniform1f(u.uExposure, lin ? 1 : o.bright/1.25);   // next to dots the photo keeps its own exposure; Brightness is for the dots 
   gl.uniform1f(u.uLin, 0);     // splats stay in the photo's own colour space; the final pass knows which pixels are photo
   
-  const slid = o.thumb ? 0 : Math.hypot(S.pan[0], S.pan[1])/(S.refDist||2);
+  const slid = o.thumb ? 0 : Math.hypot(S.pan[0], S.pan[1], S.pan[2]*0.5)/(S.refDist||2);
   gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8 + slid*8));
-  gl.uniform1i(u.uFx, o.splatFx||0); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, o.mix||0); gl.uniform1f(u.uFocus, o.focus && !S.scan ? 1 : 0); gl.uniform1f(u.uDof, o.dof||0); gl.uniform1f(u.uFocusD, o.focusD||2);
+  gl.uniform1i(u.uFx, o.splatFx||0); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, o.mix||0); gl.uniform1f(u.uFocus, o.focus && !S.scan ? 1 : 0); gl.uniform1f(u.uDof, o.dof||0); gl.uniform1f(u.uFocusD, o.focusD||2); gl.uniform1f(u.uNearF, 0.03*(S.refDist||2));
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, Sg.tex); gl.uniform1i(u.uData, 0);
   gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   gl.bindVertexArray(Sg.vao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, Sg.n); gl.bindVertexArray(null);

@@ -1331,7 +1331,7 @@ const cv = $('#gl');
 let gl = null, G = null;          // G holds every GL object so it can be rebuilt after a context loss
 const PTS_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aCol; layout(location=2) in vec4 aMeta;
-uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight, uOrbit, uFxT, uTime, uFxK, uDof, uFocusD; uniform int uMode, uFx, uMix;
+uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight, uOrbit, uFxT, uTime, uFxK, uDof, uFocusD, uNearF; uniform int uMode, uFx, uMix;
 uniform vec2 uR, uY;
 float hsh(float n){ return fract(sin(n*12.9898+4.1)*43758.5453); }
 out vec3 vCol; flat out float vRound;
@@ -1386,6 +1386,7 @@ if(uFx==1 || uFx==4){ float edge=uFxT*1.15, e=1.-smoothstep(0.,.02+.025*uFxK,abs
 if((uFx==1 && r>edge) || (uFx==4 && r<edge)) gl_Position=vec4(2.,2.,2.,1.);
 c = mix(c, lin(vec3(.55,1.,.9))*2.2*uExposure, e*min(.85,.7*uFxK)); }
 if(uFx==8){ float a0=mix(-.75,.75,uFxT), hl=exp(-pow((atan(P0.x,-P0.z)-a0)/.14,2.)); c *= mix(1., .6+2.*hl, min(1.,uFxK*1.3)); }
+fade *= smoothstep(uNearF, uNearF*4., dist);                  // passing through: dots at the lens fade out
 if(fade < .004) gl_Position=vec4(2.,2.,2.,1.);
 c *= fade;
 if(uDof>0.){ float coc = 1. + uDof*abs(1./dist - 1./uFocusD)*uFocusD*9.; size *= coc; c /= coc*coc; round_ = 1.; }
@@ -1485,7 +1486,8 @@ const t = pivot || S.target, pn = pan || [0,0,0], back = (zoom-1)*S.refDist;
 const R = M4.mul(M4.rx(pitch*Math.PI/180), M4.mul(M4.ry(yaw*Math.PI/180), M4.rz(S.roll)));
 return M4.mul(M4.tr(-pn[0],-pn[1],-back-pn[2]), M4.mul(M4.tr(t[0],t[1],t[2]), M4.mul(R, M4.tr(-t[0],-t[1],-t[2]))));
 }
-function viewTan(aspect){ const pa = S.photo ? S.photo.w/S.photo.h : 1; return aspect < pa ? S.tanV*pa/aspect : S.tanV; }
+function viewTan(aspect){ const pa = S.photo ? S.photo.w/S.photo.h : 1, L = LOOKS[look], fill = L.splat && L.mix!==1 && !S.scan;
+return aspect < pa || fill ? S.tanV*pa/aspect : S.tanV; }
 function projMatrix(aspect){
 const pa = S.photo ? S.photo.w/S.photo.h : 1;
 return M4.persp(2*Math.atan(viewTan(aspect)), aspect, 0.05, 400);   // tall frames keep the photo's width
@@ -1503,6 +1505,7 @@ const ptFx = {sweep:1, decay:2, glitch:3, resolve: both?4:1, build:5, dissolve: 
 o.splatFx = {sweep:1, resolve:1, decay:2, glitch:3, build:5, dissolve:5, dust:7, light:8}[fx]||0; o.mix = mix;
 const fxK = o.fxK!=null ? o.fxK : strength();
 const tv = M4.xf(V, S.target||[0,0,-2]); let focusD = Math.max(0.1, -tv[2]); o.dof = o.dof!=null ? o.dof : val('focus');
+if (o.dof>0 && (!S.picks.length || S.scan) && !o.thumb){ const cd = centreDepth(V, Pm); if (cd){ S.focusSm = S.focusSm ? S.focusSm + (cd-S.focusSm)*(o.sync ? 0.25 : 0.12) : cd; focusD = S.focusSm; } }
 if (fx==='focuspull'){ const e=(o.fxT||0), s=e*e*e*(e*(6*e-15)+10); focusD = focusD*(0.35+0.65*s); o.dof = Math.max(o.dof, 0.35+0.45*fxK); }
 o.focusD = focusD;
 if (o.cloud.count && (!splatLook || both)){
@@ -1514,11 +1517,11 @@ gl.uniform1f(u.uPx, o.size * 1.62 * fitH/1000 * ref * (0.466/S.tanV));
 gl.uniform1f(u.uExposure, o.bright); gl.uniform1f(u.uSat, o.colour==='muted' ? .45 : 1);
 gl.uniform1f(u.uBgTint, L.bgTint); gl.uniform1f(u.uBgGain, L.bgGain); gl.uniform1f(u.uBgSize, L.bgSize);
 gl.uniform1f(u.uSparkle, L.sparkle); gl.uniform1f(u.uFocus, o.focus ? 1 : 0); gl.uniform1f(u.uLight, o.light||0);
-const slid = o.thumb ? 0 : Math.hypot(S.pan[0], S.pan[1])/(S.refDist||2);
+const slid = o.thumb ? 0 : Math.hypot(S.pan[0], S.pan[1], S.pan[2]*0.5)/(S.refDist||2);
 gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8 + slid*8));
 gl.uniform1i(u.uMode, {photo:0,muted:0,range:1,height:2,grey:3,phosphor:4}[o.colour]||0);
 gl.uniform2f(u.uR, S.rng[0], S.rng[1]); gl.uniform2f(u.uY, S.yr[0], S.yr[1]);
-gl.uniform1i(u.uFx, ptFx); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, both ? mix : 0); gl.uniform1f(u.uDof, o.dof); gl.uniform1f(u.uFocusD, focusD);
+gl.uniform1i(u.uFx, ptFx); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, both ? mix : 0); gl.uniform1f(u.uDof, o.dof); gl.uniform1f(u.uFocusD, focusD); gl.uniform1f(u.uNearF, 0.03*(S.refDist||2));
 gl.bindVertexArray(o.cloud.vao); gl.drawArrays(gl.POINTS, 0, o.cloud.count); gl.bindVertexArray(null);
 gl.disable(gl.DEPTH_TEST);
 }
@@ -1539,6 +1542,15 @@ gl.uniform1f(u.uRaw, raw?1:0); gl.uniform1f(u.uGlitch, glitch); gl.uniform1f(u.u
 gl.uniform1f(u.uGlow,o.glow); gl.uniform1f(u.uEdl, raw ? 0 : o.edges); gl.uniform1f(u.uNear,0.05); gl.uniform1f(u.uFar,400.); gl.uniform2f(u.uRes,W,H); });
 gl.bindVertexArray(null);
 }
+function centreDepth(V, Pm){
+const out=S.cpu, n=S.count; if (!out || !n) return 0;
+const MV=M4.mul(Pm,V), step=Math.max(1,(n/6000)|0), ds=[];
+for (let i=0;i<n;i+=step){ const o=i*10, x=out[o], y=out[o+1], z=out[o+2];
+const cw=MV[3]*x+MV[7]*y+MV[11]*z+MV[15]; if (cw<=0.05) continue;
+const cx=(MV[0]*x+MV[4]*y+MV[8]*z+MV[12])/cw, cy=(MV[1]*x+MV[5]*y+MV[9]*z+MV[13])/cw;
+if (Math.abs(cx)<0.18 && Math.abs(cy)<0.18) ds.push(cw); }
+if (ds.length < 8) return 0; ds.sort((a,b)=>a-b); return ds[ds.length>>1];
+}
 function viewOpts(extra){
 return Object.assign({cloud:G.clouds.main||{count:0}, look, colour:P.colour, size:val('size'), bright:val('bright'), glow:val('glow'), light:val('light'),
 edges:val('edges'), yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, focus:S.tab==='subject' && !S.recording, sync:!!S.exporting, fx:S.fxNow||'none', fxT:S.fxT||0, fxTime:S.fxTime||0}, extra||{});
@@ -1549,7 +1561,7 @@ cv.addEventListener('webglcontextrestored', ()=>{ if (initGL()){ if (S.cpu) uplo
 const SPLAT_VS = `#version 300 es
 precision highp float; precision highp int;
 uniform highp usampler2D uData; uniform mat4 uProj, uView; uniform vec2 uFocal, uVp, uR;
-uniform float uCovK, uExposure, uOrbit, uFxT, uTime, uLin, uFxK, uFocus, uDof, uFocusD; uniform int uFx, uMix;
+uniform float uCovK, uExposure, uOrbit, uFxT, uTime, uLin, uFxK, uFocus, uDof, uFocusD, uNearF; uniform int uFx, uMix;
 layout(location=0) in vec2 aCorner; layout(location=1) in uint aIndex;
 out vec4 vCol; out vec2 vPos;
 float hsh(float n){ return fract(sin(n*12.9898+4.1)*43758.5453); }
@@ -1574,6 +1586,7 @@ if(uFx==7){ float a=uTime*.5; p += vec3(sin(a+rnd*41.), .7*sin(a*.8+rnd*23.), co
 if(uFx==3){ float band=floor(p.y*18.+floor(uTime*7.)*3.), on=step(1.-.1*uFxK, hsh(band+floor(uTime*11.)));   // glitch: bands slip sideways
 p.x += on*(hsh(band*3.1)-.5)*(uR.y-uR.x)*.08*uFxK; }
 vec4 cam = uView*vec4(p,1.), clip = uProj*cam; float cb = 1.2*clip.w;
+col.a *= smoothstep(uNearF, uNearF*4., -cam.z);                // passing through: splats at the lens fade, not smear
 if(cam.z > -.02 || col.a < .004 || abs(clip.x) > cb || abs(clip.y) > cb){ gl_Position = vec4(0.,0.,2.,1.); return; }
 vec2 u1=unpackHalf2x16(t1.x), u2=unpackHalf2x16(t1.y), u3=unpackHalf2x16(t1.z);
 mat3 Vrk = mat3(u1.x,u1.y,u2.x, u1.y,u2.y,u3.x, u2.x,u3.x,u3.y) * (uCovK*grow*grow);
@@ -1682,9 +1695,9 @@ gl.uniformMatrix4fv(u.uProj,false,Pm); gl.uniformMatrix4fv(u.uView,false,V);
 gl.uniform2f(u.uFocal, Pm[0]*W/2, Pm[5]*H/2); gl.uniform2f(u.uVp, W, H); gl.uniform2f(u.uR, S.rng[0], S.rng[1]);
 gl.uniform1f(u.uCovK, Sg.covK); gl.uniform1f(u.uExposure, lin ? 1 : o.bright/1.25);   // next to dots the photo keeps its own exposure; Brightness is for the dots
 gl.uniform1f(u.uLin, 0);     // splats stay in the photo's own colour space; the final pass knows which pixels are photo
-const slid = o.thumb ? 0 : Math.hypot(S.pan[0], S.pan[1])/(S.refDist||2);
+const slid = o.thumb ? 0 : Math.hypot(S.pan[0], S.pan[1], S.pan[2]*0.5)/(S.refDist||2);
 gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8 + slid*8));
-gl.uniform1i(u.uFx, o.splatFx||0); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, o.mix||0); gl.uniform1f(u.uFocus, o.focus && !S.scan ? 1 : 0); gl.uniform1f(u.uDof, o.dof||0); gl.uniform1f(u.uFocusD, o.focusD||2);
+gl.uniform1i(u.uFx, o.splatFx||0); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, o.mix||0); gl.uniform1f(u.uFocus, o.focus && !S.scan ? 1 : 0); gl.uniform1f(u.uDof, o.dof||0); gl.uniform1f(u.uFocusD, o.focusD||2); gl.uniform1f(u.uNearF, 0.03*(S.refDist||2));
 gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, Sg.tex); gl.uniform1i(u.uData, 0);
 gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 gl.bindVertexArray(Sg.vao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, Sg.n); gl.bindVertexArray(null);
@@ -1844,16 +1857,20 @@ slide: (t,k)=>({px:(t-0.5)*0.22*k, dy:(0.5-t)*7*k}),          // a sideways doll
 float: (t,k)=>({dy:Math.sin(t*2*Math.PI)*6*k, dp:Math.sin(t*4*Math.PI)*2.2*k, dz:-0.05*k*Math.sin(t*Math.PI)}),   // ends where it began: loops
 orbit: (t,k)=>({dy:(-14+28*t)*k}),
 drift: (t,k)=>({dz:-0.26*t*k, dy:(-8+16*t)*k, dp:(4-4*t)*k}),
-rise:  (t,k)=>({py:0.12*t*k, dp:10*t*k, dz:-0.1*t*k})           // the camera rises and looks down a touch
+rise:  (t,k)=>({py:0.12*t*k, dp:10*t*k, dz:-0.1*t*k}),          // the camera rises and looks down a touch
+walk:  (t,k,secs)=>({pz:-0.6*k*t, py:0.0045*k*Math.sin(t*secs*1.8*2*Math.PI) - 0.02*k*t, dy:Math.sin(t*Math.PI)*5*k, dp:-1.5*k*t}),
+glide: (t,k)=>({pz:-0.55*k*t, py:0.06*k*t, dy:Math.sin(t*Math.PI)*3*k, dp:-2*k*t})
 };
-const MOVE_NAMES = [['push','Push in'],['pull','Pull out'],['slide','Slide'],['float','Float'],['drift','Drift'],['orbit','Orbit'],['rise','Rise']];
+const MOVE_NAMES = [['walk','Walk in'],['glide','Glide in'],['push','Push in'],['pull','Pull out'],['slide','Slide'],['float','Float'],['drift','Drift'],['orbit','Orbit'],['rise','Rise']];
 const LOOPING = new Set(['float']);
+const WALKING = new Set(['walk','glide']);   // (a flat photo cannot be walked past, so the walk arrives calmly rather than lunging)
 const ease = t => t*t*t*(t*(6*t-15)+10);
 const loopT = (move, t) => S.loop && !LOOPING.has(move) ? (t<0.5 ? 2*t : 2-2*t) : t;
-function poseAt(base, move, t){
-const tt = Math.min(1,Math.max(0,t)), m = MOVES[move](LOOPING.has(move) ? tt : ease(tt), strength()), R = S.refDist||2;
+function poseAt(base, move, t, secs=6){
+const tt = Math.min(1,Math.max(0,t)), e = LOOPING.has(move) ? tt : WALKING.has(move) ? 0.35*tt+0.65*ease(tt) : ease(tt);
+const m = MOVES[move](e, strength(), secs), R = S.refDist||2;
 return {yaw:base.yaw+(m.dy||0), pitch:Math.max(-80,Math.min(80,base.pitch+(m.dp||0))), zoom:Math.max(0.3, base.zoom*(1+(m.dz||0))),
-pan:[base.pan[0]+(m.px||0)*R, base.pan[1]+(m.py||0)*R, base.pan[2]]}; }
+pan:[base.pan[0]+(m.px||0)*R, base.pan[1]+(m.py||0)*R, base.pan[2]+(m.pz||0)*R]}; }
 const viewBase = () => ({yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, pan:S.pan.slice()});
 async function previewMove(move, secs, portion=1, peek=false){
 if (S.recording || !S.count) return;
@@ -1863,7 +1880,7 @@ if (!peek) document.body.classList.add('locked');
 banner(portion<1 ? 'Playing the start of the move' : 'Playing the move');
 S.fxNow = S.fx||'none';
 await new Promise(res=>{ const t0=performance.now(); const step=()=>{ const el=performance.now()-t0, t=Math.min(1,el/dur)*portion;
-const lt = loopT(move, t); Object.assign(S, poseAt(base, move, lt)); S.fxT=lt; S.fxTime=el/1000; draw(); renderLabels(); renderPins();
+const lt = loopT(move, t); Object.assign(S, poseAt(base, move, lt, secs)); S.fxT=lt; S.fxTime=el/1000; draw(); renderLabels(); renderPins();
 $('#recfill').style.width=(Math.min(1,el/dur)*100)+'%'; if (el<dur && !S.stopReq) requestAnimationFrame(step); else res(); }; requestAnimationFrame(step); });
 S.recording=false; S.peeking=false; S.stopReq=false; S.fxNow='none'; $('#recbar').hidden=true; $('#stopBtn').hidden=true; document.body.classList.remove('locked'); Object.assign(S, base); S.dirtyDraw=true; banner(modeText());
 }
@@ -1873,7 +1890,7 @@ if (S.recording || !S.count) return;
 const base=viewBase(), fps=30, hold=Math.round(fps*(LOOPING.has(move)||S.loop?0:0.4)), frames=Math.round(secs*fps)+2*hold;
 const [W,H] = exportSize(MOBILE ? 1280 : 1920, 1920);
 const rc=document.createElement('canvas'); rc.width=W; rc.height=H; const rx=rc.getContext('2d');
-const frameAt = i => { const t = S.loop||LOOPING.has(move) ? i/frames : (i-hold)/(frames-2*hold-1), lt=loopT(move, Math.min(1,Math.max(0,t))); Object.assign(S, poseAt(base, move, lt)); S.fxT=lt; S.fxTime=i/fps; draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
+const frameAt = i => { const t = S.loop||LOOPING.has(move) ? i/frames : (i-hold)/(frames-2*hold-1), lt=loopT(move, Math.min(1,Math.max(0,t))); Object.assign(S, poseAt(base, move, lt, secs)); S.fxT=lt; S.fxTime=i/fps; draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
 S.recording=true; S.exporting=true; S.stopReq=false; S.fxNow=S.fx||'none'; S.spin=false; syncSpin(); $('#recbar').hidden=false; $('#stopBtn').hidden=false; document.body.classList.add('locked'); stayAwake(true);
 let blob=null, ext='mp4';
 try {
