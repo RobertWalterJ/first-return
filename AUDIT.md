@@ -106,3 +106,80 @@ Three more reviews ran after the subject finder, 3D scans and straightening were
 4. **Full 3D objects from one photo** (SAM 3D, TRELLIS and similar): these need a PC GPU. Their output can come back in through the .ply import.
 
 Avoid (non-commercial or copyleft): Perspective Fields, EdgeSAM, UniDepthV2, MASt3R/DUSt3R, Depth Anything 3 Large and Giant, the original VGGT, YOLO-World and Ultralytics YOLO.
+
+---
+
+# Round three, 24 September 2026: features, options and a plan
+
+Three reviews ran at the same time:
+- a design and feature review of the app as it is now (reading the code);
+- research into new capabilities that can run in a phone browser under permissive licences;
+- a survey of similar apps: Polycam, Scaniverse, Record3D, Immersity, Google Cinematic photos, Apple Spatial Scenes, CapCut, Potree, TouchDesigner and Blender lidar looks, and Radiohead's *House of Cards*.
+
+## Ground rules for anything new
+- **No new tabs and no new top-bar buttons.** Every new option goes into a tray that already exists, as at most one new row of chips.
+- **Model-driven features work automatically** (sky, better outlines) or sit under Advanced. They never add a decision to the main flow.
+- **Nothing new is downloaded on first load.** A new model is fetched only when it is first used, with the size shown in MB, and then cached.
+- **Budget:** the page stays under about 200 KB, and no shader change may slow the preview on the S23 FE.
+- **Accessibility:** no timers. Every new message gets a read-aloud button.
+
+## Fix first (no new UI)
+1. **Save > Video can close the Move tray** when Move is already open, because tapping an open tab closes it.
+2. **Video uses the Picture size setting.** At 2880 or 4096 the phone's encoder refuses, and the video falls back to a stuttering screen recording. Video gets its own cap of about 1920.
+3. **Play doesn't lock the controls.** Tapping Record during a preview does nothing.
+4. **Some settings are forgotten.** The chosen move, its length and Picture size reset on every reload.
+5. **Saving 3D points shows no busy screen,** so a large file can freeze the page for a moment.
+6. **The screen can sleep during a long video export.** It needs a wake lock.
+7. **Automatic messages and menus have no read-aloud button.**
+8. **Adding a name opens the keyboard straight away,** which pushes the picture off screen.
+9. **Tidy-ups:**
+   - Picture size moves into the Save menu.
+   - Straighten moves into Adjust > Scene, so it sits beside the manual tilt.
+   - Controls a 3D scan ignores (Pattern, Floor, Beams, Range noise) are greyed out, with a one-line reason.
+   - Hidden parts also shows during a pan or push-in, not only when the view turns.
+   - "Backdrop" becomes "Background" everywhere.
+
+## Phase 1: motion and sharing (Move tab and save screen)
+| Feature | Where | Weight |
+|---|---|---|
+| **Share button** (Web Share to WhatsApp, Instagram, Photos); PLY stays a download | Next to Download on the save screen | about 0.5 KB |
+| **Scan sweep:** dots appear outward by distance behind a bright leading edge. This is the "first return" itself | A new move in Move | about 1 KB of shader |
+| **Loop:** forward then back, or a full turn for scans | A chip in the Move length row | about 0.5 KB |
+| **Start and end views:** set a start and an end, and the move glides between them, including pan | Two chips in Move | about 1.5 KB |
+| **Tilt to look:** gyro parallax, so the phone works like a window. The most-loved effect in Apple's and Record3D's apps | One toggle in Move | about 1 KB |
+| **Safe path:** moves are limited so they never open visible gaps behind the subject | Automatic | about 0.5 KB |
+
+## Phase 2: looks (shader only, no downloads)
+| Feature | Where | Weight |
+|---|---|---|
+| **Focus blur:** dots away from the subject grow and dim | Adjust > Scene: Off / Soft / Strong | about 0.6 KB |
+| **Haze:** distant dots fade into the black | Adjust > Scene | about 0.3 KB |
+| **More colour ramps:** Thermal, Turbo, Mono with 4 tint swatches (teal, amber, magenta, white) | The Colour chips; swatches show only for Mono | about 0.8 KB |
+| **Decay:** points drift, drop out and jitter, the *House of Cards* look. Also usable as a move | A move, and a Survey-style option | about 1 KB |
+| **Name styles:** Glow (now), Survey tag (leader line, small caps), Plain | One chip row in People | about 1.5 KB |
+| **Shuffle:** a new random seed or small variation of the current look | One chip on the Look tab | about 0.3 KB |
+
+## Phase 3: better seeing (models on demand, mostly invisible)
+| Capability | Licence | Size | Benefit |
+|---|---|---|---|
+| **Sky mask** (TinySkyNet, from U-2-Net skyseg) | MIT | 0.2 MB | Sky is no longer painted onto a far wall. It becomes black or haze. Automatic |
+| **RF-DETR Seg Nano** | Apache-2.0 | about 10 MB int8 (29 MB fp32) | Outlines for every common object in one pass. Could replace the detector plus Magic Touch (together 11 MB), with sharper masks, including dark clothing. Automatic |
+| **MoGe-2 ViT-S:** metric depth, true view angle and surface normals | MIT | about 40 to 70 MB | Real scale, no guessed focal length, better "backs" and lidar-style intensity. An optional **Precise geometry** switch in Advanced, used mainly where WebGPU exists. The S23 FE has two versions: the Snapdragon one supports WebGPU in Chrome, the Exynos one doesn't yet |
+| **MI-GAN inpainting:** real texture behind subjects instead of blurred fill | MIT weights, but distilled from an NVIDIA non-commercial model | about 28 MB | Much better turned views. Fine for personal use; the licence is uncertain for anything commercial |
+
+## Phase 4: output extras
+- **GIF** through gifenc (MIT, 9 KB), as a choice on the save screen.
+- **Share to First Return** from the phone's gallery, through a manifest share target.
+- **glTF points export** alongside PLY, for three.js and Blender.
+
+## Not recommended
+- **Batch processing:** depth takes seconds per photo, and a queue needs its own interface.
+- **Settings remembered per photo:** the app has no way to tell photos apart.
+- **Different styling for each subject:** a single background colour option covers most of it.
+- **Single-photo 3D generators** (SAM 3D, TRELLIS): they need a PC graphics card, and their output can already come in through the scan import.
+
+**Avoid (licence):** Depth Pro, Apple SHARP, UniK3D, Metric3D, EdgeSAM, Robust Video Matting (GPL), Ultralytics YOLO (AGPL), and Depth Anything 3 Large and Giant.
+
+## Suggested order
+Fixes → Share → Scan sweep with Loop → Focus blur, Haze and colour ramps → Sky mask → Tilt to look → Start and end views → RF-DETR → the rest.
+Everything before RF-DETR adds about 8 KB and no models.
