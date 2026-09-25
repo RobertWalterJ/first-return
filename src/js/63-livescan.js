@@ -41,13 +41,16 @@ async function openLiveScan(){
   liveState = {xr, views:[], cover:new Set(), cueText:'', voice:true, done:false, space:1};
   $('#live').hidden=false; $('#liveStart').hidden=false; $('#liveDone').hidden=true; $('#liveThumb').hidden=true; $('#liveRing').hidden=true;
   $('#liveVoice').setAttribute('aria-pressed','true'); liveCount();
-  $('#liveIntro').textContent = xr
-    ? 'Walk slowly around the thing you want to scan. The phone tracks where it is and keeps a view each time you are steady at a new angle. The ring fills in as the sides are covered.'
-    : 'Walk slowly around the thing you want to scan. The phone keeps a view each time you are steady at a new angle.';
+  // The phone's AR camera keeps its focus fixed (ARCore does, for steadier tracking, and Chrome cannot change
+  // it), so things closer than about arm's length come out soft. The camera alone refocuses, so both are offered.
+  $('#liveIntro').innerHTML = xr
+    ? `Walk slowly around the thing you want to scan. It keeps a view each time you are steady at a new angle.<br><br><b>Start</b> uses the phone's AR tracking: the most accurate, with a ring showing which sides are covered. Its camera does not refocus, so stay about an arm's length away or more.<br><br><b>Camera only</b> focuses properly up close (tap the picture to refocus), for small things.`
+    : 'Walk slowly around the thing you want to scan. It keeps a view each time you are steady at a new angle. Tap the picture, or Refocus, if it looks soft.';
+  $('#liveStartCam').hidden = !xr; $('#liveFocus').hidden = true;
   $('#liveIntro').hidden=false; liveCue('Tap Start when you are ready', false);
 }
 function closeLive(){ const L=liveState; if (L){ L.done=true; try{ L.session?.end().catch(()=>{}); }catch(e){} L.stream?.getTracks().forEach(t=>t.stop()); }
-  const v=$('#liveVid'); v.srcObject=null; v.removeAttribute('src'); v.hidden=true; $('#live').hidden=true; document.body.classList.remove('xr'); liveState=null; }
+  const v=$('#liveVid'); v.srcObject=null; v.removeAttribute('src'); v.hidden=true; v.onpointerup=null; document.querySelectorAll('.focusring').forEach(n=>n.remove()); $('#liveFocus').hidden=true; $('#live').hidden=true; document.body.classList.remove('xr'); liveState=null; }
 
 // ---- with the phone's AR tracking
 async function liveXR(){
@@ -103,6 +106,9 @@ async function liveXR(){
     // too fast above 22 cm/s or 26 degrees/s, steady again below 15 cm/s and 17 degrees/s (so the advice does not flicker)
     if (!L.slow && (lin > 0.22 || ang > 0.45)) L.slow = true; else if (L.slow && lin < 0.15 && ang < 0.3) L.slow = false;
     const steady = !L.slow;
+    // nearer than about 40 cm, the AR camera's fixed focus leaves the subject soft
+    if (L.depthOn) try { const di=frame.getDepthInformation(view), zc=di && di.getDepthInMeters(0.5, 0.5);
+      if (zc > 0.05 && zc < 0.4){ liveCue("Too close for this camera to focus. Step back a little, or cancel and choose Camera only.", t-lastSay > 4000 && (lastSay=t, true)); return; } } catch(e){}
     // new enough: at least 7 cm or 9 degrees from every view already kept
     let novel = Infinity; for (const v of L.views){ const dp=Math.hypot(c[0]-v.c[0], c[1]-v.c[1], c[2]-v.c[2]), da=Math.acos(Math.min(1, fwd[0]*v.f[0]+fwd[1]*v.f[1]+fwd[2]*v.f[2]));
       novel = Math.min(novel, Math.max(dp/(0.08*L.space), da/(0.175*L.space))); }
@@ -140,6 +146,23 @@ async function liveCamera(){
   if (test){ v.src=test; await new Promise(r=>{ v.onloadeddata=r; }); }
   else { L.stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}}, audio:false}); v.srcObject=L.stream; }
   v.hidden=false; v.muted=true; v.playsInline=true; if (!test) await v.play();
+  // keep the camera focusing by itself, and let a tap (or Refocus) focus on a spot
+  const tr = L.stream?.getVideoTracks()[0], fcap = tr?.getCapabilities?.() || {};
+  const focusModes = fcap.focusMode || [];
+  if (focusModes.includes('continuous')) tr.applyConstraints({advanced:[{focusMode:'continuous'}]}).catch(()=>{});
+  const refocus = async (x, y) => { if (!tr) return;
+    try {
+      if (x!=null && fcap.pointsOfInterest!==undefined) await tr.applyConstraints({advanced:[{pointsOfInterest:[{x, y}]}]});
+      // switching the focus mode away and back makes the camera search for focus again
+      if (focusModes.includes('single-shot')) await tr.applyConstraints({advanced:[{focusMode:'single-shot'}]});
+      else if (focusModes.includes('manual')) await tr.applyConstraints({advanced:[{focusMode:'manual'}]});
+      if (focusModes.includes('continuous')) await tr.applyConstraints({advanced:[{focusMode:'continuous'}]});
+    } catch(e){} };
+  L.refocus = refocus;
+  $('#liveFocus').hidden = !tr || !focusModes.length;
+  v.onpointerup = e => { const r=v.getBoundingClientRect(); const x=(e.clientX-r.left)/r.width, y=(e.clientY-r.top)/r.height;
+    const ring=document.createElement('div'); ring.className='focusring'; ring.style.left=e.clientX+'px'; ring.style.top=e.clientY+'px';
+    document.querySelectorAll('.focusring').forEach(n=>n.remove()); $('#live').appendChild(ring); refocus(x, y); };
   const next = f => { if (!test) return v.requestVideoFrameCallback ? v.requestVideoFrameCallback(f) : requestAnimationFrame(f);
     if (v.currentTime + 1/15 >= v.duration){ L.finish?.(); return; } v.onseeked = () => f(); v.currentTime += 1/15; };
   // the phone's gyro, where there is one, says when it is still
@@ -229,8 +252,9 @@ async function liveBuild(){
   } finally { try { wake?.release(); } catch(e){} }
 }
 
+$('#liveStartCam').addEventListener('click', ()=>{ const L=liveState; if (!L) return; L.xr=false; $('#liveStart').click(); });
 $('#liveStart').addEventListener('click', async ()=>{
-  const L=liveState; if (!L) return; $('#liveStart').hidden=true; $('#liveIntro').hidden=true; $('#liveDone').hidden=false;
+  const L=liveState; if (!L) return; $('#liveStart').hidden=true; $('#liveStartCam').hidden=true; $('#liveIntro').hidden=true; $('#liveDone').hidden=false;
   try { if (typeof DeviceMotionEvent!=='undefined' && DeviceMotionEvent.requestPermission) await DeviceMotionEvent.requestPermission().catch(()=>{}); } catch(e){}
   try {
     if (L.xr){ try { await liveXR(); } catch(err){ console.warn(err); L.xr=false; liveCue('The phone\'s AR tracking is not available here, so the camera alone is used', true); await liveCamera(); } }
@@ -241,4 +265,5 @@ $('#liveStart').addEventListener('click', async ()=>{
 $('#liveDone').addEventListener('click', ()=>{ const L=liveState; if (!L) return;
   if (L.session){ L.stopping=true; L.session.end().catch(()=>{}); } else L.finish?.(); });
 $('#liveCancel').addEventListener('click', ()=>{ const L=liveState; if (L){ L.views.length=0; if (L.session) L.session.end().catch(()=>{}); else L.finish?.(); } closeLive(); });
+$('#liveFocus').addEventListener('click', ()=>{ liveState?.refocus?.(); });
 $('#liveVoice').addEventListener('click', e=>{ const L=liveState; if (!L) return; L.voice=!L.voice; e.currentTarget.setAttribute('aria-pressed', String(L.voice)); if (!L.voice) try{ speechSynthesis.cancel(); }catch(err){} });

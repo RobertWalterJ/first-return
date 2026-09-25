@@ -145,7 +145,9 @@ body.xr .live{background:transparent}
 #liveRing path{fill:rgba(255,255,255,.16)} #liveRing path.on{fill:var(--accent)} #liveRing .me{fill:#fff;stroke:#000;stroke-width:1}
 #liveThumb{border-radius:6px;border:1px solid rgba(255,255,255,.4);background:#000}
 .liveCue{margin:0;font-size:18px;font-weight:600;text-align:center;text-shadow:0 1px 4px #000;min-height:1.4em;max-width:520px}
-.liveBtns{display:flex;gap:10px}
+.liveBtns{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.focusring{position:absolute;width:70px;height:70px;margin:-35px 0 0 -35px;border:2px solid #ffd166;border-radius:50%;pointer-events:none;animation:fr .6s ease-out forwards}
+@keyframes fr{from{transform:scale(1.4);opacity:0}to{transform:scale(1);opacity:1}}
 .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 .hint{color:var(--dim);font-size:13.5px;margin:8px 0 0;display:flex;gap:8px;align-items:center}
 .say{flex:none;width:30px;height:30px;border-radius:50%;border:1px solid var(--line2);background:var(--raise);display:grid;place-items:center;padding:0}
@@ -260,7 +262,7 @@ body.xr .live{background:transparent}
   <div class="liveBottom">
     <div class="liveRow"><svg id="liveRing" viewBox="-60 -60 120 120" aria-hidden="true" hidden></svg><canvas id="liveThumb" width="72" height="96" hidden></canvas></div>
     <p id="liveCue" class="liveCue" role="status" aria-live="polite"></p>
-    <div class="liveBtns"><button class="btn" id="liveCancel">Cancel</button><button class="btn primary" id="liveStart">Start</button><button class="btn primary" id="liveDone" hidden disabled>Make the scan</button></div>
+    <div class="liveBtns"><button class="btn" id="liveCancel">Cancel</button><button class="btn primary" id="liveStart">Start</button><button class="btn" id="liveStartCam" hidden>Camera only</button><button class="btn" id="liveFocus" hidden>Refocus</button><button class="btn primary" id="liveDone" hidden disabled>Make the scan</button></div>
   </div>
 </div>
 
@@ -2506,13 +2508,14 @@ let xr=false; try { xr = !!navigator.xr && await navigator.xr.isSessionSupported
 liveState = {xr, views:[], cover:new Set(), cueText:'', voice:true, done:false, space:1};
 $('#live').hidden=false; $('#liveStart').hidden=false; $('#liveDone').hidden=true; $('#liveThumb').hidden=true; $('#liveRing').hidden=true;
 $('#liveVoice').setAttribute('aria-pressed','true'); liveCount();
-$('#liveIntro').textContent = xr
-? 'Walk slowly around the thing you want to scan. The phone tracks where it is and keeps a view each time you are steady at a new angle. The ring fills in as the sides are covered.'
-: 'Walk slowly around the thing you want to scan. The phone keeps a view each time you are steady at a new angle.';
+$('#liveIntro').innerHTML = xr
+? `Walk slowly around the thing you want to scan. It keeps a view each time you are steady at a new angle.<br><br><b>Start</b> uses the phone's AR tracking: the most accurate, with a ring showing which sides are covered. Its camera does not refocus, so stay about an arm's length away or more.<br><br><b>Camera only</b> focuses properly up close (tap the picture to refocus), for small things.`
+: 'Walk slowly around the thing you want to scan. It keeps a view each time you are steady at a new angle. Tap the picture, or Refocus, if it looks soft.';
+$('#liveStartCam').hidden = !xr; $('#liveFocus').hidden = true;
 $('#liveIntro').hidden=false; liveCue('Tap Start when you are ready', false);
 }
 function closeLive(){ const L=liveState; if (L){ L.done=true; try{ L.session?.end().catch(()=>{}); }catch(e){} L.stream?.getTracks().forEach(t=>t.stop()); }
-const v=$('#liveVid'); v.srcObject=null; v.removeAttribute('src'); v.hidden=true; $('#live').hidden=true; document.body.classList.remove('xr'); liveState=null; }
+const v=$('#liveVid'); v.srcObject=null; v.removeAttribute('src'); v.hidden=true; v.onpointerup=null; document.querySelectorAll('.focusring').forEach(n=>n.remove()); $('#liveFocus').hidden=true; $('#live').hidden=true; document.body.classList.remove('xr'); liveState=null; }
 async function liveXR(){
 const L=liveState;
 const session = await navigator.xr.requestSession('immersive-ar', {
@@ -2561,6 +2564,8 @@ return [((Math.round(az/(2*Math.PI)*LIVE.ring)%LIVE.ring)+LIVE.ring)%LIVE.ring, 
 const here=cell(); if (here && (!L.here || here[0]!==L.here[0] || here[1]!==L.here[1])){ L.here=here; liveRing(); }
 if (!L.slow && (lin > 0.22 || ang > 0.45)) L.slow = true; else if (L.slow && lin < 0.15 && ang < 0.3) L.slow = false;
 const steady = !L.slow;
+if (L.depthOn) try { const di=frame.getDepthInformation(view), zc=di && di.getDepthInMeters(0.5, 0.5);
+if (zc > 0.05 && zc < 0.4){ liveCue("Too close for this camera to focus. Step back a little, or cancel and choose Camera only.", t-lastSay > 4000 && (lastSay=t, true)); return; } } catch(e){}
 let novel = Infinity; for (const v of L.views){ const dp=Math.hypot(c[0]-v.c[0], c[1]-v.c[1], c[2]-v.c[2]), da=Math.acos(Math.min(1, fwd[0]*v.f[0]+fwd[1]*v.f[1]+fwd[2]*v.f[2]));
 novel = Math.min(novel, Math.max(dp/(0.08*L.space), da/(0.175*L.space))); }
 if (L.views.length >= LIVE.max) liveThin();
@@ -2593,6 +2598,21 @@ const test = window.__liveSrc;
 if (test){ v.src=test; await new Promise(r=>{ v.onloadeddata=r; }); }
 else { L.stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}}, audio:false}); v.srcObject=L.stream; }
 v.hidden=false; v.muted=true; v.playsInline=true; if (!test) await v.play();
+const tr = L.stream?.getVideoTracks()[0], fcap = tr?.getCapabilities?.() || {};
+const focusModes = fcap.focusMode || [];
+if (focusModes.includes('continuous')) tr.applyConstraints({advanced:[{focusMode:'continuous'}]}).catch(()=>{});
+const refocus = async (x, y) => { if (!tr) return;
+try {
+if (x!=null && fcap.pointsOfInterest!==undefined) await tr.applyConstraints({advanced:[{pointsOfInterest:[{x, y}]}]});
+if (focusModes.includes('single-shot')) await tr.applyConstraints({advanced:[{focusMode:'single-shot'}]});
+else if (focusModes.includes('manual')) await tr.applyConstraints({advanced:[{focusMode:'manual'}]});
+if (focusModes.includes('continuous')) await tr.applyConstraints({advanced:[{focusMode:'continuous'}]});
+} catch(e){} };
+L.refocus = refocus;
+$('#liveFocus').hidden = !tr || !focusModes.length;
+v.onpointerup = e => { const r=v.getBoundingClientRect(); const x=(e.clientX-r.left)/r.width, y=(e.clientY-r.top)/r.height;
+const ring=document.createElement('div'); ring.className='focusring'; ring.style.left=e.clientX+'px'; ring.style.top=e.clientY+'px';
+document.querySelectorAll('.focusring').forEach(n=>n.remove()); $('#live').appendChild(ring); refocus(x, y); };
 const next = f => { if (!test) return v.requestVideoFrameCallback ? v.requestVideoFrameCallback(f) : requestAnimationFrame(f);
 if (v.currentTime + 1/15 >= v.duration){ L.finish?.(); return; } v.onseeked = () => f(); v.currentTime += 1/15; };
 let rot=0; const onMotion = e => { const r=e.rotationRate; if (r) rot=Math.hypot(r.alpha||0, r.beta||0, r.gamma||0); };
@@ -2669,8 +2689,9 @@ await buildScanScene(frames, {g, w, h, K, name:'Live scan', from:'a live scan', 
 poses: xr ? views.map(v=>v.pose) : null, metric: xr ? views.map(v=>v.samples) : null});
 } finally { try { wake?.release(); } catch(e){} }
 }
+$('#liveStartCam').addEventListener('click', ()=>{ const L=liveState; if (!L) return; L.xr=false; $('#liveStart').click(); });
 $('#liveStart').addEventListener('click', async ()=>{
-const L=liveState; if (!L) return; $('#liveStart').hidden=true; $('#liveIntro').hidden=true; $('#liveDone').hidden=false;
+const L=liveState; if (!L) return; $('#liveStart').hidden=true; $('#liveStartCam').hidden=true; $('#liveIntro').hidden=true; $('#liveDone').hidden=false;
 try { if (typeof DeviceMotionEvent!=='undefined' && DeviceMotionEvent.requestPermission) await DeviceMotionEvent.requestPermission().catch(()=>{}); } catch(e){}
 try {
 if (L.xr){ try { await liveXR(); } catch(err){ console.warn(err); L.xr=false; liveCue('The phone\'s AR tracking is not available here, so the camera alone is used', true); await liveCamera(); } }
@@ -2681,6 +2702,7 @@ if (liveState && !liveState.done && liveState.views.length) await liveBuild(); e
 $('#liveDone').addEventListener('click', ()=>{ const L=liveState; if (!L) return;
 if (L.session){ L.stopping=true; L.session.end().catch(()=>{}); } else L.finish?.(); });
 $('#liveCancel').addEventListener('click', ()=>{ const L=liveState; if (L){ L.views.length=0; if (L.session) L.session.end().catch(()=>{}); else L.finish?.(); } closeLive(); });
+$('#liveFocus').addEventListener('click', ()=>{ liveState?.refocus?.(); });
 $('#liveVoice').addEventListener('click', e=>{ const L=liveState; if (!L) return; L.voice=!L.voice; e.currentTarget.setAttribute('aria-pressed', String(L.voice)); if (!L.voice) try{ speechSynthesis.cancel(); }catch(err){} });
 const SESSION_DB = 'first-return-session';
 function sessionDb(){

@@ -132,7 +132,9 @@ body.xr .live{background:transparent}
 #liveRing path{fill:rgba(255,255,255,.16)} #liveRing path.on{fill:var(--accent)} #liveRing .me{fill:#fff;stroke:#000;stroke-width:1}
 #liveThumb{border-radius:6px;border:1px solid rgba(255,255,255,.4);background:#000}
 .liveCue{margin:0;font-size:18px;font-weight:600;text-align:center;text-shadow:0 1px 4px #000;min-height:1.4em;max-width:520px}
-.liveBtns{display:flex;gap:10px}
+.liveBtns{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.focusring{position:absolute;width:70px;height:70px;margin:-35px 0 0 -35px;border:2px solid #ffd166;border-radius:50%;pointer-events:none;animation:fr .6s ease-out forwards}
+@keyframes fr{from{transform:scale(1.4);opacity:0}to{transform:scale(1);opacity:1}}
 .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 .hint{color:var(--dim);font-size:13.5px;margin:8px 0 0;display:flex;gap:8px;align-items:center}
 .say{flex:none;width:30px;height:30px;border-radius:50%;border:1px solid var(--line2);background:var(--raise);display:grid;place-items:center;padding:0}
@@ -247,7 +249,7 @@ body.xr .live{background:transparent}
   <div class="liveBottom">
     <div class="liveRow"><svg id="liveRing" viewBox="-60 -60 120 120" aria-hidden="true" hidden></svg><canvas id="liveThumb" width="72" height="96" hidden></canvas></div>
     <p id="liveCue" class="liveCue" role="status" aria-live="polite"></p>
-    <div class="liveBtns"><button class="btn" id="liveCancel">Cancel</button><button class="btn primary" id="liveStart">Start</button><button class="btn primary" id="liveDone" hidden disabled>Make the scan</button></div>
+    <div class="liveBtns"><button class="btn" id="liveCancel">Cancel</button><button class="btn primary" id="liveStart">Start</button><button class="btn" id="liveStartCam" hidden>Camera only</button><button class="btn" id="liveFocus" hidden>Refocus</button><button class="btn primary" id="liveDone" hidden disabled>Make the scan</button></div>
   </div>
 </div>
 
