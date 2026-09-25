@@ -82,6 +82,17 @@ function similarity(P, Q, idx){
   return {s, R, t:[qc[0]-s*rpc[0], qc[1]-s*rpc[1], qc[2]-s*rpc[2]]};
 }
 const applySim = (T,p) => { const r=xfR(T.R,p); return [T.s*r[0]+T.t[0], T.s*r[1]+T.t[1], T.s*r[2]+T.t[2]]; };
+// the inverse move: R^T (q - t) / s
+const unapplySim = (T,q) => { const d=[q[0]-T.t[0], q[1]-T.t[1], q[2]-T.t[2]], R=T.R; return [(R[0]*d[0]+R[3]*d[1]+R[6]*d[2])/T.s, (R[1]*d[0]+R[4]*d[1]+R[7]*d[2])/T.s, (R[2]*d[0]+R[5]*d[1]+R[8]*d[2])/T.s]; };
+// Fit inverse depth as a*d + b to target inverse depths (robust: fit, drop the worst, fit again)
+function fitInvDepth(ds, inv){
+  const fit = idx => { let n=0,sx=0,sy=0,sxx=0,sxy=0; for (const i of idx){ n++; sx+=ds[i]; sy+=inv[i]; sxx+=ds[i]*ds[i]; sxy+=ds[i]*inv[i]; }
+    const den=n*sxx-sx*sx; if (n<8 || Math.abs(den)<1e-12) return null; const a=(n*sxy-sx*sy)/den; return [a, (sy-a*sx)/n]; };
+  let idx=ds.map((_,i)=>i), ab=fit(idx); if (!ab) return null;
+  for (let pass=0; pass<2; pass++){ const r=idx.map(i=>Math.abs(ab[0]*ds[i]+ab[1]-inv[i])), med=r.slice().sort((x,y)=>x-y)[r.length>>1]||0;
+    const keep=idx.filter((i,k)=>r[k] <= 2.5*med+1e-9); const ab2=fit(keep); if (!ab2) break; ab=ab2; idx=keep; }
+  return ab[0] > 0 ? ab : null;
+}
 function composeSim(A, B){ // A after B
   const R=[0,0,0,0,0,0,0,0,0]; for (let i=0;i<3;i++) for (let j=0;j<3;j++) for (let k=0;k<3;k++) R[i*3+j]+=A.R[i*3+k]*B.R[k*3+j];
   const at=applySim({s:A.s,R:A.R,t:[0,0,0]}, B.t); return {s:A.s*B.s, R, t:[at[0]+A.t[0], at[1]+A.t[1], at[2]+A.t[2]]}; }
@@ -98,8 +109,8 @@ function ransacSim(P, Q, Q2, proj){
     const T=similarity(P,Q,[a,b,c]); if (!(T.s>0.6 && T.s<1.6)) continue;          // neighbouring frames are close to the same scale
     const inl=inliers(T); if (inl.length>bestIn.length){ bestIn=inl; best=T; } }
   if (!best || bestIn.length < Math.max(12, n*0.25)) return null;
-  let T=similarity(P,Q,bestIn); const inl2=inliers(T); if (inl2.length>=bestIn.length) T=similarity(P,Q,inl2);
-  return {T, inliers:Math.max(inl2.length,bestIn.length), of:n};
+  let T=similarity(P,Q,bestIn); let inl2=inliers(T); if (inl2.length>=bestIn.length) T=similarity(P,Q,inl2); else inl2=bestIn;
+  return {T, idx:inl2, of:n};
 }
 
 // ---- the whole scan
@@ -132,15 +143,26 @@ async function scanFromVideo(file){
       frames.push({data, depth:{w:raw.w, h:raw.h, d}, feat:features(data, w, h)});
     }
     // a point in a frame's camera, from a pixel and the depth there (null across a depth edge)
-    const zOfD = dd => 1.2*(1+SH)/(dd+SH);
+    // Each frame's depth is a*d + b in inverse depth. It starts from a fixed guess and, once the frame is
+    // placed, is refitted to the points the scene already agrees on; relative depth bends differently in
+    // every frame, and a shared guess left the same wall at a different depth in each, doubling it.
+    const A0 = 1/(1.2*(1+SH)), B0 = SH*A0; frames.forEach(F=>{ F.ab=[A0,B0]; });
+    const zOfD = dd => 1/(A0*dd+B0), zOfF = (F, dd) => 1/Math.max(1e-3, F.ab[0]*dd+F.ab[1]);
     const lift = (F, px, py) => { const D=F.depth, u=(px+.5)/w, v=(py+.5)/h, xi=Math.min(D.w-2,Math.max(1,(u*D.w)|0)), yi=Math.min(D.h-2,Math.max(1,(v*D.h)|0)), i=yi*D.w+xi, dd=D.d[i];
       if (Math.abs(D.d[i+1]-D.d[i-1]) > 0.06 || Math.abs(D.d[i+D.w]-D.d[i-D.w]) > 0.06 || dd < 0.03) return null;
-      const z=zOfD(dd); return [(2*u-1)*tanX*z, (1-2*v)*tanY*z, -z]; };
+      const z=zOfF(F, dd); return [(2*u-1)*tanX*z, (1-2*v)*tanY*z, -z]; };
     // the camera's path: each frame placed relative to the last one that was placed
     const proj = p => [((p[0]/-p[2])/tanX+1)/2*w - .5, (1-(p[1]/-p[2])/tanY)/2*h - .5];
-    const placeAgainst = (i, ref) => { const A=frames[i].feat, B=frames[ref].feat, m=matchFeatures(A,B), P=[], Q=[], Q2=[];
-      for (const [a,b] of m){ const p=lift(frames[i], A.xy[a*2], A.xy[a*2+1]), q=lift(frames[ref], B.xy[b*2], B.xy[b*2+1]); if (p && q){ P.push(p); Q.push(q); Q2.push(B.xy[b*2], B.xy[b*2+1]); } }
-      const r = ransacSim(P, Q, Q2, proj); return r ? composeSim(pose[ref], r.T) : null; };
+    const depthAtKp = (F, px, py) => { const D=F.depth, xi=Math.min(D.w-1,((px+.5)/w*D.w)|0), yi=Math.min(D.h-1,((py+.5)/h*D.h)|0); return D.d[yi*D.w+xi]; };
+    const placeAgainst = (i, ref) => { const Fi=frames[i], A=Fi.feat, B=frames[ref].feat, m=matchFeatures(A,B), P=[], Q=[], Q2=[], K=[];
+      const build = () => { P.length=0; Q.length=0; Q2.length=0; K.length=0;
+        for (const [a,b] of m){ const p=lift(Fi, A.xy[a*2], A.xy[a*2+1]), q=lift(frames[ref], B.xy[b*2], B.xy[b*2+1]); if (p && q){ P.push(p); Q.push(q); Q2.push(B.xy[b*2], B.xy[b*2+1]); K.push(a); } } };
+      build(); let r = ransacSim(P, Q, Q2, proj); if (!r) return null;
+      // refit this frame's depth to where the reference says its matched points are, then place it again
+      const ds=[], inv=[]; for (const k of r.idx){ const pt=unapplySim(r.T, Q[k]); if (pt[2] < -1e-3){ ds.push(depthAtKp(Fi, A.xy[K[k]*2], A.xy[K[k]*2+1])); inv.push(1/-pt[2]); } }
+      const ab = fitInvDepth(ds, inv);
+      if (ab){ const keep=Fi.ab; Fi.ab=ab; build(); const r2 = ransacSim(P, Q, Q2, proj); if (r2 && r2.idx.length >= r.idx.length*0.8) r = r2; else { Fi.ab=keep; } }
+      return composeSim(pose[ref], r.T); };
     busy('Following the camera', 0.82); await tick();
     const pose = [ {s:1, R:[1,0,0,0,1,0,0,0,1], t:[0,0,0]} ]; let placed = [0], lost = 0;
     for (let i=1;i<n;i++){
@@ -168,7 +190,7 @@ async function scanFromVideo(file){
       for (let yi=1; yi<D.h-1; yi+=step) for (let xi=1; xi<D.w-1; xi+=step){
         const k=yi*D.w+xi, dd=D.d[k]; if (dd < 0.03) continue;
         if (Math.abs(D.d[k+1]-D.d[k-1]) > 0.05 || Math.abs(D.d[k+D.w]-D.d[k-D.w]) > 0.05) continue;       // across a depth edge
-        const u=(xi+.5)/D.w, v=(yi+.5)/D.h, z=zOfD(dd), p=applySim(T, [(2*u-1)*tanX*z, (1-2*v)*tanY*z, -z]);
+        const u=(xi+.5)/D.w, v=(yi+.5)/D.h, z=zOfF(F, dd), p=applySim(T, [(2*u-1)*tanX*z, (1-2*v)*tanY*z, -z]);
         const ix=Math.round(p[0]/vs), iy=Math.round(p[1]/vs), iz=Math.round(p[2]/vs); if (Math.abs(ix)>32000||Math.abs(iy)>32000||Math.abs(iz)>32000) continue;
         const ci=(Math.min(h-1,(v*h)|0)*w + Math.min(w-1,(u*w)|0))*4;
         if (F.data[ci]+F.data[ci+1]+F.data[ci+2] < 18) continue;                 // empty black (letterboxing, lens edges) is not a surface
