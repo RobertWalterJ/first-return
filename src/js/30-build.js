@@ -61,6 +61,7 @@ function buildCloud(cfg){
     // hashed per cell, so the dots stay put between rebuilds
     const gn = Math.sqrt(-2*Math.log(hash2(cell,41,7)+1e-9))*Math.cos(6.283185*hash2(cell,43,9));
     const zz = z + gn*(0.002 + 0.0035*z)*(1 + 4*inFace)*S.adv.noise;
+    if (S.sky && S.sky[mi] && S.skyR){ const q = unproject(u,v,skyZ(u,v)); push(q[0],q[1],q[2],r,g,b,1,rnd,lum,-1,-1); return; }
     const p = unproject(u,v,zz);
     push(p[0],p[1],p[2],r,g,b,kind,rnd,lum,inc,c);
     // the subject's back: a rounded surface as thick at this row as the subject is wide there
@@ -108,6 +109,19 @@ function buildCloud(cfg){
     }
   }
 
+  // the sky past the edges of the photo, continuing the border's colour, for when the view turns
+  if (S.sky && S.skyR && !cfg.cap){
+    const cw=Math.sqrt(aspect/target)*1.6, ch=cw/aspect;
+    for (let v=-0.4; v<1; v+=ch) for (let u=-0.4; u<1.4; u+=cw){
+      if (u>=0 && u<1 && v>=0) continue;
+      const cu=Math.min(.999,Math.max(0,u)), cvv=Math.min(.999,Math.max(0,v)), mi=Math.min(D.h-1,(cvv*D.h)|0)*D.w+Math.min(D.w-1,(cu*D.w)|0);
+      if (!S.sky[mi]) continue; const cell=3e7+Math.round((v+1)*1e4)*3+Math.round((u+1)*1e3), rnd=hash2(cell,17,5);
+      let keep = cfg.backdrop*0.7; if (fog){ const dx=(u-fx)*aspect/Math.max(aspect,1), dy=v-fy; keep *= Math.exp(-(dx*dx+dy*dy)/0.07); }   /* fades like the backdrop */
+      if (rnd >= keep) continue;
+      const ci=(Math.min(ph-1,(cvv*ph)|0)*pw + Math.min(pw-1,(cu*pw)|0))*4, r=pix[ci]/255, g=pix[ci+1]/255, b=pix[ci+2]/255;
+      const q=unproject(u,v,skyZ(u,v)); push(q[0],q[1],q[2],r,g,b,1,rnd,0.299*r+0.587*g+0.114*b,-1,-1);
+    }
+  }
   // the background hidden behind the subject, sampled like the backdrop around it
   if (fill && hid>=0.5 && subjArea>0){
     const bw=bx1-bx0, bh=by1-by0, cells=Math.min(hidN, target*bw*bh), cw3=Math.sqrt(bw*bh/Math.max(1,cells)), nx3=Math.ceil(bw/cw3), ny3=Math.ceil(bh/cw3);
@@ -203,6 +217,7 @@ function build(){
   }
   if (!S.photo || !S.depth) return;
   SHIFT = curShift();
+  S.skyR = S.sky ? skyRadius(S.depth, S.sky) : 0;
   S.compMap = subjectMap();
   const R = buildCloud(cfgFromP({low:S.lowDetail}));
   S.cpu = R.out; S.cpuComp = R.comp; S.count = R.n; S.nComp = R.live.length; S.floor3d = R.floorPlane;
@@ -230,6 +245,6 @@ function build(){
 }
 function extents(out, n){
   let rmin=1e9,rmax=-1e9,ymin=1e9,ymax=-1e9; const step=Math.max(1,(n/20000)|0);
-  for (let i=0;i<n;i+=step){ const o=i*10, x=out[o],y=out[o+1],z=out[o+2], r=Math.hypot(x,y,z); if(r<rmin)rmin=r; if(r>rmax)rmax=r; if(y<ymin)ymin=y; if(y>ymax)ymax=y; }
+  for (let i=0;i<n;i+=step){ const o=i*10, x=out[o],y=out[o+1],z=out[o+2], r=Math.hypot(x,y,z); if (out[o+9] < 0) continue; /* the sky dome is not part of the scene's range */ if(r<rmin)rmin=r; if(r>rmax)rmax=r; if(y<ymin)ymin=y; if(y>ymax)ymax=y; }
   return {rng:[rmin,rmax], yr:[ymin,ymax]};
 }

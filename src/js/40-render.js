@@ -6,7 +6,7 @@ let gl = null, G = null;          // G holds every GL object so it can be rebuil
 
 const PTS_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aCol; layout(location=2) in vec4 aMeta;
-uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight, uOrbit, uFxT, uTime, uFxK, uDof, uFocusD, uNearF; uniform int uMode, uFx, uMix;
+uniform mat4 uProj, uView; uniform float uSkyD, uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight, uOrbit, uFxT, uTime, uFxK, uDof, uFocusD, uNearF; uniform int uMode, uFx, uMix;
 uniform vec2 uR, uY;
 float hsh(float n){ return fract(sin(n*12.9898+4.1)*43758.5453); }
 out vec3 vCol; flat out float vRound;
@@ -18,9 +18,13 @@ vec3 heat(float t){ t=clamp(t,0.,1.);
  vec3 a=vec3(.10,.05,.26), b=vec3(.48,.11,.43), c=vec3(.89,.35,.20), d=vec3(.98,.83,.36), e=vec3(1.,.98,.86);
  return t<.25?mix(a,b,t/.25):t<.5?mix(b,c,(t-.25)/.25):t<.8?mix(c,d,(t-.5)/.3):mix(d,e,(t-.8)/.2); }
 vec3 lin(vec3 c){ return pow(max(c,0.),vec3(2.2)); }
+// ironbow, the thermal camera palette: black, violet, red, orange, yellow, white
+vec3 ironbow(float t){ t=clamp(t,0.,1.);
+ vec3 a=vec3(.02,.01,.05), b=vec3(.28,.03,.52), c=vec3(.80,.10,.34), d=vec3(.99,.46,.06), e=vec3(1.,.87,.25), f=vec3(1.,1.,.9);
+ return t<.2?mix(a,b,t/.2):t<.4?mix(b,c,(t-.2)/.2):t<.62?mix(c,d,(t-.4)/.22):t<.84?mix(d,e,(t-.62)/.22):mix(e,f,(t-.84)/.16); }
 void main(){
-  float kind=aMeta.x, rnd=aMeta.y, lum=aMeta.z, inc=aMeta.w;
-  float r = clamp((length(aPos)-uR.x)/(uR.y-uR.x),0.,1.);
+  float kind=aMeta.x, rnd=aMeta.y, lum=aMeta.z, inc=aMeta.w; bool sky = inc < -.5; if(sky) inc = 1.;
+  float r = clamp((length(aPos)-uR.x)/(uR.y-uR.x),0.,1.); if(inc < -.5) r = 1.;
   // video effects, scaled by strength uFxK: 2 decay (dots let go and drift off), 3 glitch (bands slip
   // sideways), 5 build up (dots gather one by one), 6 dissolve (dots fade out as the photo fades in),
   // 7 dust (a slow, slight drift)
@@ -46,13 +50,20 @@ void main(){
   else if(uMode==1) c = lin(turbo(1.-r)) * (.3+.9*lumL);
   else if(uMode==2) c = lin(heat((aPos.y-uY.x)/(uY.y-uY.x))) * (.35+.8*lumL);
   else if(uMode==3) c = vec3(lumL*(.3+.7*inc))*vec3(.92,.97,1.)*1.4;
-  else c = lin(vec3(.25,.95,.7))*(.04+lumL*1.4);
-  c *= uExposure * (1. - .35*r);
-  float size = uPx / dist; float round_ = 1.;
+  else if(uMode==4) c = lin(vec3(.25,.95,.7))*(.04+lumL*1.4);
+  else if(uMode==5) c = lin(ironbow(.62*pow(lum,.8) + .38*(1.-r)))*1.15;
+  // flat styles are drawn in the final colours on a coloured ground, so they skip the light and glow path
+  else if(uMode==6) c = vec3(.08,.075,.09);
+  else c = mix(vec3(.55,.74,.95), vec3(.96,.99,1.), smoothstep(.1,.8,lum));
+  bool flatStyle = uMode>=6;
+  if(!flatStyle) c *= uExposure * (1. - .35*r);
+  float size = uPx / (sky ? uSkyD*dist/length(P0) : dist); float round_ = 1.;   // sky dots keep the size they had before moving out to the dome
+  if(uMode==6) size *= .22 + 1.05*pow(1.-lum, 1.4);               // halftone: darker places get bigger dots, never quite solid
   if(uSparkle>0.5){ c *= .6 + 1.4*rnd*rnd; }
   float hiddenPart = kind>2.5 ? 1. : 0.;
   if(kind>3.5) c *= .75;                          // a filled-in back is a guess: draw it a little darker
-  if((kind>.5 && kind<1.5) || (kind>2.5 && kind<3.5)){
+  if(flatStyle){ if(kind>.5 && kind<3.5 && uMode==6) c = mix(c, vec3(.95,.93,.87), .45); if(kind>.5 && kind<3.5 && uMode==7) c *= .72; }
+  else if((kind>.5 && kind<1.5) || (kind>2.5 && kind<3.5)){
     vec3 t = lin(vec3(.30,.78,.70))*(.03+lumL*.9);
     c = mix(c, t*uExposure, uBgTint) * uBgGain; size *= uBgSize; round_ = 1.-uBgTint;
     c *= mix(1., .16, uFocus);
@@ -73,7 +84,7 @@ void main(){
   // depth of field: the blur circle grows with distance from the focus plane, and its light spreads out
   if(uDof>0.){ float coc = 1. + uDof*abs(1./dist - 1./uFocusD)*uFocusD*9.; size *= coc; c /= coc*coc; round_ = 1.; }
   // points smaller than a pixel still draw one pixel, so dim them to keep brightness honest
-  if(size < 1.) c *= size*size;
+  if(size < 1. && !flatStyle) c *= size*size;
   vCol = c; vRound = (size >= 3. ? round_ : 0.);
   gl_PointSize = clamp(size, 1., 64.);
 }`;
@@ -94,7 +105,7 @@ void main(){ vec3 s=texture(uTex,vUv).rgb*.227;
  s+=(texture(uTex,vUv+uDir*1.385).rgb+texture(uTex,vUv-uDir*1.385).rgb)*.316;
  s+=(texture(uTex,vUv+uDir*3.231).rgb+texture(uTex,vUv-uDir*3.231).rgb)*.070; o=vec4(s,1.); }`;
 const COMP_FS = `#version 300 es
-precision highp float; in vec2 vUv; uniform sampler2D uScene, uGlowA, uGlowB, uDepth; uniform float uGlow, uEdl, uNear, uFar, uRaw, uGlitch, uTime; uniform vec2 uRes; out vec4 o;
+precision highp float; in vec2 vUv; uniform sampler2D uScene, uGlowA, uGlowB, uDepth; uniform float uGlow, uEdl, uNear, uFar, uRaw, uGlitch, uTime, uFlat, uNight; uniform vec2 uRes; out vec4 o;
 float h(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
 float lz(float d){ float z=(2.*uNear*uFar)/(uFar+uNear-(d*2.-1.)*(uFar-uNear)); return log2(z); }
 vec3 aces(vec3 x){ return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.); }
@@ -123,6 +134,12 @@ void main(){
   vec3 raw = clamp((c + bloom)*(1.-.25*smoothstep(.55,1.25,length(q))), 0., 1.);
   vec3 film = pow(aces((c + bloom)*(1.-.4*smoothstep(.45,1.2,length(q)))), vec3(1./2.2));
   c = mix(film, raw, clamp(photo,0.,1.));
+  if(uFlat>.5) c = texture(uScene,uv).rgb * (uEdl>0. ? 1. : 1.);          // flat styles: the ground and dots exactly as drawn
+  if(uFlat>.5 && uEdl>0.){ float d=texture(uDepth,uv).r; if(d<1.){ float zc=lz(d), s2=0.; vec2 px=2./uRes;
+      for(int i=0;i<8;i++){ float a=float(i)*.785398; float dn=texture(uDepth,uv+vec2(cos(a),sin(a))*px).r; float zn=dn<1.?lz(dn):zc+8.; s2+=max(0.,zc-zn); }
+      c = mix(c, vec3(1.), clamp(s2/8.*uEdl*60.,0.,.8)); } }   // blueprint: edges light up like drawn lines
+  if(uNight>.5){ float g=dot(c,vec3(.3,.59,.11)); c = vec3(.18,1.,.35)*g*1.15 + vec3(.02,.05,.02);
+    c += (h(vUv*uRes + fract(uTime*7.)*91.)-.5)*.13; c *= 1.-.14*step(.5,fract(vUv.y*uRes.y*.33)); c *= 1.-.75*smoothstep(.35,1.05,length(q)); }
   if(uGlitch>0.) c*=1.-.1*uGlitch*step(.5,fract(vUv.y*uRes.y*.5));
   c+=(h(vUv*uRes)-.5)/255.; o=vec4(c,1.); }`;
 
@@ -194,7 +211,8 @@ function renderView(W, H, o){
   const aspect = W/H, V = o.thumb ? viewMatrix(o.yaw, o.pitch, o.zoom, S.target, null) : viewMatrix(o.yaw, o.pitch, o.zoom, S.pivot, S.pan), Pm = projMatrix(aspect);
   if (!o.thumb){ S.V=V; S.P=Pm; }
   gl.bindFramebuffer(gl.FRAMEBUFFER, T.sF); gl.viewport(0,0,W,H);
-  gl.clearColor(0.004,0.005,0.006,0); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  const ground = LOOKS[o.look].bg || [0.004,0.005,0.006];
+  gl.clearColor(ground[0], ground[1], ground[2], 0); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   // Photoreal draws the splats; the Resolve effect draws both, the dots giving way to the photo as the
   // beam passes. Every other look draws the dots.
   const Lo = LOOKS[o.look], mix = Lo.mix||0, fx = o.fx||'none', splatLook = !!Lo.splat;
@@ -216,14 +234,14 @@ function renderView(W, H, o){
     gl.uniformMatrix4fv(u.uProj,false,Pm); gl.uniformMatrix4fv(u.uView,false,V);
     // point size at the subject's distance scales with the output height, so exports match the preview
     const ref = Math.abs(S.target[2]) || 2, pa = S.photo.w/S.photo.h, fitH = aspect < pa ? H*aspect/pa : H;
-    gl.uniform1f(u.uPx, o.size * 1.62 * fitH/1000 * ref * (0.466/S.tanV));
+    gl.uniform1f(u.uPx, o.size * 1.62 * fitH/1000 * ref * (0.466/S.tanV)); gl.uniform1f(u.uSkyD, S.skyR ? S.skyR/3.2 : 1);
     gl.uniform1f(u.uExposure, o.bright); gl.uniform1f(u.uSat, o.colour==='muted' ? .45 : 1);
     gl.uniform1f(u.uBgTint, L.bgTint); gl.uniform1f(u.uBgGain, L.bgGain); gl.uniform1f(u.uBgSize, L.bgSize);
     gl.uniform1f(u.uSparkle, L.sparkle); gl.uniform1f(u.uFocus, o.focus ? 1 : 0); gl.uniform1f(u.uLight, o.light||0);
     // hidden parts show once the view has turned or slid sideways, since either uncovers what the photo could not see
     const slid = o.thumb ? 0 : Math.hypot(S.pan[0], S.pan[1], S.pan[2]*0.5)/(S.refDist||2);
     gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8 + slid*8));
-    gl.uniform1i(u.uMode, {photo:0,muted:0,range:1,height:2,grey:3,phosphor:4}[o.colour]||0);
+    gl.uniform1i(u.uMode, {photo:0,muted:0,range:1,height:2,grey:3,phosphor:4,thermal:5,ink:6,blueprint:7}[o.colour]||0);
     gl.uniform2f(u.uR, S.rng[0], S.rng[1]); gl.uniform2f(u.uY, S.yr[0], S.yr[1]);
     gl.uniform1i(u.uFx, ptFx); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, both ? mix : 0); gl.uniform1f(u.uDof, o.dof); gl.uniform1f(u.uFocusD, focusD); gl.uniform1f(u.uNearF, 0.03*(S.refDist||2));
     gl.bindVertexArray(o.cloud.vao); gl.drawArrays(gl.POINTS, 0, o.cloud.count); gl.bindVertexArray(null);
@@ -242,7 +260,8 @@ function renderView(W, H, o){
   pass(G.C, null, W, H, u=>{ tx(0,T.sT); tx(1,T.a); tx(2,T.c); tx(3,T.dT);
     gl.uniform1i(u.uScene,0); gl.uniform1i(u.uGlowA,1); gl.uniform1i(u.uGlowB,2); gl.uniform1i(u.uDepth,3);
     const raw = splatLook && !both, gk = Math.min(1, fxK), glitch = fx==='glitch' ? gk*(.45 + .55*Math.max(0, Math.sin((o.fxTime||0)*2.3)*Math.sin((o.fxTime||0)*5.1))) : fx==='decay' ? gk*.25*Math.max(0,(o.fxT||0)-.6)/.4 : 0;
-    gl.uniform1f(u.uRaw, raw?1:0); gl.uniform1f(u.uGlitch, glitch); gl.uniform1f(u.uTime, o.fxTime||0);
+    gl.uniform1f(u.uRaw, raw?1:0); gl.uniform1f(u.uGlitch, glitch); gl.uniform1f(u.uTime, o.fxTime||performance.now()/1000);
+    gl.uniform1f(u.uFlat, Lo.style==='flat'?1:0); gl.uniform1f(u.uNight, Lo.style==='night'?1:0);
     gl.uniform1f(u.uGlow,o.glow); gl.uniform1f(u.uEdl, raw ? 0 : o.edges); gl.uniform1f(u.uNear,0.05); gl.uniform1f(u.uFar,400.); gl.uniform2f(u.uRes,W,H); });
   gl.bindVertexArray(null);
 }

@@ -282,6 +282,23 @@ function curShift(){
   const R0 = (1+S.shiftAuto)/S.shiftAuto, R = Math.max(1.03, Math.min(80, Math.pow(R0, val('depth3d'))));
   return 1/(R-1);
 }
+// The sky: the farthest region reaching the top of the frame, grown from the top row through pixels at
+// (almost) the far limit of depth. It then sits on a distant dome, in the same place on screen, so turning
+// the view never shows it as a flat wall. Null when there is no real sky.
+function skyMask(D){
+  const W=D.w, H=D.h, n=W*H, m=new Uint8Array(n), q=new Int32Array(n); let head=0, tail=0;
+  const t=0.035, t2=0.06;
+  for (let x=0;x<W;x++) if (D.d[x] < t){ m[x]=1; q[tail++]=x; }
+  while (head<tail){ const i=q[head++], x=i%W;
+    for (const j of [x>0?i-1:-1, x<W-1?i+1:-1, i>=W?i-W:-1, i<n-W?i+W:-1]) if (j>=0 && !m[j] && D.d[j] < t2){ m[j]=1; q[tail++]=j; } }
+  return tail > n*0.02 ? m : null;
+}
+// distance of the dome along the ray through (u, v), so the sky keeps its place on screen
+function skyZ(u, v){ const a=S.photo.w/S.photo.h, tx=(2*u-1)*S.tanV*a, ty=(1-2*v)*S.tanV; return S.skyR/Math.sqrt(1+tx*tx+ty*ty); }
+function skyRadius(D, sky){
+  const far=[]; for (let i=0;i<D.d.length;i+=7) if (!sky[i]) far.push(D.d[i]); far.sort((a,b)=>a-b);
+  return zOf(far.length ? far[Math.floor(far.length*0.02)] : 0.05) * 3.2;
+}
 let SHIFT = 1/3;
 function zOf(d){ return 1.2*(1+SHIFT)/(d+SHIFT); }
 function unproject(u,v,z){ const a=S.photo.w/S.photo.h; return [(2*u-1)*S.tanV*a*z, (1-2*v)*S.tanV*z, -z]; }

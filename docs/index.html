@@ -231,7 +231,7 @@ stops:[['Dim',.6],['Soft',.9],['Normal',1.25],['Bright',1.8],['Blazing',2.7]]},
 {key:'light',    name:'Shadows',    hint:'Brings dark or backlit subjects out of shadow by evening out the light. Real lidar sees surfaces, not sunlight.',
 stops:[['As shot',0],['Lifted',.5],['Even',1]]},
 {key:'colour',   name:'Colour',     hint:'What decides the colour of each dot.', chips:[
-['photo','Photo'],['muted','Muted'],['grey','Grey'],['range','Distance'],['height','Height'],['phosphor','Green']]},
+['photo','Photo'],['muted','Muted'],['grey','Grey'],['range','Distance'],['height','Height'],['phosphor','Green'],['thermal','Thermal'],['blueprint','Blueprint'],['ink','Ink']]},
 {key:'depth3d',  name:'Depth',      hint:'How far near things stand out from far things. Easiest to see when you turn the view.', rebuild:true,
 stops:[['Flat',.08],['Low',.5],['Normal',1],['Deep',1.6],['Extra',2.4]]},
 {key:'backdrop', name:'Background', hint:'Dots behind and around the subject. None leaves the subject alone on a black stage.', rebuild:true,
@@ -263,6 +263,14 @@ survey:  {name:'Survey', focus:0,  dots:2.85, size:1.2, glow:.55, bright:1.4, co
 pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:18, pitch:10, zoom:1.6},
 real:    {name:'Photoreal', focus:0, dots:3.05, size:1.9, glow:1, bright:2, colour:'photo', depth3d:2, backdrop:1.05, floor:0, edges:0, hidden:1,
 pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:0, pitch:0, zoom:1, splat:1},
+thermal: {name:'Thermal', focus:0, dots:3.05, size:1.7, glow:1.5, bright:2.3, colour:'thermal', depth3d:2, backdrop:1.05, floor:1.2, edges:0, hidden:2,
+pattern:'scatter', bgTint:0, bgGain:.8, bgSize:1.4, sparkle:0, yaw:0, pitch:0, zoom:1.3, pack:1},
+night:   {name:'Night vision', focus:0, dots:3.05, size:1.4, glow:1.9, bright:2.6, colour:'phosphor', depth3d:2, backdrop:2, floor:1.2, edges:.6, hidden:2,
+pattern:'scatter', bgTint:0, bgGain:.9, bgSize:1.2, sparkle:1, yaw:0, pitch:0, zoom:1.3, pack:1, style:'night'},
+blueprint:{name:'Blueprint', focus:0, dots:2.7, size:1.1, glow:0, bright:2, colour:'blueprint', depth3d:2, backdrop:2, floor:1, edges:1.7, hidden:2,
+pattern:'rings', bgTint:0, bgGain:.8, bgSize:1, sparkle:0, yaw:14, pitch:8, zoom:1.5, pack:1, style:'flat', bg:[0.075,0.19,0.40]},
+print:   {name:'Print', focus:0, dots:1.7, size:1.25, glow:0, bright:2, colour:'ink', depth3d:2, backdrop:1.1, floor:.6, edges:0, hidden:2,
+pattern:'grid', bgTint:0, bgGain:.7, bgSize:1, sparkle:0, yaw:0, pitch:0, zoom:1.3, pack:1, style:'flat', bg:[0.95,0.93,0.87]},
 psub:    {name:'Real subject', focus:0, dots:3.05, size:1.9, glow:1.0, bright:2.3, colour:'photo', depth3d:2, backdrop:1.05, floor:1.3, edges:0, hidden:1,
 pattern:'scatter', bgTint:1, bgGain:.45, bgSize:2.4, sparkle:0, yaw:0, pitch:0, zoom:1.3, splat:1, mix:1},
 pworld:  {name:'Real setting', focus:0, dots:3.05, size:1.4, glow:.5, bright:2.4, colour:'photo', depth3d:2, backdrop:1.05, floor:0, edges:0, hidden:1,
@@ -555,6 +563,19 @@ function curShift(){
 if (S.adv.ratio) return 1/(Math.max(1.03, S.adv.ratio)-1);        // Advanced: a set near-to-far ratio
 const R0 = (1+S.shiftAuto)/S.shiftAuto, R = Math.max(1.03, Math.min(80, Math.pow(R0, val('depth3d'))));
 return 1/(R-1);
+}
+function skyMask(D){
+const W=D.w, H=D.h, n=W*H, m=new Uint8Array(n), q=new Int32Array(n); let head=0, tail=0;
+const t=0.035, t2=0.06;
+for (let x=0;x<W;x++) if (D.d[x] < t){ m[x]=1; q[tail++]=x; }
+while (head<tail){ const i=q[head++], x=i%W;
+for (const j of [x>0?i-1:-1, x<W-1?i+1:-1, i>=W?i-W:-1, i<n-W?i+W:-1]) if (j>=0 && !m[j] && D.d[j] < t2){ m[j]=1; q[tail++]=j; } }
+return tail > n*0.02 ? m : null;
+}
+function skyZ(u, v){ const a=S.photo.w/S.photo.h, tx=(2*u-1)*S.tanV*a, ty=(1-2*v)*S.tanV; return S.skyR/Math.sqrt(1+tx*tx+ty*ty); }
+function skyRadius(D, sky){
+const far=[]; for (let i=0;i<D.d.length;i+=7) if (!sky[i]) far.push(D.d[i]); far.sort((a,b)=>a-b);
+return zOf(far.length ? far[Math.floor(far.length*0.02)] : 0.05) * 3.2;
 }
 let SHIFT = 1/3;
 function zOf(d){ return 1.2*(1+SHIFT)/(d+SHIFT); }
@@ -942,6 +963,7 @@ if (hash2(cell,7,11) < drop) return;
 }
 const gn = Math.sqrt(-2*Math.log(hash2(cell,41,7)+1e-9))*Math.cos(6.283185*hash2(cell,43,9));
 const zz = z + gn*(0.002 + 0.0035*z)*(1 + 4*inFace)*S.adv.noise;
+if (S.sky && S.sky[mi] && S.skyR){ const q = unproject(u,v,skyZ(u,v)); push(q[0],q[1],q[2],r,g,b,1,rnd,lum,-1,-1); return; }
 const p = unproject(u,v,zz);
 push(p[0],p[1],p[2],r,g,b,kind,rnd,lum,inc,c);
 if (kind===0 && fill && hid>=1.5 && hash2(cell,51,3) < 0.6){
@@ -980,6 +1002,18 @@ const u = bx0 + (x+hash2(x,y,31))*bw/nx2, v = by0 + (y+hash2(x,y,32))*bh/ny2;
 const mi = Math.min(D.h-1,(v*D.h)|0)*D.w + Math.min(D.w-1,(u*D.w)|0);
 if (map[mi] >= 0) sample(u, v, 1e7 + y*nx2 + x); }
 }
+}
+}
+if (S.sky && S.skyR && !cfg.cap){
+const cw=Math.sqrt(aspect/target)*1.6, ch=cw/aspect;
+for (let v=-0.4; v<1; v+=ch) for (let u=-0.4; u<1.4; u+=cw){
+if (u>=0 && u<1 && v>=0) continue;
+const cu=Math.min(.999,Math.max(0,u)), cvv=Math.min(.999,Math.max(0,v)), mi=Math.min(D.h-1,(cvv*D.h)|0)*D.w+Math.min(D.w-1,(cu*D.w)|0);
+if (!S.sky[mi]) continue; const cell=3e7+Math.round((v+1)*1e4)*3+Math.round((u+1)*1e3), rnd=hash2(cell,17,5);
+let keep = cfg.backdrop*0.7; if (fog){ const dx=(u-fx)*aspect/Math.max(aspect,1), dy=v-fy; keep *= Math.exp(-(dx*dx+dy*dy)/0.07); }   /* fades like the backdrop */
+if (rnd >= keep) continue;
+const ci=(Math.min(ph-1,(cvv*ph)|0)*pw + Math.min(pw-1,(cu*pw)|0))*4, r=pix[ci]/255, g=pix[ci+1]/255, b=pix[ci+2]/255;
+const q=unproject(u,v,skyZ(u,v)); push(q[0],q[1],q[2],r,g,b,1,rnd,0.299*r+0.587*g+0.114*b,-1,-1);
 }
 }
 if (fill && hid>=0.5 && subjArea>0){
@@ -1066,6 +1100,7 @@ uploadCloud(R.out, R.n); refreshLabelPositions(); renderPins(); S.dirtyDraw = tr
 }
 if (!S.photo || !S.depth) return;
 SHIFT = curShift();
+S.skyR = S.sky ? skyRadius(S.depth, S.sky) : 0;
 S.compMap = subjectMap();
 const R = buildCloud(cfgFromP({low:S.lowDetail}));
 S.cpu = R.out; S.cpuComp = R.comp; S.count = R.n; S.nComp = R.live.length; S.floor3d = R.floorPlane;
@@ -1092,7 +1127,7 @@ S.dirtyDraw = true;
 }
 function extents(out, n){
 let rmin=1e9,rmax=-1e9,ymin=1e9,ymax=-1e9; const step=Math.max(1,(n/20000)|0);
-for (let i=0;i<n;i+=step){ const o=i*10, x=out[o],y=out[o+1],z=out[o+2], r=Math.hypot(x,y,z); if(r<rmin)rmin=r; if(r>rmax)rmax=r; if(y<ymin)ymin=y; if(y>ymax)ymax=y; }
+for (let i=0;i<n;i+=step){ const o=i*10, x=out[o],y=out[o+1],z=out[o+2], r=Math.hypot(x,y,z); if (out[o+9] < 0) continue; /* the sky dome is not part of the scene's range */ if(r<rmin)rmin=r; if(r>rmax)rmax=r; if(y<ymin)ymin=y; if(y>ymax)ymax=y; }
 return {rng:[rmin,rmax], yr:[ymin,ymax]};
 }
 function pushPull(vals, ch, known, w, h){
@@ -1201,7 +1236,7 @@ sp.pos[i*3]=Rm[0]*x+Rm[1]*y+Rm[2]*z-shift[0]; sp.pos[i*3+1]=Rm[3]*x+Rm[4]*y+Rm[5
 const w=sp.rot[i*4], a=sp.rot[i*4+1], b=sp.rot[i*4+2], c=sp.rot[i*4+3];
 sp.rot[i*4]=qw*w-qx*a-qy*b-qz*c; sp.rot[i*4+1]=qw*a+qx*w+qy*c-qz*b; sp.rot[i*4+2]=qw*b-qx*c+qy*w+qz*a; sp.rot[i*4+3]=qw*c+qx*b-qy*a+qz*w; }
 }
-function photoSplatKey(){ return [S.depthVer, SHIFT.toFixed(5), S.tanV.toFixed(5), S.compCache ? S.compCache.key : '', val('hidden')>=0.5].join('|'); }
+function photoSplatKey(){ return [S.depthVer, S.skyR.toFixed(3), SHIFT.toFixed(5), S.tanV.toFixed(5), S.compCache ? S.compCache.key : '', val('hidden')>=0.5].join('|'); }
 function photoSplats(){
 const D=S.depth, Ph=S.photo, W=D.w, H=D.h, cap = MOBILE ? 380000 : 1000000;
 const step = W*H > cap ? Math.ceil(Math.sqrt(W*H/cap)) : 1, gw=Math.ceil(W/step), gh=Math.ceil(H/step);
@@ -1209,8 +1244,9 @@ const c1=document.createElement('canvas'); c1.width=Ph.w; c1.height=Ph.h; c1.get
 const c2=document.createElement('canvas'); c2.width=gw; c2.height=gh; const x2=c2.getContext('2d',{willReadFrequently:true}); x2.imageSmoothingQuality='high'; x2.drawImage(c1,0,0,gw,gh);
 const px=x2.getImageData(0,0,gw,gh).data;
 const map=S.compMap, fill = val('hidden')>=0.5 && map && map.some(v=>v>=0) ? hiddenFill(map) : null;
-const sp = newSplats(gw*gh*2); let m=0;
+const sp = newSplats(gw*gh*2 + Math.ceil((gw*1.8)*(gh+gw*0.4)/9)); let m=0;
 const Z = new Float32Array(W*H); for (let i=0;i<W*H;i++) Z[i]=zOf(D.d[i]);
+if (S.sky && S.skyR) for (let i=0;i<W*H;i++) if (S.sky[i]) Z[i]=skyZ(((i%W)+.5)/W, (((i/W)|0)+.5)/H);
 const P = (x,y) => unproject((x+.5)/W, (y+.5)/H, Z[y*W+x]);
 const K = 0.62, foot0 = 2*S.tanV/H*step;          // splat spread relative to spacing; footprint per unit depth
 const put = (p, e1, e2, n, s1, s2, s3, r, g, b, a, flag) => {
@@ -1266,6 +1302,16 @@ if (fill && fill.region[y*W+x]) continue;             // the subject's own fill 
 facing(unproject((x+.5)/W,(y+.5)/H,zf), zf, fc[q*3], fc[q*3+1], fc[q*3+2], 255, 1, 1.3);
 } }
 front = next;
+}
+}
+if (S.sky && S.skyR){
+const ext = Math.round(0.4*gw), st = 3;
+for (let gy=-ext; gy<gh; gy+=st) for (let gx=-ext; gx<gw+ext; gx+=st){
+if (gx>=0 && gx<gw && gy>=0) continue;
+const cx=Math.min(gw-1,Math.max(0,gx)), cy=Math.min(gh-1,Math.max(0,gy)), di=Math.min(H-1,cy*step)*W+Math.min(W-1,cx*step);
+if (!S.sky[di]) continue;
+const u=(gx*step+.5)/W, v=(gy*step+.5)/H, z=skyZ(u,v), ci=(cy*gw+cx)*4;
+facing(unproject(u,v,z), z, px[ci], px[ci+1], px[ci+2], 255, 1, st*1.2);
 }
 }
 if (fill){
@@ -1333,7 +1379,7 @@ const cv = $('#gl');
 let gl = null, G = null;          // G holds every GL object so it can be rebuilt after a context loss
 const PTS_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aCol; layout(location=2) in vec4 aMeta;
-uniform mat4 uProj, uView; uniform float uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight, uOrbit, uFxT, uTime, uFxK, uDof, uFocusD, uNearF; uniform int uMode, uFx, uMix;
+uniform mat4 uProj, uView; uniform float uSkyD, uPx, uExposure, uSat, uBgTint, uBgGain, uBgSize, uSparkle, uFocus, uLight, uOrbit, uFxT, uTime, uFxK, uDof, uFocusD, uNearF; uniform int uMode, uFx, uMix;
 uniform vec2 uR, uY;
 float hsh(float n){ return fract(sin(n*12.9898+4.1)*43758.5453); }
 out vec3 vCol; flat out float vRound;
@@ -1345,9 +1391,12 @@ vec3 heat(float t){ t=clamp(t,0.,1.);
 vec3 a=vec3(.10,.05,.26), b=vec3(.48,.11,.43), c=vec3(.89,.35,.20), d=vec3(.98,.83,.36), e=vec3(1.,.98,.86);
 return t<.25?mix(a,b,t/.25):t<.5?mix(b,c,(t-.25)/.25):t<.8?mix(c,d,(t-.5)/.3):mix(d,e,(t-.8)/.2); }
 vec3 lin(vec3 c){ return pow(max(c,0.),vec3(2.2)); }
+vec3 ironbow(float t){ t=clamp(t,0.,1.);
+vec3 a=vec3(.02,.01,.05), b=vec3(.28,.03,.52), c=vec3(.80,.10,.34), d=vec3(.99,.46,.06), e=vec3(1.,.87,.25), f=vec3(1.,1.,.9);
+return t<.2?mix(a,b,t/.2):t<.4?mix(b,c,(t-.2)/.2):t<.62?mix(c,d,(t-.4)/.22):t<.84?mix(d,e,(t-.62)/.22):mix(e,f,(t-.84)/.16); }
 void main(){
-float kind=aMeta.x, rnd=aMeta.y, lum=aMeta.z, inc=aMeta.w;
-float r = clamp((length(aPos)-uR.x)/(uR.y-uR.x),0.,1.);
+float kind=aMeta.x, rnd=aMeta.y, lum=aMeta.z, inc=aMeta.w; bool sky = inc < -.5; if(sky) inc = 1.;
+float r = clamp((length(aPos)-uR.x)/(uR.y-uR.x),0.,1.); if(inc < -.5) r = 1.;
 vec3 P0 = aPos; float fade = 1.;
 if(uFx==2){ float st=rnd*.7, k=clamp((uFxT-st)/(1.-st),0.,1.); vec3 dir=normalize(vec3(hsh(rnd*91.)-.5, hsh(rnd*37.)-.25, hsh(rnd*53.)-.5));
 P0 += dir*k*k*length(P0)*.3*uFxK; fade = 1.-smoothstep(.3,.9,k); }
@@ -1368,13 +1417,19 @@ if(uMode==0) c = mix(vec3(g), c, uSat);
 else if(uMode==1) c = lin(turbo(1.-r)) * (.3+.9*lumL);
 else if(uMode==2) c = lin(heat((aPos.y-uY.x)/(uY.y-uY.x))) * (.35+.8*lumL);
 else if(uMode==3) c = vec3(lumL*(.3+.7*inc))*vec3(.92,.97,1.)*1.4;
-else c = lin(vec3(.25,.95,.7))*(.04+lumL*1.4);
-c *= uExposure * (1. - .35*r);
-float size = uPx / dist; float round_ = 1.;
+else if(uMode==4) c = lin(vec3(.25,.95,.7))*(.04+lumL*1.4);
+else if(uMode==5) c = lin(ironbow(.62*pow(lum,.8) + .38*(1.-r)))*1.15;
+else if(uMode==6) c = vec3(.08,.075,.09);
+else c = mix(vec3(.55,.74,.95), vec3(.96,.99,1.), smoothstep(.1,.8,lum));
+bool flatStyle = uMode>=6;
+if(!flatStyle) c *= uExposure * (1. - .35*r);
+float size = uPx / (sky ? uSkyD*dist/length(P0) : dist); float round_ = 1.;   // sky dots keep the size they had before moving out to the dome
+if(uMode==6) size *= .22 + 1.05*pow(1.-lum, 1.4);               // halftone: darker places get bigger dots, never quite solid
 if(uSparkle>0.5){ c *= .6 + 1.4*rnd*rnd; }
 float hiddenPart = kind>2.5 ? 1. : 0.;
 if(kind>3.5) c *= .75;                          // a filled-in back is a guess: draw it a little darker
-if((kind>.5 && kind<1.5) || (kind>2.5 && kind<3.5)){
+if(flatStyle){ if(kind>.5 && kind<3.5 && uMode==6) c = mix(c, vec3(.95,.93,.87), .45); if(kind>.5 && kind<3.5 && uMode==7) c *= .72; }
+else if((kind>.5 && kind<1.5) || (kind>2.5 && kind<3.5)){
 vec3 t = lin(vec3(.30,.78,.70))*(.03+lumL*.9);
 c = mix(c, t*uExposure, uBgTint) * uBgGain; size *= uBgSize; round_ = 1.-uBgTint;
 c *= mix(1., .16, uFocus);
@@ -1392,7 +1447,7 @@ fade *= smoothstep(uNearF, uNearF*4., dist);                  // passing through
 if(fade < .004) gl_Position=vec4(2.,2.,2.,1.);
 c *= fade;
 if(uDof>0.){ float coc = 1. + uDof*abs(1./dist - 1./uFocusD)*uFocusD*9.; size *= coc; c /= coc*coc; round_ = 1.; }
-if(size < 1.) c *= size*size;
+if(size < 1. && !flatStyle) c *= size*size;
 vCol = c; vRound = (size >= 3. ? round_ : 0.);
 gl_PointSize = clamp(size, 1., 64.);
 }`;
@@ -1412,7 +1467,7 @@ void main(){ vec3 s=texture(uTex,vUv).rgb*.227;
 s+=(texture(uTex,vUv+uDir*1.385).rgb+texture(uTex,vUv-uDir*1.385).rgb)*.316;
 s+=(texture(uTex,vUv+uDir*3.231).rgb+texture(uTex,vUv-uDir*3.231).rgb)*.070; o=vec4(s,1.); }`;
 const COMP_FS = `#version 300 es
-precision highp float; in vec2 vUv; uniform sampler2D uScene, uGlowA, uGlowB, uDepth; uniform float uGlow, uEdl, uNear, uFar, uRaw, uGlitch, uTime; uniform vec2 uRes; out vec4 o;
+precision highp float; in vec2 vUv; uniform sampler2D uScene, uGlowA, uGlowB, uDepth; uniform float uGlow, uEdl, uNear, uFar, uRaw, uGlitch, uTime, uFlat, uNight; uniform vec2 uRes; out vec4 o;
 float h(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
 float lz(float d){ float z=(2.*uNear*uFar)/(uFar+uNear-(d*2.-1.)*(uFar-uNear)); return log2(z); }
 vec3 aces(vec3 x){ return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.); }
@@ -1438,6 +1493,12 @@ vec2 q=(vUv-.5)*vec2(uRes.x/uRes.y,1.);
 vec3 raw = clamp((c + bloom)*(1.-.25*smoothstep(.55,1.25,length(q))), 0., 1.);
 vec3 film = pow(aces((c + bloom)*(1.-.4*smoothstep(.45,1.2,length(q)))), vec3(1./2.2));
 c = mix(film, raw, clamp(photo,0.,1.));
+if(uFlat>.5) c = texture(uScene,uv).rgb * (uEdl>0. ? 1. : 1.);          // flat styles: the ground and dots exactly as drawn
+if(uFlat>.5 && uEdl>0.){ float d=texture(uDepth,uv).r; if(d<1.){ float zc=lz(d), s2=0.; vec2 px=2./uRes;
+for(int i=0;i<8;i++){ float a=float(i)*.785398; float dn=texture(uDepth,uv+vec2(cos(a),sin(a))*px).r; float zn=dn<1.?lz(dn):zc+8.; s2+=max(0.,zc-zn); }
+c = mix(c, vec3(1.), clamp(s2/8.*uEdl*60.,0.,.8)); } }   // blueprint: edges light up like drawn lines
+if(uNight>.5){ float g=dot(c,vec3(.3,.59,.11)); c = vec3(.18,1.,.35)*g*1.15 + vec3(.02,.05,.02);
+c += (h(vUv*uRes + fract(uTime*7.)*91.)-.5)*.13; c *= 1.-.14*step(.5,fract(vUv.y*uRes.y*.33)); c *= 1.-.75*smoothstep(.35,1.05,length(q)); }
 if(uGlitch>0.) c*=1.-.1*uGlitch*step(.5,fract(vUv.y*uRes.y*.5));
 c+=(h(vUv*uRes)-.5)/255.; o=vec4(c,1.); }`;
 function initGL(){
@@ -1499,7 +1560,8 @@ const T = targets(W, H, o.targetKey||'main');
 const aspect = W/H, V = o.thumb ? viewMatrix(o.yaw, o.pitch, o.zoom, S.target, null) : viewMatrix(o.yaw, o.pitch, o.zoom, S.pivot, S.pan), Pm = projMatrix(aspect);
 if (!o.thumb){ S.V=V; S.P=Pm; }
 gl.bindFramebuffer(gl.FRAMEBUFFER, T.sF); gl.viewport(0,0,W,H);
-gl.clearColor(0.004,0.005,0.006,0); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+const ground = LOOKS[o.look].bg || [0.004,0.005,0.006];
+gl.clearColor(ground[0], ground[1], ground[2], 0); gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
 const Lo = LOOKS[o.look], mix = Lo.mix||0, fx = o.fx||'none', splatLook = !!Lo.splat;
 const both = (mix>0 || fx==='resolve' || fx==='dissolve') && hasSplats();
 const L = splatLook && !mix ? LOOKS.void : Lo;
@@ -1515,13 +1577,13 @@ gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL);
 gl.useProgram(G.P.p); const u=G.P.u;
 gl.uniformMatrix4fv(u.uProj,false,Pm); gl.uniformMatrix4fv(u.uView,false,V);
 const ref = Math.abs(S.target[2]) || 2, pa = S.photo.w/S.photo.h, fitH = aspect < pa ? H*aspect/pa : H;
-gl.uniform1f(u.uPx, o.size * 1.62 * fitH/1000 * ref * (0.466/S.tanV));
+gl.uniform1f(u.uPx, o.size * 1.62 * fitH/1000 * ref * (0.466/S.tanV)); gl.uniform1f(u.uSkyD, S.skyR ? S.skyR/3.2 : 1);
 gl.uniform1f(u.uExposure, o.bright); gl.uniform1f(u.uSat, o.colour==='muted' ? .45 : 1);
 gl.uniform1f(u.uBgTint, L.bgTint); gl.uniform1f(u.uBgGain, L.bgGain); gl.uniform1f(u.uBgSize, L.bgSize);
 gl.uniform1f(u.uSparkle, L.sparkle); gl.uniform1f(u.uFocus, o.focus ? 1 : 0); gl.uniform1f(u.uLight, o.light||0);
 const slid = o.thumb ? 0 : Math.hypot(S.pan[0], S.pan[1], S.pan[2]*0.5)/(S.refDist||2);
 gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8 + slid*8));
-gl.uniform1i(u.uMode, {photo:0,muted:0,range:1,height:2,grey:3,phosphor:4}[o.colour]||0);
+gl.uniform1i(u.uMode, {photo:0,muted:0,range:1,height:2,grey:3,phosphor:4,thermal:5,ink:6,blueprint:7}[o.colour]||0);
 gl.uniform2f(u.uR, S.rng[0], S.rng[1]); gl.uniform2f(u.uY, S.yr[0], S.yr[1]);
 gl.uniform1i(u.uFx, ptFx); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, both ? mix : 0); gl.uniform1f(u.uDof, o.dof); gl.uniform1f(u.uFocusD, focusD); gl.uniform1f(u.uNearF, 0.03*(S.refDist||2));
 gl.bindVertexArray(o.cloud.vao); gl.drawArrays(gl.POINTS, 0, o.cloud.count); gl.bindVertexArray(null);
@@ -1540,7 +1602,8 @@ pass(G.Bl, T.cF, T.qw, T.qh, u=>{ tx(0,T.d); gl.uniform1i(u.uTex,0); gl.uniform2
 pass(G.C, null, W, H, u=>{ tx(0,T.sT); tx(1,T.a); tx(2,T.c); tx(3,T.dT);
 gl.uniform1i(u.uScene,0); gl.uniform1i(u.uGlowA,1); gl.uniform1i(u.uGlowB,2); gl.uniform1i(u.uDepth,3);
 const raw = splatLook && !both, gk = Math.min(1, fxK), glitch = fx==='glitch' ? gk*(.45 + .55*Math.max(0, Math.sin((o.fxTime||0)*2.3)*Math.sin((o.fxTime||0)*5.1))) : fx==='decay' ? gk*.25*Math.max(0,(o.fxT||0)-.6)/.4 : 0;
-gl.uniform1f(u.uRaw, raw?1:0); gl.uniform1f(u.uGlitch, glitch); gl.uniform1f(u.uTime, o.fxTime||0);
+gl.uniform1f(u.uRaw, raw?1:0); gl.uniform1f(u.uGlitch, glitch); gl.uniform1f(u.uTime, o.fxTime||performance.now()/1000);
+gl.uniform1f(u.uFlat, Lo.style==='flat'?1:0); gl.uniform1f(u.uNight, Lo.style==='night'?1:0);
 gl.uniform1f(u.uGlow,o.glow); gl.uniform1f(u.uEdl, raw ? 0 : o.edges); gl.uniform1f(u.uNear,0.05); gl.uniform1f(u.uFar,400.); gl.uniform2f(u.uRes,W,H); });
 gl.bindVertexArray(null);
 }
@@ -2107,7 +2170,7 @@ const undoBtn = `<button class="chip" id="undoBtn" ${S.undo.length?'':'disabled'
 if (S.tab==='look'){
 const mine = myLooks(), custom = isCustom();
 tr.innerHTML = `<h3>Look ${custom?'<span class="chip" style="padding:3px 8px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent);border-color:var(--accent)">Changed</span>':''}<span class="sp"></span><button class="chip small" id="resetLook" ${custom?'':'disabled'}>Reset look</button>${undoBtn.replace('class="chip"','class="chip small"')}</h3>
-${[['Dots', k=>!LOOKS[k].splat], ['Photo', k=>LOOKS[k].splat]].map(([title, test])=>{ const ks=Object.keys(LOOKS).filter(k=>test(k) && lookAvailable(k)); return ks.length ? `<p class="rowlabel">${title}</p><div class="looks">${ks.map(k=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${LOOKS[k].name}</b></button>`).join('')}</div>` : ''; }).join('')}
+${[['Dots', k=>!LOOKS[k].splat && !LOOKS[k].pack], ['Styles', k=>LOOKS[k].pack], ['Photo', k=>LOOKS[k].splat]].map(([title, test])=>{ const ks=Object.keys(LOOKS).filter(k=>test(k) && lookAvailable(k)); return ks.length ? `<p class="rowlabel">${title}</p><div class="looks">${ks.map(k=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${LOOKS[k].name}</b></button>`).join('')}</div>` : ''; }).join('')}
 <p class="hint">${sayBtn(LOOK_HINT[look]||'')}<span>${LOOK_HINT[look]||''}</span></p>
 ${(LOOKS[look].splat && !LOOKS[look].mix) || S.scan ? '' : `<h3 style="margin-top:12px">Dot pattern</h3>
 <div class="scroller pats">${CTRL.pattern.chips.map(([v,n])=>`<button class="chip pat" data-pat="${v}" aria-pressed="${P.pattern===v}">${PAT_ICON[v]}${n}</button>`).join('')}</div>`}
@@ -2251,7 +2314,11 @@ scanner:'Scanner: rings like a spinning lidar, coloured by distance, seen from a
 survey:'Survey: a dense scan coloured by height, with outlines.',
 real:'Photoreal: the photo itself in 3D, made of soft splats. Turn the view to see its depth.',
 psub:'Real subject: the people or things you picked as the real photo, on the stage of dots.',
-pworld:'Real setting: everything around the subject as the real photo, the subject as dots.'};
+pworld:'Real setting: everything around the subject as the real photo, the subject as dots.',
+thermal:'Thermal: an ironbow heat palette, warmest where it is brightest and nearest.',
+night:'Night vision: green phosphor with grain, scan lines and a dark vignette.',
+blueprint:'Blueprint: pale lines of dots on blueprint blue, with outlines at every edge.',
+print:'Print: a halftone in black ink on warm paper; darker places get bigger dots.'};
 function lookAvailable(k){ const L=LOOKS[k]; return !L.splat || (hasSplats() && (!L.mix || !S.scan)); }
 function groupKeys(g){ const G=GROUPS.find(x=>x.id===g)||GROUPS[0]; return G.keys.filter(k=>!(S.scan && (k==='depth3d'||k==='light'||k==='hidden'||k==='floor')) && (!LOOKS[look].splat || LOOKS[look].mix || SPLAT_KEYS.includes(k))); }
 function groupRow(){ return `<div class="seg" role="tablist">${GROUPS.filter(g=>g.id==='advanced'||groupKeys(g.id).length).map(g=>`<button class="segb" data-group="${g.id}" aria-selected="${S.group===g.id}">${g.name}</button>`).join('')}</div>`; }
@@ -2265,7 +2332,7 @@ const ratioPos = Math.log(ratio/1.1)/Math.log(60/1.1)*100;
 const row = (id, label, min, max, step, v, out, auto) => `<div class="advrow"><label for="${id}">${label}</label><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${v}"><output id="${id}Out">${out}</output>${auto?`<button class="chip small" data-auto="${id}">Auto</button>`:'<span></span>'}</div>`;
 tr.innerHTML = `${groupRow()}
 <div class="sect"><h3>Show</h3><div class="scroller">${[['result','The result'],['depth','Depth map'],['masks','Subject and floors']].map(([v,n])=>`<button class="chip" data-dbg="${v}" aria-pressed="${S.dbg===v}" ${S.scan&&v!=='result'?'disabled':''}>${n}</button>`).join('')}</div>
-${(h=>h?`<p class="hint">${sayBtn(h)}<span>${h}</span></p>`:'')(S.dbg==='masks'?'Yellow is the subject. Blue, cyan and violet are floors that were fitted. Green is other ground facing up.':S.dbg==='depth'?'Light is near, dark is far.':'')}</div>
+${(h=>h?`<p class="hint">${sayBtn(h)}<span>${h}</span></p>`:'')(S.dbg==='masks'?'Yellow is the subject. Pale blue is sky, which sits on a distant dome. Blue, cyan and violet are floors that were fitted. Green is other ground facing up.':S.dbg==='depth'?'Light is near, dark is far.':'')}</div>
 <div class="sect"><h3>Camera and depth</h3>
 ${row('advFov','View angle',20,110,1,fov.toFixed(0),fov.toFixed(0)+'°',!!A.fov)}
 ${S.scan?'':row('advRatio','Far vs near',0,100,1,ratioPos.toFixed(0),ratio.toFixed(1)+'x',!!A.ratio)}
@@ -2299,7 +2366,7 @@ if (S.dbg==='result' || S.scan || !S.depth || S.tab!=='adjust' || S.group!=='adv
 const D=S.depth, m=S.compMap, G=S.ground; c.width=D.w; c.height=D.h;
 const x=c.getContext('2d'), im=x.createImageData(D.w,D.h), col={1:[40,120,255],2:[40,220,220],3:[160,80,255],4:[40,200,90],9:[20,40,90]};
 for (let i=0;i<D.w*D.h;i++){ const v=D.d[i]*255; let cc=[v,v,v];
-if (S.dbg==='masks'){ const g=v*0.35; cc = m && m[i]>=0 ? [255,200,40] : (G && G[i] ? col[G[i]] : [g,g,g]); }
+if (S.dbg==='masks'){ const g=v*0.35; cc = m && m[i]>=0 ? [255,200,40] : S.sky && S.sky[i] ? [120,170,255] : (G && G[i] ? col[G[i]] : [g,g,g]); }
 im.data[i*4]=cc[0]; im.data[i*4+1]=cc[1]; im.data[i*4+2]=cc[2]; im.data[i*4+3]=255; }
 x.putImageData(im,0,0);
 const pa=S.photo.w/S.photo.h, fa=frameAspect(); let w=S.cssW, h=S.cssH; if (fa>pa) w=h*pa; else h=w/pa;
@@ -2599,7 +2666,7 @@ invalidateCompare();
 S.undo=[]; undoArmed=true; S.placing=false; S.home=null; S.refFrozen=false; S.compCache=null; S.depthVer++;
 S.panMode=false; syncPan(); banner(''); notice('');
 busy('Sharpening the depth edges', null); await tick(); if (g!==S.gen) return;
-S.depthSrc=S.depth=refineDepth(D, ph.canvas);
+S.depthSrc=S.depth=refineDepth(D, ph.canvas); S.sky = skyMask(S.depth); S.skyR = 0;
 const tv = tiltFromVerticals(ph.canvas, S.tanV);
 if (tv && Math.abs(tv.roll) > 0.4*Math.PI/180 && Math.abs(tv.roll) < 12*Math.PI/180) S.rollAuto = tv.roll;
 S.pitchTan = tv ? Math.max(-0.6, Math.min(0.6, tv.pitchTan)) : 0;

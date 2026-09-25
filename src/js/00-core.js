@@ -21,7 +21,7 @@ const CONTROLS = [
   {key:'light',    name:'Shadows',    hint:'Brings dark or backlit subjects out of shadow by evening out the light. Real lidar sees surfaces, not sunlight.',
    stops:[['As shot',0],['Lifted',.5],['Even',1]]},
   {key:'colour',   name:'Colour',     hint:'What decides the colour of each dot.', chips:[
-     ['photo','Photo'],['muted','Muted'],['grey','Grey'],['range','Distance'],['height','Height'],['phosphor','Green']]},
+     ['photo','Photo'],['muted','Muted'],['grey','Grey'],['range','Distance'],['height','Height'],['phosphor','Green'],['thermal','Thermal'],['blueprint','Blueprint'],['ink','Ink']]},
   {key:'depth3d',  name:'Depth',      hint:'How far near things stand out from far things. Easiest to see when you turn the view.', rebuild:true,
    stops:[['Flat',.08],['Low',.5],['Normal',1],['Deep',1.6],['Extra',2.4]]},
   {key:'backdrop', name:'Background', hint:'Dots behind and around the subject. None leaves the subject alone on a black stage.', rebuild:true,
@@ -58,6 +58,15 @@ const LOOKS = {
   // the photo itself as Gaussian splats (or a splat scan as it was captured); the dot controls do not apply
   real:    {name:'Photoreal', focus:0, dots:3.05, size:1.9, glow:1, bright:2, colour:'photo', depth3d:2, backdrop:1.05, floor:0, edges:0, hidden:1,
             pattern:'scatter', bgTint:0, bgGain:1, bgSize:1, sparkle:0, yaw:0, pitch:0, zoom:1, splat:1},
+  // style packs: the same dots, dressed as a thermal camera, night vision, a blueprint or a printed halftone
+  thermal: {name:'Thermal', focus:0, dots:3.05, size:1.7, glow:1.5, bright:2.3, colour:'thermal', depth3d:2, backdrop:1.05, floor:1.2, edges:0, hidden:2,
+            pattern:'scatter', bgTint:0, bgGain:.8, bgSize:1.4, sparkle:0, yaw:0, pitch:0, zoom:1.3, pack:1},
+  night:   {name:'Night vision', focus:0, dots:3.05, size:1.4, glow:1.9, bright:2.6, colour:'phosphor', depth3d:2, backdrop:2, floor:1.2, edges:.6, hidden:2,
+            pattern:'scatter', bgTint:0, bgGain:.9, bgSize:1.2, sparkle:1, yaw:0, pitch:0, zoom:1.3, pack:1, style:'night'},
+  blueprint:{name:'Blueprint', focus:0, dots:2.7, size:1.1, glow:0, bright:2, colour:'blueprint', depth3d:2, backdrop:2, floor:1, edges:1.7, hidden:2,
+            pattern:'rings', bgTint:0, bgGain:.8, bgSize:1, sparkle:0, yaw:14, pitch:8, zoom:1.5, pack:1, style:'flat', bg:[0.075,0.19,0.40]},
+  print:   {name:'Print', focus:0, dots:1.7, size:1.25, glow:0, bright:2, colour:'ink', depth3d:2, backdrop:1.1, floor:.6, edges:0, hidden:2,
+            pattern:'grid', bgTint:0, bgGain:.7, bgSize:1, sparkle:0, yaw:0, pitch:0, zoom:1.3, pack:1, style:'flat', bg:[0.95,0.93,0.87]},
   // mixed: the subject as the photo on the Void stage of dots, or the world as the photo around a subject of dots
   psub:    {name:'Real subject', focus:0, dots:3.05, size:1.9, glow:1.0, bright:2.3, colour:'photo', depth3d:2, backdrop:1.05, floor:1.3, edges:0, hidden:1,
             pattern:'scatter', bgTint:1, bgGain:.45, bgSize:2.4, sparkle:0, yaw:0, pitch:0, zoom:1.3, splat:1, mix:1},

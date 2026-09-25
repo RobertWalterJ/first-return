@@ -84,7 +84,7 @@ function levelSplats(sp, Rm, shift){
 // the camera instead of stretching into a sheet. Behind the subject, the filled-in background (hidden
 // parts) gets splats of its own, which only show once the view turns. Built from the anonymised photo
 // when faces are hidden.
-function photoSplatKey(){ return [S.depthVer, SHIFT.toFixed(5), S.tanV.toFixed(5), S.compCache ? S.compCache.key : '', val('hidden')>=0.5].join('|'); }
+function photoSplatKey(){ return [S.depthVer, S.skyR.toFixed(3), SHIFT.toFixed(5), S.tanV.toFixed(5), S.compCache ? S.compCache.key : '', val('hidden')>=0.5].join('|'); }
 function photoSplats(){
   const D=S.depth, Ph=S.photo, W=D.w, H=D.h, cap = MOBILE ? 380000 : 1000000;
   const step = W*H > cap ? Math.ceil(Math.sqrt(W*H/cap)) : 1, gw=Math.ceil(W/step), gh=Math.ceil(H/step);
@@ -93,8 +93,9 @@ function photoSplats(){
   const c2=document.createElement('canvas'); c2.width=gw; c2.height=gh; const x2=c2.getContext('2d',{willReadFrequently:true}); x2.imageSmoothingQuality='high'; x2.drawImage(c1,0,0,gw,gh);
   const px=x2.getImageData(0,0,gw,gh).data;
   const map=S.compMap, fill = val('hidden')>=0.5 && map && map.some(v=>v>=0) ? hiddenFill(map) : null;
-  const sp = newSplats(gw*gh*2); let m=0;
+  const sp = newSplats(gw*gh*2 + Math.ceil((gw*1.8)*(gh+gw*0.4)/9)); let m=0;
   const Z = new Float32Array(W*H); for (let i=0;i<W*H;i++) Z[i]=zOf(D.d[i]);
+  if (S.sky && S.skyR) for (let i=0;i<W*H;i++) if (S.sky[i]) Z[i]=skyZ(((i%W)+.5)/W, (((i/W)|0)+.5)/H);
   const P = (x,y) => unproject((x+.5)/W, (y+.5)/H, Z[y*W+x]);
   const K = 0.62, foot0 = 2*S.tanV/H*step;          // splat spread relative to spacing; footprint per unit depth
   const put = (p, e1, e2, n, s1, s2, s3, r, g, b, a, flag) => {
@@ -160,6 +161,18 @@ function photoSplats(){
           facing(unproject((x+.5)/W,(y+.5)/H,zf), zf, fc[q*3], fc[q*3+1], fc[q*3+2], 255, 1, 1.3);
         } }
       front = next;
+    }
+  }
+  // The sky carries on past the edges of the photo, in the colours at its border, so turning the view
+  // shows more sky rather than black. Coarser and larger out there; only where the border is sky.
+  if (S.sky && S.skyR){
+    const ext = Math.round(0.4*gw), st = 3;
+    for (let gy=-ext; gy<gh; gy+=st) for (let gx=-ext; gx<gw+ext; gx+=st){
+      if (gx>=0 && gx<gw && gy>=0) continue;
+      const cx=Math.min(gw-1,Math.max(0,gx)), cy=Math.min(gh-1,Math.max(0,gy)), di=Math.min(H-1,cy*step)*W+Math.min(W-1,cx*step);
+      if (!S.sky[di]) continue;
+      const u=(gx*step+.5)/W, v=(gy*step+.5)/H, z=skyZ(u,v), ci=(cy*gw+cx)*4;
+      facing(unproject(u,v,z), z, px[ci], px[ci+1], px[ci+2], 255, 1, st*1.2);
     }
   }
   if (fill){

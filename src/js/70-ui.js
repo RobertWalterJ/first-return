@@ -101,7 +101,7 @@ function renderTray(){
   if (S.tab==='look'){
     const mine = myLooks(), custom = isCustom();
     tr.innerHTML = `<h3>Look ${custom?'<span class="chip" style="padding:3px 8px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent);border-color:var(--accent)">Changed</span>':''}<span class="sp"></span><button class="chip small" id="resetLook" ${custom?'':'disabled'}>Reset look</button>${undoBtn.replace('class="chip"','class="chip small"')}</h3>
-      ${[['Dots', k=>!LOOKS[k].splat], ['Photo', k=>LOOKS[k].splat]].map(([title, test])=>{ const ks=Object.keys(LOOKS).filter(k=>test(k) && lookAvailable(k)); return ks.length ? `<p class="rowlabel">${title}</p><div class="looks">${ks.map(k=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${LOOKS[k].name}</b></button>`).join('')}</div>` : ''; }).join('')}
+      ${[['Dots', k=>!LOOKS[k].splat && !LOOKS[k].pack], ['Styles', k=>LOOKS[k].pack], ['Photo', k=>LOOKS[k].splat]].map(([title, test])=>{ const ks=Object.keys(LOOKS).filter(k=>test(k) && lookAvailable(k)); return ks.length ? `<p class="rowlabel">${title}</p><div class="looks">${ks.map(k=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${LOOKS[k].name}</b></button>`).join('')}</div>` : ''; }).join('')}
       <p class="hint">${sayBtn(LOOK_HINT[look]||'')}<span>${LOOK_HINT[look]||''}</span></p>
       ${(LOOKS[look].splat && !LOOKS[look].mix) || S.scan ? '' : `<h3 style="margin-top:12px">Dot pattern</h3>
       <div class="scroller pats">${CTRL.pattern.chips.map(([v,n])=>`<button class="chip pat" data-pat="${v}" aria-pressed="${P.pattern===v}">${PAT_ICON[v]}${n}</button>`).join('')}</div>`}
@@ -250,7 +250,11 @@ const LOOK_HINT = {
   survey:'Survey: a dense scan coloured by height, with outlines.',
   real:'Photoreal: the photo itself in 3D, made of soft splats. Turn the view to see its depth.',
   psub:'Real subject: the people or things you picked as the real photo, on the stage of dots.',
-  pworld:'Real setting: everything around the subject as the real photo, the subject as dots.'};
+  pworld:'Real setting: everything around the subject as the real photo, the subject as dots.',
+  thermal:'Thermal: an ironbow heat palette, warmest where it is brightest and nearest.',
+  night:'Night vision: green phosphor with grain, scan lines and a dark vignette.',
+  blueprint:'Blueprint: pale lines of dots on blueprint blue, with outlines at every edge.',
+  print:'Print: a halftone in black ink on warm paper; darker places get bigger dots.'};
 // Photoreal needs splats; the mixed looks also need a subject, so not scans
 function lookAvailable(k){ const L=LOOKS[k]; return !L.splat || (hasSplats() && (!L.mix || !S.scan)); }
 function groupKeys(g){ const G=GROUPS.find(x=>x.id===g)||GROUPS[0]; return G.keys.filter(k=>!(S.scan && (k==='depth3d'||k==='light'||k==='hidden'||k==='floor')) && (!LOOKS[look].splat || LOOKS[look].mix || SPLAT_KEYS.includes(k))); }
@@ -266,7 +270,7 @@ function renderAdvanced(tr){
   const row = (id, label, min, max, step, v, out, auto) => `<div class="advrow"><label for="${id}">${label}</label><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${v}"><output id="${id}Out">${out}</output>${auto?`<button class="chip small" data-auto="${id}">Auto</button>`:'<span></span>'}</div>`;
   tr.innerHTML = `${groupRow()}
     <div class="sect"><h3>Show</h3><div class="scroller">${[['result','The result'],['depth','Depth map'],['masks','Subject and floors']].map(([v,n])=>`<button class="chip" data-dbg="${v}" aria-pressed="${S.dbg===v}" ${S.scan&&v!=='result'?'disabled':''}>${n}</button>`).join('')}</div>
-      ${(h=>h?`<p class="hint">${sayBtn(h)}<span>${h}</span></p>`:'')(S.dbg==='masks'?'Yellow is the subject. Blue, cyan and violet are floors that were fitted. Green is other ground facing up.':S.dbg==='depth'?'Light is near, dark is far.':'')}</div>
+      ${(h=>h?`<p class="hint">${sayBtn(h)}<span>${h}</span></p>`:'')(S.dbg==='masks'?'Yellow is the subject. Pale blue is sky, which sits on a distant dome. Blue, cyan and violet are floors that were fitted. Green is other ground facing up.':S.dbg==='depth'?'Light is near, dark is far.':'')}</div>
     <div class="sect"><h3>Camera and depth</h3>
       ${row('advFov','View angle',20,110,1,fov.toFixed(0),fov.toFixed(0)+'°',!!A.fov)}
       ${S.scan?'':row('advRatio','Far vs near',0,100,1,ratioPos.toFixed(0),ratio.toFixed(1)+'x',!!A.ratio)}
@@ -301,7 +305,7 @@ function showDebug(){
   const D=S.depth, m=S.compMap, G=S.ground; c.width=D.w; c.height=D.h;
   const x=c.getContext('2d'), im=x.createImageData(D.w,D.h), col={1:[40,120,255],2:[40,220,220],3:[160,80,255],4:[40,200,90],9:[20,40,90]};
   for (let i=0;i<D.w*D.h;i++){ const v=D.d[i]*255; let cc=[v,v,v];
-    if (S.dbg==='masks'){ const g=v*0.35; cc = m && m[i]>=0 ? [255,200,40] : (G && G[i] ? col[G[i]] : [g,g,g]); }
+    if (S.dbg==='masks'){ const g=v*0.35; cc = m && m[i]>=0 ? [255,200,40] : S.sky && S.sky[i] ? [120,170,255] : (G && G[i] ? col[G[i]] : [g,g,g]); }
     im.data[i*4]=cc[0]; im.data[i*4+1]=cc[1]; im.data[i*4+2]=cc[2]; im.data[i*4+3]=255; }
   x.putImageData(im,0,0);
   const pa=S.photo.w/S.photo.h, fa=frameAspect(); let w=S.cssW, h=S.cssH; if (fa>pa) w=h*pa; else h=w/pa;
@@ -637,7 +641,7 @@ async function setPhoto(ph, D, credit, restore){
   S.undo=[]; undoArmed=true; S.placing=false; S.home=null; S.refFrozen=false; S.compCache=null; S.depthVer++;
   S.panMode=false; syncPan(); banner(''); notice('');
   busy('Sharpening the depth edges', null); await tick(); if (g!==S.gen) return;
-  S.depthSrc=S.depth=refineDepth(D, ph.canvas);
+  S.depthSrc=S.depth=refineDepth(D, ph.canvas); S.sky = skyMask(S.depth); S.skyR = 0;
   // tilt first: the pitch sets the horizon row that the depth range is measured on
   const tv = tiltFromVerticals(ph.canvas, S.tanV);
   if (tv && Math.abs(tv.roll) > 0.4*Math.PI/180 && Math.abs(tv.roll) < 12*Math.PI/180) S.rollAuto = tv.roll;
