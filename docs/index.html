@@ -63,6 +63,7 @@ button{cursor:pointer}
 .msteps{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:6px;counter-reset:ms}
 .msteps li{counter-increment:ms;display:flex;gap:10px;align-items:flex-start;color:var(--faint);font-size:15px;line-height:1.35}
 .msteps li::before{content:counter(ms);flex:none;width:24px;height:24px;border-radius:50%;border:1px solid var(--line2);display:grid;place-items:center;font-size:13px;font-weight:700}
+.msteps small{display:block;color:var(--dim);font-size:13.5px;margin-top:3px}
 .msteps li.now{color:var(--text)} .msteps li.now::before{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .msteps li.done{color:var(--dim)} .msteps li.done::before{content:"✓";color:var(--accent)}
 .mnote{color:var(--dim);font-size:13px;margin:8px 0 0}
@@ -3433,14 +3434,14 @@ renderMeasureBar(); renderMeasures();
 }
 function renderMeasureBar(){
 const bar = $('#measureBar'); if (bar.hidden) return;
-const how = S.mCorr!==1 ? 'Corrected by your known length.' : S.scan ? 'Scan units, usually metres.' : `Eye level is taken as ${S.camH} m above the ground (Camera changes it). Expect some error; Set length makes it better.`;
+const how = S.mCorr!==1 ? 'Corrected by your known length.' : S.scan ? 'Scan units, usually metres.' : `The camera is taken as ${S.camH} m above the ground, about where a phone is held (Camera changes it). Expect some error; Set length makes it better.`;
 const steps = S.scan
 ? ['Tap the first point.', 'Tap the second point.']
-: ["Drag the yellow eye-level tag to where a standing person's eyes would be.", 'Tap where something meets the ground.', 'Tap its top for its height, or another spot on the ground for a distance.'];
+: ["Drag the yellow line to the camera's height.", 'Tap where something meets the ground.', 'Tap its top for its height, or another spot on the ground for a distance.'];
 const now = S.scan ? S.mPts.length : (S.mPts.length ? 2 : S.hzMoved || S.mLines.length ? 1 : 0);
-const spoken = steps[now] + ' ' + how;
+const spoken = steps[now] + (now===0 && !S.scan ? " That is the height the photo was taken from. Standing people's eyes sit on it; on a flat street, it is where the road would meet the sky." : '') + ' ' + how;
 bar.innerHTML = `<h3>Measure<span class="sp">${sayBtn(spoken)}</span></h3>
-<ol class="msteps">${steps.map((t,i)=>`<li class="${i===now?'now':i<now?'done':''}">${t}</li>`).join('')}</ol>
+<ol class="msteps">${steps.map((t,i)=>`<li class="${i===now?'now':i<now?'done':''}"><span>${t}${i===0 && now===0 && !S.scan ? `<small>That is the height the photo was taken from. Standing people's eyes sit on it; on a flat street, it is where the road would meet the sky.</small>` : ''}</span></li>`).join('')}</ol>
 <div class="row">${S.scan ? '' : `<button class="chip" id="mCam">Camera ${S.camH} m</button>`}
 <button class="chip" id="mSet" ${S.mLines.length?'':'disabled'}>Set length</button><button class="chip" id="mClear" ${S.mLines.length||S.mPts.length?'':'disabled'}>Clear</button><button class="chip" id="mDone">Done</button></div>
 ${S.mSetting ? `<div class="row" style="margin-top:8px"><input id="mLen" class="nameinput" inputmode="decimal" placeholder="Real length of the last line, in metres" aria-label="Real length in metres"><button class="btn primary" id="mOk">Set</button></div>` : ''}
@@ -3465,7 +3466,7 @@ svg += `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" class="ml"/><c
 for (const q of S.mPts){ const s=P(q.p); if (s) svg += `<circle cx="${s[0]}" cy="${s[1]}" r="5" class="me pending"/>`; }
 if (S.measure && !S.scan && S.photo){ const far=400, hz=horizonV(), l=P(unproject(-0.2,hz,far)), r=P(unproject(1.2,hz,far));
 if (l && r){ const hy = l[1] + (r[1]-l[1])*((ox+14-l[0])/((r[0]-l[0])||1));
-svg += `<line x1="${l[0]}" y1="${l[1]}" x2="${r[0]}" y2="${r[1]}" class="mhz"/><g class="mtag"><rect x="${ox+6}" y="${hy-13}" width="96" height="26" rx="13"/><text x="${ox+54}" y="${hy+5}">&#x21D5; eye level</text></g>`; } }
+svg += `<line x1="${l[0]}" y1="${l[1]}" x2="${r[0]}" y2="${r[1]}" class="mhz"/><g class="mtag"><rect x="${ox+6}" y="${hy-13}" width="120" height="26" rx="13"/><text x="${ox+60}" y="${hy+5}">&#x21D5; camera height</text></g>`; } }
 box.innerHTML = `<svg width="100%" height="100%">${svg}</svg>`;
 }
 function drawMeasures2D(x, W, H){
@@ -3481,7 +3482,7 @@ $('#measureBtn').addEventListener('click', ()=>setMeasure(!S.measure));
 let hzDrag = null;
 cv.addEventListener('pointerdown', e=>{ if (!S.measure || S.scan || !S.photo || !S.P) return;
 const r=cv.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top, s=project(unproject(0,horizonV(),400), S.cssW, S.cssH);
-if (s && x < 124 && Math.abs(y-s[1]) < 26){ hzDrag = {y0:e.clientY, v0:horizonV()}; e.stopImmediatePropagation(); try{ cv.setPointerCapture(e.pointerId); }catch(err){} } }, true);
+if (s && x < 136 && Math.abs(y-s[1]) < 26){ hzDrag = {y0:e.clientY, v0:horizonV()}; e.stopImmediatePropagation(); try{ cv.setPointerCapture(e.pointerId); }catch(err){} } }, true);
 cv.addEventListener('pointermove', e=>{ if (!hzDrag) return; e.stopImmediatePropagation();
 const dv = (e.clientY-hzDrag.y0)/S.cssH * viewTan(S.cssW/S.cssH)/S.tanV / Math.max(0.3, S.zoom);
 S.hzV = Math.max(0.05, Math.min(0.95, hzDrag.v0 + dv)); S.mLines = S.mLines.map(L=>L.taps?makeLine(...L.taps):L); renderMeasures(); }, true);
