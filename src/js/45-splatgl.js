@@ -48,7 +48,8 @@ void main(){
   float mid = .5*(a+c), rad = length(vec2(.5*(a-c), b)), l1 = mid+rad, l2 = max(mid-rad, .1);
   vec2 d1 = abs(b) < 1e-7 ? (a >= c ? vec2(1.,0.) : vec2(0.,1.)) : normalize(vec2(b, l1-a));
   vec2 e1 = min(3.*sqrt(l1), 1024.)*d1, e2 = min(3.*sqrt(l2), 1024.)*vec2(d1.y,-d1.x);
-  gl_Position = vec4(clip.xy/clip.w + (aCorner.x*e1 + aCorner.y*e2)*2./uVp, 0., 1.);
+  // each splat at its own centre's depth, so the mixed looks can hide splats behind the dots
+  gl_Position = vec4(clip.xy/clip.w + (aCorner.x*e1 + aCorner.y*e2)*2./uVp, clamp(clip.z/clip.w, -1., 1.), 1.);
   vPos = aCorner*3.;
   vec3 rgb = col.rgb*uExposure;
   if(uFx==8){ float a0=mix(-.75,.75,uFxT), hl=exp(-pow((atan(p.x,-p.z)-a0)/.16,2.));
@@ -159,7 +160,11 @@ function drawSplats(W, H, V, Pm, o, lin, fxK=1){
   gl.uniform1f(u.uOrbit, Math.min(1, (Math.abs(o.yaw)+Math.abs(o.pitch))/8 + slid*8));
   gl.uniform1i(u.uFx, o.splatFx||0); gl.uniform1f(u.uFxT, o.fxT||0); gl.uniform1f(u.uTime, o.fxTime||0); gl.uniform1f(u.uFxK, fxK); gl.uniform1i(u.uMix, o.mix||0); gl.uniform1f(u.uFocus, o.focus && !S.scan ? 1 : 0); gl.uniform1f(u.uDof, o.dof||0); gl.uniform1f(u.uFocusD, o.focusD||2); gl.uniform1f(u.uNearF, 0.03*(S.refDist||2));
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, Sg.tex); gl.uniform1i(u.uData, 0);
-  gl.disable(gl.DEPTH_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  // In the mixed looks the dots are drawn first; the splats then respect their depth (without writing their
+  // own), so photo behind a dotted subject stays behind it. Without this, the background filled in behind a
+  // subject covered it as soon as the view turned.
+  if (o.mix && o.cloud && o.cloud.count){ gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(false); } else gl.disable(gl.DEPTH_TEST);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   gl.bindVertexArray(Sg.vao); gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, Sg.n); gl.bindVertexArray(null);
-  gl.disable(gl.BLEND);
+  gl.disable(gl.BLEND); gl.depthMask(true); gl.disable(gl.DEPTH_TEST);
 }
