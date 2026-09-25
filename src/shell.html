@@ -87,6 +87,22 @@ body.scan .tab[data-tab="subject"]{opacity:.5}
 .btn{border:1px solid var(--line2);background:var(--raise);border-radius:8px;padding:10px 14px;font-weight:560;line-height:1.1}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .btn.rec{background:var(--rec);border-color:var(--rec);color:#1a0302}
+/* ---------- live scan ---------- */
+.live{position:fixed;inset:0;z-index:50;background:var(--void);display:flex;flex-direction:column;justify-content:space-between;color:#fff}
+body.xr .live{background:transparent}
+.live video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-1}
+.liveTop{display:flex;align-items:center;gap:10px;padding:12px 16px;background:linear-gradient(rgba(0,0,0,.6),transparent)}
+.liveTop b{margin-right:auto;font-weight:700;letter-spacing:.04em}
+.liveTop span{font-family:var(--mono);font-size:14px}
+#liveVoice[aria-pressed="false"]{opacity:.55;text-decoration:line-through}
+.liveIntro{margin:0 16px;padding:14px 16px;background:rgba(11,13,15,.86);border:1px solid var(--line2);border-radius:10px;font-size:16px;line-height:1.5;max-width:520px;align-self:center}
+.liveBottom{padding:12px 16px calc(16px + var(--safe-b));background:linear-gradient(transparent,rgba(0,0,0,.7));display:flex;flex-direction:column;align-items:center;gap:10px}
+.liveRow{display:flex;align-items:center;gap:14px}
+#liveRing{width:132px;height:132px}
+#liveRing path{fill:rgba(255,255,255,.16)} #liveRing path.on{fill:var(--accent)} #liveRing .me{fill:#fff;stroke:#000;stroke-width:1}
+#liveThumb{border-radius:6px;border:1px solid rgba(255,255,255,.4);background:#000}
+.liveCue{margin:0;font-size:18px;font-weight:600;text-align:center;text-shadow:0 1px 4px #000;min-height:1.4em;max-width:520px}
+.liveBtns{display:flex;gap:10px}
 .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 .hint{color:var(--dim);font-size:13.5px;margin:8px 0 0;display:flex;gap:8px;align-items:center}
 .say{flex:none;width:30px;height:30px;border-radius:50%;border:1px solid var(--line2);background:var(--raise);display:grid;place-items:center;padding:0}
@@ -152,6 +168,16 @@ body.scan .tab[data-tab="subject"]{opacity:.5}
     <input id="file" type="file" accept="image/*" hidden>
     <input id="fileScan" type="file" accept=".ply,.splat,.spz" hidden>
     <input id="fileVideo" type="file" accept="video/*" hidden>
+    <div id="live" class="live" hidden>
+      <video id="liveVid" playsinline muted hidden></video>
+      <div class="liveTop"><b>Live scan</b><span id="liveCount">0 views</span><button class="btn" id="liveVoice" aria-pressed="true" title="Spoken guidance on or off">Voice</button></div>
+      <p id="liveIntro" class="liveIntro"></p>
+      <div class="liveBottom">
+        <div class="liveRow"><svg id="liveRing" viewBox="-60 -60 120 120" aria-hidden="true" hidden></svg><canvas id="liveThumb" width="72" height="96" hidden></canvas></div>
+        <p id="liveCue" class="liveCue" role="status" aria-live="polite"></p>
+        <div class="liveBtns"><button class="btn" id="liveCancel">Cancel</button><button class="btn primary" id="liveStart">Start</button><button class="btn primary" id="liveDone" hidden disabled>Make the scan</button></div>
+      </div>
+    </div>
     <input id="fileLooks" type="file" accept=".json,application/json" hidden>
     <button class="tb" id="shapeBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M6 3v15h15"/><path d="M3 6h15v15"/></svg>Shape</button>
     <button class="tb" id="saveBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>Save</button>

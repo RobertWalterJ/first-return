@@ -564,8 +564,9 @@ function menu(btn, id, items){
   return m;
 }
 $('#openBtn').addEventListener('click', e=>{ e.stopPropagation();
-  const m=menu($('#openBtn'), '#openMenu', [['photo','Photo','From your camera or gallery'],['vscan','Scan from video','Walk slowly around something for 10 to 30 seconds; makes a 3D splat here'],['scan','3D scan','A .ply, .splat or .spz from Polycam, Scaniverse, a lidar app or a splat trainer']]);
+  const m=menu($('#openBtn'), '#openMenu', [['photo','Photo','From your camera or gallery'],['live','Live scan','Walk around something while the phone picks the views; makes a 3D splat here'],['vscan','Scan from video','Walk slowly around something for 10 to 30 seconds; makes a 3D splat here'],['scan','3D scan','A .ply, .splat or .spz from Polycam, Scaniverse, a lidar app or a splat trainer']]);
   if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ m.hidden=true; $('#openBtn').setAttribute('aria-expanded','false');
+    if (b.dataset.v==='live'){ openLiveScan(); return; }
     (b.dataset.v==='scan' ? $('#fileScan') : b.dataset.v==='vscan' ? $('#fileVideo') : $('#file')).click(); })); });
 $('#shapeBtn').addEventListener('click', e=>{ e.stopPropagation();
   const items=[['photo','Same as the photo','',S.shape==='photo'],['wide','Wide','16 by 9',S.shape==='wide'],['square','Square','',S.shape==='square'],['tall','Tall','9 by 16, for stories',S.shape==='tall']];

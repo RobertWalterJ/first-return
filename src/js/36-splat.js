@@ -4,6 +4,15 @@
 // into one (a splat per depth pixel, lying flat on the surface it came from) for the Photoreal look.
 // Held as {n, pos (xyz), scl (sizes, linear), rot (w x y z), rgba (bytes, sRGB), flag (1 = hidden part)}.
 const SH_C0 = 0.28209479;
+// rotation (w, x, y, z) whose columns are the frame (e1, e2, n): a splat's two wide axes and its thin one
+function quatFromAxes(e1, e2, n){
+  const m00=e1[0],m10=e1[1],m20=e1[2],m01=e2[0],m11=e2[1],m21=e2[2],m02=n[0],m12=n[1],m22=n[2], tr=m00+m11+m22; let w,x,y,z;
+  if (tr>0){ const s=Math.sqrt(tr+1)*2; w=s/4; x=(m21-m12)/s; y=(m02-m20)/s; z=(m10-m01)/s; }
+  else if (m00>m11 && m00>m22){ const s=Math.sqrt(1+m00-m11-m22)*2; w=(m21-m12)/s; x=s/4; y=(m01+m10)/s; z=(m02+m20)/s; }
+  else if (m11>m22){ const s=Math.sqrt(1+m11-m00-m22)*2; w=(m02-m20)/s; x=(m01+m10)/s; y=s/4; z=(m12+m21)/s; }
+  else { const s=Math.sqrt(1+m22-m00-m11)*2; w=(m10-m01)/s; x=(m02+m20)/s; y=(m12+m21)/s; z=s/4; }
+  return [w, x, y, z];
+}
 function newSplats(n){ return {n, pos:new Float32Array(n*3), scl:new Float32Array(n*3), rot:new Float32Array(n*4), rgba:new Uint8Array(n*4), flag:new Uint8Array(n)}; }
 function trimSplats(s, m){ return {n:m, pos:s.pos.slice(0,m*3), scl:s.scl.slice(0,m*3), rot:s.rot.slice(0,m*4), rgba:s.rgba.slice(0,m*4), flag:s.flag.slice(0,m)}; }
 const clamp255 = v => v<0 ? 0 : v>255 ? 255 : v;
@@ -100,13 +109,7 @@ function photoSplats(){
   const K = 0.62, foot0 = 2*S.tanV/H*step;          // splat spread relative to spacing; footprint per unit depth
   const put = (p, e1, e2, n, s1, s2, s3, r, g, b, a, flag) => {
     const o=m*3; sp.pos[o]=p[0]; sp.pos[o+1]=p[1]; sp.pos[o+2]=p[2]; sp.scl[o]=s1; sp.scl[o+1]=s2; sp.scl[o+2]=s3;
-    // rotation from the frame (e1, e2, n) as columns
-    const m00=e1[0],m10=e1[1],m20=e1[2],m01=e2[0],m11=e2[1],m21=e2[2],m02=n[0],m12=n[1],m22=n[2], tr=m00+m11+m22; let w,x,y,z;
-    if (tr>0){ const s=Math.sqrt(tr+1)*2; w=s/4; x=(m21-m12)/s; y=(m02-m20)/s; z=(m10-m01)/s; }
-    else if (m00>m11 && m00>m22){ const s=Math.sqrt(1+m00-m11-m22)*2; w=(m21-m12)/s; x=s/4; y=(m01+m10)/s; z=(m02+m20)/s; }
-    else if (m11>m22){ const s=Math.sqrt(1+m11-m00-m22)*2; w=(m02-m20)/s; x=(m01+m10)/s; y=s/4; z=(m12+m21)/s; }
-    else { const s=Math.sqrt(1+m22-m00-m11)*2; w=(m10-m01)/s; x=(m02+m20)/s; y=(m12+m21)/s; z=s/4; }
-    sp.rot[m*4]=w; sp.rot[m*4+1]=x; sp.rot[m*4+2]=y; sp.rot[m*4+3]=z;
+    sp.rot.set(quatFromAxes(e1, e2, n), m*4);
     sp.rgba[m*4]=r; sp.rgba[m*4+1]=g; sp.rgba[m*4+2]=b; sp.rgba[m*4+3]=a; sp.flag[m]=flag; m++; };
   const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]], len=a=>Math.hypot(a[0],a[1],a[2]), nrm=a=>{ const l=len(a)||1; return [a[0]/l,a[1]/l,a[2]/l]; },
         cross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]], dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];

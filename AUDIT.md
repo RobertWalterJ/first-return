@@ -305,3 +305,24 @@ Two hand-held clips of books and a toy on a bedside table (1080 x 1920, 20 and 2
 ## Next
 - **Live capture (see below)** would remove the hardest part, following the camera, by using the phone's own AR tracking.
 - A photometric refine (Brush) is what would fix plain, textureless things like the white toy.
+
+---
+
+# Round eight, 25 September 2026: live scan, crisper splats, pieces of map
+
+## Built
+- **Live scan (Open, Live scan).** The phone chooses its own views while you walk: one is kept only when you are steady (sharp) and at a new angle (adds something), with spoken and written advice and no timers.
+  - *With AR tracking* (WebXR immersive-ar with camera-access, Chrome on Android through ARCore): every view comes with its camera position in metres and the lens from the projection matrix, so nothing is worked out afterwards. A ring of 16 directions by 3 heights shows coverage. The depth sensor (depth-sensing, cpu-optimized) sets true scale where present. A self-check compares the depth model with the sensor on the picture as copied and turned over, and turns the pictures if they came out upside down. When the views fill up, every second one is let go and the spacing doubles, so the scan spans the whole walk. After capture, only depth is solved: per-frame scale and offset fitted to sensor depth plus points triangulated between known cameras, then bundle adjustment on depth alone.
+  - *Camera alone*: views about half a second of movement apart (tested on the toy clip, stepped at 15 fps), never leaving a gap (a steady view is kept once the picture has moved well on, even if a little soft), with exposure and white balance held after the first view. Placed afterwards as a video scan.
+- **Pieces of map.** When the camera cannot be followed, a new piece starts instead of the rest being lost. Pieces are joined afterwards wherever a view is recognised in the joined map, with the scale settled at the join (as ORB-SLAM merges maps).
+- **Crisper splats.** Colour is weighted to the sharpest, nearest views (sharpness over distance squared) instead of an even average. Where the views agree on a surface's facing (about 80 percent of splats), each splat is a thin disc lying on it rather than a ball.
+- **Shared code.** Reading a frame and building a scene are separate (frameFromCanvas, buildScanScene), so video and both live modes share the same fusion. quatFromAxes is shared with the photo splats.
+
+## Tested
+- Video clips: unchanged or better (toy 36 of 44, books 29 of 44; pixel error 1.84 and 1.87 px). The pieces the joins could not reach are the extreme close-ups and the overhead swing, which share too little with the rest.
+- Camera-alone live scan on the toy clip: views spread evenly, gaps closed, and all 44 placed on the first spacing tried.
+- AR path: run end to end against a stand-in session (video frames as the camera, a made-up orbit, a made-up depth sensor) with no errors: views kept, ring filled, upright check, depth scaling, known-pose build and the finished note. **Still to test on a real phone**, which is the only place the camera picture's orientation and ARCore's depth can be confirmed.
+
+## Next
+- A UI and UX pass across the whole app (menus, a tray for less-used features, workflow).
+- Photometric refinement for plain, textureless things.

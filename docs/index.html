@@ -100,6 +100,22 @@ body.scan .tab[data-tab="subject"]{opacity:.5}
 .btn{border:1px solid var(--line2);background:var(--raise);border-radius:8px;padding:10px 14px;font-weight:560;line-height:1.1}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .btn.rec{background:var(--rec);border-color:var(--rec);color:#1a0302}
+/* ---------- live scan ---------- */
+.live{position:fixed;inset:0;z-index:50;background:var(--void);display:flex;flex-direction:column;justify-content:space-between;color:#fff}
+body.xr .live{background:transparent}
+.live video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-1}
+.liveTop{display:flex;align-items:center;gap:10px;padding:12px 16px;background:linear-gradient(rgba(0,0,0,.6),transparent)}
+.liveTop b{margin-right:auto;font-weight:700;letter-spacing:.04em}
+.liveTop span{font-family:var(--mono);font-size:14px}
+#liveVoice[aria-pressed="false"]{opacity:.55;text-decoration:line-through}
+.liveIntro{margin:0 16px;padding:14px 16px;background:rgba(11,13,15,.86);border:1px solid var(--line2);border-radius:10px;font-size:16px;line-height:1.5;max-width:520px;align-self:center}
+.liveBottom{padding:12px 16px calc(16px + var(--safe-b));background:linear-gradient(transparent,rgba(0,0,0,.7));display:flex;flex-direction:column;align-items:center;gap:10px}
+.liveRow{display:flex;align-items:center;gap:14px}
+#liveRing{width:132px;height:132px}
+#liveRing path{fill:rgba(255,255,255,.16)} #liveRing path.on{fill:var(--accent)} #liveRing .me{fill:#fff;stroke:#000;stroke-width:1}
+#liveThumb{border-radius:6px;border:1px solid rgba(255,255,255,.4);background:#000}
+.liveCue{margin:0;font-size:18px;font-weight:600;text-align:center;text-shadow:0 1px 4px #000;min-height:1.4em;max-width:520px}
+.liveBtns{display:flex;gap:10px}
 .btn[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
 .hint{color:var(--dim);font-size:13.5px;margin:8px 0 0;display:flex;gap:8px;align-items:center}
 .say{flex:none;width:30px;height:30px;border-radius:50%;border:1px solid var(--line2);background:var(--raise);display:grid;place-items:center;padding:0}
@@ -165,6 +181,16 @@ body.scan .tab[data-tab="subject"]{opacity:.5}
     <input id="file" type="file" accept="image/*" hidden>
     <input id="fileScan" type="file" accept=".ply,.splat,.spz" hidden>
     <input id="fileVideo" type="file" accept="video/*" hidden>
+    <div id="live" class="live" hidden>
+      <video id="liveVid" playsinline muted hidden></video>
+      <div class="liveTop"><b>Live scan</b><span id="liveCount">0 views</span><button class="btn" id="liveVoice" aria-pressed="true" title="Spoken guidance on or off">Voice</button></div>
+      <p id="liveIntro" class="liveIntro"></p>
+      <div class="liveBottom">
+        <div class="liveRow"><svg id="liveRing" viewBox="-60 -60 120 120" aria-hidden="true" hidden></svg><canvas id="liveThumb" width="72" height="96" hidden></canvas></div>
+        <p id="liveCue" class="liveCue" role="status" aria-live="polite"></p>
+        <div class="liveBtns"><button class="btn" id="liveCancel">Cancel</button><button class="btn primary" id="liveStart">Start</button><button class="btn primary" id="liveDone" hidden disabled>Make the scan</button></div>
+      </div>
+    </div>
     <input id="fileLooks" type="file" accept=".json,application/json" hidden>
     <button class="tb" id="shapeBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M6 3v15h15"/><path d="M3 6h15v15"/></svg>Shape</button>
     <button class="tb" id="saveBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>Save</button>
@@ -1182,6 +1208,14 @@ for (let y=0;y<H;y++) for (let x=0;x<W;x++){ const k=map[y*W+x]; if (k<0) contin
 return S.fillCache = {key, region, f, lo, hi, W, H};
 }
 const SH_C0 = 0.28209479;
+function quatFromAxes(e1, e2, n){
+const m00=e1[0],m10=e1[1],m20=e1[2],m01=e2[0],m11=e2[1],m21=e2[2],m02=n[0],m12=n[1],m22=n[2], tr=m00+m11+m22; let w,x,y,z;
+if (tr>0){ const s=Math.sqrt(tr+1)*2; w=s/4; x=(m21-m12)/s; y=(m02-m20)/s; z=(m10-m01)/s; }
+else if (m00>m11 && m00>m22){ const s=Math.sqrt(1+m00-m11-m22)*2; w=(m21-m12)/s; x=s/4; y=(m01+m10)/s; z=(m02+m20)/s; }
+else if (m11>m22){ const s=Math.sqrt(1+m11-m00-m22)*2; w=(m02-m20)/s; x=(m01+m10)/s; y=s/4; z=(m12+m21)/s; }
+else { const s=Math.sqrt(1+m22-m00-m11)*2; w=(m10-m01)/s; x=(m02+m20)/s; y=(m12+m21)/s; z=s/4; }
+return [w, x, y, z];
+}
 function newSplats(n){ return {n, pos:new Float32Array(n*3), scl:new Float32Array(n*3), rot:new Float32Array(n*4), rgba:new Uint8Array(n*4), flag:new Uint8Array(n)}; }
 function trimSplats(s, m){ return {n:m, pos:s.pos.slice(0,m*3), scl:s.scl.slice(0,m*3), rot:s.rot.slice(0,m*4), rgba:s.rgba.slice(0,m*4), flag:s.flag.slice(0,m)}; }
 const clamp255 = v => v<0 ? 0 : v>255 ? 255 : v;
@@ -1261,12 +1295,7 @@ const P = (x,y) => unproject((x+.5)/W, (y+.5)/H, Z[y*W+x]);
 const K = 0.62, foot0 = 2*S.tanV/H*step;          // splat spread relative to spacing; footprint per unit depth
 const put = (p, e1, e2, n, s1, s2, s3, r, g, b, a, flag) => {
 const o=m*3; sp.pos[o]=p[0]; sp.pos[o+1]=p[1]; sp.pos[o+2]=p[2]; sp.scl[o]=s1; sp.scl[o+1]=s2; sp.scl[o+2]=s3;
-const m00=e1[0],m10=e1[1],m20=e1[2],m01=e2[0],m11=e2[1],m21=e2[2],m02=n[0],m12=n[1],m22=n[2], tr=m00+m11+m22; let w,x,y,z;
-if (tr>0){ const s=Math.sqrt(tr+1)*2; w=s/4; x=(m21-m12)/s; y=(m02-m20)/s; z=(m10-m01)/s; }
-else if (m00>m11 && m00>m22){ const s=Math.sqrt(1+m00-m11-m22)*2; w=(m21-m12)/s; x=s/4; y=(m01+m10)/s; z=(m02+m20)/s; }
-else if (m11>m22){ const s=Math.sqrt(1+m11-m00-m22)*2; w=(m02-m20)/s; x=(m01+m10)/s; y=s/4; z=(m12+m21)/s; }
-else { const s=Math.sqrt(1+m22-m00-m11)*2; w=(m10-m01)/s; x=(m02+m20)/s; y=(m12+m21)/s; z=s/4; }
-sp.rot[m*4]=w; sp.rot[m*4+1]=x; sp.rot[m*4+2]=y; sp.rot[m*4+3]=z;
+sp.rot.set(quatFromAxes(e1, e2, n), m*4);
 sp.rgba[m*4]=r; sp.rgba[m*4+1]=g; sp.rgba[m*4+2]=b; sp.rgba[m*4+3]=a; sp.flag[m]=flag; m++; };
 const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]], len=a=>Math.hypot(a[0],a[1],a[2]), nrm=a=>{ const l=len(a)||1; return [a[0]/l,a[1]/l,a[2]/l]; },
 cross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]], dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -2136,6 +2165,15 @@ function sharpness(data, w, h){ let s=0, n=0;
 for (let y=2;y<h-2;y+=2) for (let x=2;x<w-2;x+=2){ const i=(y*w+x)*4, g=k=>data[k]+data[k+1]+data[k+2];
 const L=4*g(i)-g(i-4)-g(i+4)-g(i-w*4)-g(i+w*4); s+=L*L; n++; }
 return s/(n||1); }
+async function frameFromCanvas(c, w, h, st, sharp){
+const data = c.getContext('2d', {willReadFrequently:true}).getImageData(0,0,w,h).data;
+const raw = await estimateDepth(c, null, true, MOBILE ? 364 : 434);
+const srt = Float32Array.from(raw.d).sort(), l0 = srt[Math.floor(srt.length*0.005)], h0 = srt[Math.min(srt.length-1, Math.floor(srt.length*0.9995))];
+st.lo = st.lo==null ? l0 : st.lo*0.7+l0*0.3; st.hi = st.hi==null ? h0 : st.hi*0.7+h0*0.3;
+const d = new Float32Array(raw.d.length); for (let k=0;k<d.length;k++) d[k] = Math.min(1, Math.max(0, (raw.d[k]-st.lo)/(st.hi-st.lo||1)));
+const cc=document.createElement('canvas'); cc.width=raw.w; cc.height=raw.h; const cx=cc.getContext('2d', {willReadFrequently:true}); cx.drawImage(c, 0, 0, raw.w, raw.h);
+return {col:cx.getImageData(0,0,raw.w,raw.h).data, depth:{w:raw.w, h:raw.h, d}, feat:features(data, w, h), sharp: sharp ?? sharpness(data, w, h)};
+}
 async function scanFromVideo(file){
 const g = ++S.gen, url = URL.createObjectURL(file), vid = document.createElement('video');
 vid.muted = true; vid.playsInline = true; vid.preload = 'auto'; vid.src = url;
@@ -2151,8 +2189,9 @@ const seekTo = t => new Promise(res=>{ let done=false; const fin=()=>{ if (!done
 vid.onseeked = () => { if (vid.requestVideoFrameCallback) { vid.requestVideoFrameCallback(()=>fin()); setTimeout(fin, 400); } else fin(); };
 setTimeout(fin, 4000); vid.currentTime = t; });
 const LONG = 640, sc = Math.min(1, LONG/Math.max(vid.videoWidth, vid.videoHeight)), w = Math.round(vid.videoWidth*sc), h = Math.round(vid.videoHeight*sc);
-const TL = window.__vsOpt?.tan || 0.62, tanX = w>=h ? TL : TL*w/h, tanY = w>=h ? TL*h/w : TL, SH = 0.35;       // a phone camera's usual view; a middling depth range
-const frames = []; let lo=null, hi=null;
+const TL = window.__vsOpt?.tan || 0.62;             // a phone camera's usual view
+const K = {tanX: w>=h ? TL : TL*w/h, tanY: w>=h ? TL*h/w : TL, ox:0, oy:0};
+const frames = [], st = {};
 const cv = [0,1,2].map(()=>{ const c=document.createElement('canvas'); c.width=w; c.height=h; return c; });
 const cached = window.__vsKeep && window.__vsKeep[file.name];          // testing only: reuse frames already read
 if (cached) frames.push(...cached);
@@ -2163,21 +2202,21 @@ for (let k=0;k<3;k++){ await seekTo(Math.max(0.05, Math.min(dur-0.05, t0 + (k-1)
 const x=cv[k].getContext('2d', {willReadFrequently:true}); x.drawImage(vid, 0, 0, w, h);
 const s=sharpness(x.getImageData(0,0,w,h).data, w, h); if (s>best){ best=s; bi=k; } }
 busy(`Reading frame ${i+1} of ${n}: depth and features`, (i+0.3)/n*0.8); await tick();
-const c = cv[bi], data = c.getContext('2d', {willReadFrequently:true}).getImageData(0,0,w,h).data;
-const raw = await estimateDepth(c, null, true, MOBILE ? 364 : 434); if (g!==S.gen) return;
-const srt = Float32Array.from(raw.d).sort(), l0 = srt[Math.floor(srt.length*0.005)], h0 = srt[Math.min(srt.length-1, Math.floor(srt.length*0.9995))];
-lo = lo==null ? l0 : lo*0.7+l0*0.3; hi = hi==null ? h0 : hi*0.7+h0*0.3;
-const d = new Float32Array(raw.d.length); for (let k=0;k<d.length;k++) d[k] = Math.min(1, Math.max(0, (raw.d[k]-lo)/(hi-lo||1)));
-const cc=document.createElement('canvas'); cc.width=raw.w; cc.height=raw.h; const cx=cc.getContext('2d', {willReadFrequently:true}); cx.drawImage(c, 0, 0, raw.w, raw.h);
-frames.push({col:cx.getImageData(0,0,raw.w,raw.h).data, depth:{w:raw.w, h:raw.h, d}, feat:features(data, w, h), sharp:best});
+frames.push(await frameFromCanvas(cv[bi], w, h, st, best)); if (g!==S.gen) return;
 }
 if (window.__vsKeep) window.__vsKeep[file.name] = frames;
-const A0 = 1/(1.2*(1+SH)), B0 = SH*A0; frames.forEach(F=>{ F.ab=[A0,B0]; });
+await buildScanScene(frames, {g, w, h, K, name:file.name, from:'the video', note: trimmed ? ` Only the first ${Math.round(dur)} seconds were used.` : ''});
+} finally { vid.removeAttribute('src'); vid.load(); URL.revokeObjectURL(url); try { wake?.release(); } catch(e){} }
+}
+async function buildScanScene(frames, o){
+const {g, w, h, K} = o, {tanX, tanY, ox, oy} = K, n = frames.length, known = !!o.poses;
+const SH = 0.35, A0 = 1/(1.2*(1+SH)), B0 = SH*A0; frames.forEach(F=>{ F.ab=[A0,B0]; });
 const zOfD = dd => 1/(A0*dd+B0), zOfF = (F, dd) => 1/Math.max(1e-3, F.ab[0]*dd+F.ab[1]);
 const lift = (F, px, py) => { const D=F.depth, u=(px+.5)/w, v=(py+.5)/h, xi=Math.min(D.w-2,Math.max(1,(u*D.w)|0)), yi=Math.min(D.h-2,Math.max(1,(v*D.h)|0)), i=yi*D.w+xi, dd=D.d[i];
 if (Math.abs(D.d[i+1]-D.d[i-1]) > 0.06 || Math.abs(D.d[i+D.w]-D.d[i-D.w]) > 0.06 || dd < 0.03) return null;
-const z=zOfF(F, dd); return [(2*u-1)*tanX*z, (1-2*v)*tanY*z, -z]; };
-const proj = p => [((p[0]/-p[2])/tanX+1)/2*w - .5, (1-(p[1]/-p[2])/tanY)/2*h - .5];
+const z=zOfF(F, dd); return [(2*u-1-ox)*tanX*z, (1-2*v-oy)*tanY*z, -z]; };
+const proj = p => [((p[0]/-p[2])/tanX+ox+1)/2*w - .5, (1-((p[1]/-p[2])/tanY+oy))/2*h - .5];
+const rayOf = (px, py) => [(2*(px+.5)/w-1-ox)*tanX, (1-2*(py+.5)/h-oy)*tanY, -1];
 const depthAtKp = (F, px, py) => { const D=F.depth, xi=Math.min(D.w-1,((px+.5)/w*D.w)|0), yi=Math.min(D.h-1,((py+.5)/h*D.h)|0); return D.d[yi*D.w+xi]; };
 const mcache = new Map(), matchesOf = (i, j) => { const k=i*4096+j; let m=mcache.get(k); if (!m){ m=matchFeatures(frames[i].feat, frames[j].feat); mcache.set(k, m); } return m; };
 for (const F of frames){ const D=F.depth, TW=24, TH=Math.max(8,Math.round(24*D.h/D.w)), v=new Float32Array(TW*TH); let mu=0, sd=0;
@@ -2186,8 +2225,11 @@ mu/=v.length; for (let k=0;k<v.length;k++){ v[k]-=mu; sd+=v[k]*v[k]; } sd=Math.s
 const alike = (i, j) => { const a=frames[i].thumb, b=frames[j].thumb; let s=0; for (let k=0;k<a.length;k++) s+=a[k]*b[k]; return s; };
 const nearOf = (i, pool, span, k) => { const near=pool.filter(j=>j!==i && Math.abs(j-i)<=span), rest=pool.filter(j=>j!==i && Math.abs(j-i)>span);
 return [...near, ...rest.sort((a,b)=>alike(i,b)-alike(i,a)).slice(0,k)]; };
-const pose = [ {s:1, R:[1,0,0,0,1,0,0,0,1], t:[0,0,0]} ];
-const dbg = []; S.vscanLog = {n, w, h, dbg, feats:frames.map(F=>F.feat.n), sharp:frames.map(F=>Math.round(F.sharp))};   // for testing from the console
+const pose = known ? o.poses.slice() : [ {s:1, R:[1,0,0,0,1,0,0,0,1], t:[0,0,0]} ];
+const dbg = []; S.vscanLog = {n, w, h, dbg, known, feats:frames.map(F=>F.feat.n), sharp:frames.map(F=>Math.round(F.sharp))};   // for testing from the console
+const tRead = performance.now();
+let placed, lost = 0;
+if (!known){
 const placeFrame = (i, refs, init) => {
 const Fi=frames[i], A=Fi.feat, P=[], X=[], obs=[];
 for (const ref of refs){ const B=frames[ref].feat, m=matchesOf(i, ref);
@@ -2195,7 +2237,7 @@ for (const [a,b] of m){ const q=lift(frames[ref], B.xy[b*2], B.xy[b*2+1]); if (!
 P.push(p); X.push(applySim(pose[ref], q)); obs.push(A.xy[a*2], A.xy[a*2+1]); } }
 const nn=X.length; if (nn<12) return null;
 const err = (T, k) => { const c=unapplySim(T, X[k]); if (c[2] > -1e-3) return 1e9; const u=proj(c); return Math.hypot(u[0]-obs[k*2], u[1]-obs[k*2+1]); };
-const inl = (T, th) => { const o=[]; for (let k=0;k<nn;k++) if (err(T,k) < th) o.push(k); return o; };
+const inl = (T, th) => { const out=[]; for (let k=0;k<nn;k++) if (err(T,k) < th) out.push(k); return out; };
 let T=init, best=init ? inl(init, 8) : [];
 if (!init){ const ok=[]; for (let k=0;k<nn;k++) if (P[k]) ok.push(k); if (ok.length<12) return null; const rnd=seeded(77+i);
 for (let it=0; it<400; it++){ const a=ok[(rnd()*ok.length)|0], b=ok[(rnd()*ok.length)|0], c=ok[(rnd()*ok.length)|0]; if (a===b||b===c||a===c) continue;
@@ -2205,27 +2247,42 @@ if (!T || best.length<10) return null;
 T = refinePose(T, X, obs, best, proj); let keep = inl(T, 4);
 if (keep.length>=10){ T = refinePose(T, X, obs, keep, proj); keep = inl(T, 3); }
 if (keep.length < Math.max(15, nn*0.15)) return null;
-const ds=[], inv=[]; for (const k of keep){ const c=unapplySim(T, X[k]); ds.push(depthAtKp(Fi, obs[k*2], obs[k*2+1])); inv.push(1/-c[2]); }
-const ks=[]; for (let k=0;k<ds.length;k++) ks.push(inv[k]/(A0*ds[k]+B0)); ks.sort((a,b)=>a-b);
+const ks=[]; for (const k of keep){ const c=unapplySim(T, X[k]); ks.push((1/-c[2])/(A0*depthAtKp(Fi, obs[k*2], obs[k*2+1])+B0)); } ks.sort((a,b)=>a-b);
 if (ks.length>=8){ const kk=ks[ks.length>>1]; Fi.ab = [kk*A0, kk*B0]; }
 return {T, inl:keep.length, of:nn};
 };
-const tRead = performance.now();
 busy('Following the camera', 0.82); await tick();
-let placed = [0], lost = 0;
-const attempt = i => { const last=placed[placed.length-1]; frames[i].ab = frames[last].ab.slice();
-let r = placeFrame(i, placed.slice(-3)), how='chain';
-if (!r){ // lost: look for this view anywhere in the scene so far, the frames sharing the most first
-const cand = placed.slice().sort((a,b)=>alike(i,b)-alike(i,a)).slice(0,6).map(j=>[j]);
-for (const [j] of cand){ r = placeFrame(i, [j]); if (r){ how='found again'; break; } } }
-if (r){ pose[i]=r.T; dbg.push({i, how, inl:r.inl, of:r.of, ab:frames[i].ab.map(v=>+v.toFixed(3))}); }
+const I3 = {s:1, R:[1,0,0,0,1,0,0,0,1], t:[0,0,0]}, segOf = [0]; let curSeg = 0, nseg = 1;
+placed = [0];
+const inSeg = sg => placed.filter(j=>segOf[j]===sg);
+const attempt = (i, sg) => { const pool=inSeg(sg); if (!pool.length) return null; frames[i].ab = frames[pool[pool.length-1]].ab.slice();
+let r = placeFrame(i, pool.slice(-3)), how='chain';
+if (!r){ // lost: look for this view anywhere in this piece, the frames that look most alike first
+for (const j of pool.slice().sort((a,b)=>alike(i,b)-alike(i,a)).slice(0,6)){ r = placeFrame(i, [j]); if (r){ how='found again'; break; } } }
+if (r){ pose[i]=r.T; segOf[i]=sg; dbg.push({i, how, seg:sg, inl:r.inl, of:r.of}); }
 return r; };
 for (let i=1;i<n;i++){
-if (attempt(i)) placed.push(i); else { pose[i]=null; lost++; }
+let ok = attempt(i, curSeg);
+if (!ok) for (let sg=nseg-1; sg>=0 && !ok; sg--) if (sg!==curSeg && (ok = attempt(i, sg))) curSeg = sg;     // back on an earlier piece
+if (!ok){ curSeg = nseg++; segOf[i]=curSeg; pose[i]={...I3}; frames[i].ab=[A0,B0]; dbg.push({i, how:'new piece', seg:curSeg}); }
+placed.push(i);
 if (i%4===0){ busy(`Following the camera: frame ${i+1} of ${n}`, 0.82+0.06*i/n); await tick(); if (g!==S.gen) return; }
 }
-for (let i=1;i<n;i++){ if (pose[i]) continue; if (attempt(i)){ placed.push(i); lost--; } }
-placed.sort((a,b)=>a-b);
+const sizes = [...Array(nseg)].map((_,sg)=>inSeg(sg).length), order = sizes.map((c,sg)=>sg).sort((a,b)=>sizes[b]-sizes[a]), base = order[0];
+const joined = new Set([base]); S.vscanLog.pieces = sizes.slice();
+for (let pass=0; pass<2; pass++) for (const sg of order){ if (joined.has(sg)) continue;
+const mine = inSeg(sg), theirs = placed.filter(j=>joined.has(segOf[j])); let link=null;
+for (const i of mine){ const saved=frames[i].ab.slice(), before=pose[i];
+for (const j of theirs.slice().sort((a,b)=>alike(i,b)-alike(i,a)).slice(0,4)){ const r=placeFrame(i, [j]); if (r){ link={i, r, before, kB:saved[0]/A0, kA:frames[i].ab[0]/A0}; break; } }
+if (link) break; frames[i].ab = saved; }
+if (!link) continue;
+const Rb=link.before.R, Rt=[Rb[0],Rb[3],Rb[6], Rb[1],Rb[4],Rb[7], Rb[2],Rb[5],Rb[8]], Rm=mul3(link.r.T.R, Rt), sc=link.kB/link.kA;
+const cb=xfR(Rm, link.before.t), tm=[link.r.T.t[0]-sc*cb[0], link.r.T.t[1]-sc*cb[1], link.r.T.t[2]-sc*cb[2]];
+for (const f of mine){ const c=xfR(Rm, pose[f].t); pose[f] = {s:1, R:mul3(Rm, pose[f].R), t:[sc*c[0]+tm[0], sc*c[1]+tm[1], sc*c[2]+tm[2]]};
+if (f!==link.i) frames[f].ab = frames[f].ab.map(v=>v/sc); }
+pose[link.i] = link.r.T; joined.add(sg); dbg.push({i:link.i, how:'joined', seg:sg, scale:+sc.toFixed(3)});
+}
+lost = placed.filter(j=>!joined.has(segOf[j])).length; placed = placed.filter(j=>joined.has(segOf[j])); placed.sort((a,b)=>a-b);
 if (placed.length < 3) throw new Error('the camera could not be followed. Walk more slowly, keep the subject in view, and avoid plain walls');
 busy('Settling the camera path', 0.88); await tick();
 for (let sweep=0; sweep<2; sweep++){
@@ -2234,13 +2291,33 @@ const refs = nearOf(i, placed, 3, 3).map(j=>[j, matchesOf(i,j).length]).filter((
 if (!refs.length) continue; const keep = frames[i].ab, r = placeFrame(i, refs, pose[i]); if (r) pose[i]=r.T; else frames[i].ab = keep; }
 await tick(); if (g!==S.gen) return;
 }
+} else {
+placed = frames.map((_, i)=>i);
+busy('Measuring depth from the views', 0.82); await tick();
+for (const i of placed){ const F=frames[i], ds=[], inv=[];
+for (const [u, v, z] of (o.metric?.[i] || [])){ const D=F.depth, xi=Math.min(D.w-1,(u*D.w)|0), yi=Math.min(D.h-1,(v*D.h)|0), dd=D.d[yi*D.w+xi]; if (dd>0.03 && z>0.05){ ds.push(dd); inv.push(1/z); } }
+const Ci=pose[i].t;
+for (const j of nearOf(i, placed, 3, 2)){ const A=F.feat, B=frames[j].feat, Cj=pose[j].t;
+for (const [a,b] of matchesOf(i,j)){ const ra=xfR(pose[i].R, rayOf(A.xy[a*2], A.xy[a*2+1])), rb=xfR(pose[j].R, rayOf(B.xy[b*2], B.xy[b*2+1]));
+const la=Math.hypot(...ra), lb=Math.hypot(...rb), da=ra.map(x=>x/la), db=rb.map(x=>x/lb), wv=[Ci[0]-Cj[0], Ci[1]-Cj[1], Ci[2]-Cj[2]];
+const bb=da[0]*db[0]+da[1]*db[1]+da[2]*db[2], dd1=da[0]*wv[0]+da[1]*wv[1]+da[2]*wv[2], ee=db[0]*wv[0]+db[1]*wv[1]+db[2]*wv[2], den=1-bb*bb;
+if (den < 0.0012) continue;                                                      // under about 2 degrees apart
+const sA=(bb*ee-dd1)/den, sB=(ee-bb*dd1)/den; if (sA<=0.05 || sB<=0.05) continue;
+const PA=[Ci[0]+da[0]*sA, Ci[1]+da[1]*sA, Ci[2]+da[2]*sA], PB=[Cj[0]+db[0]*sB, Cj[1]+db[1]*sB, Cj[2]+db[2]*sB];
+if (Math.hypot(PA[0]-PB[0], PA[1]-PB[1], PA[2]-PB[2]) > 0.01*sA) continue;         // the lines must nearly meet
+const zc=sA/la, dd=depthAtKp(F, A.xy[a*2], A.xy[a*2+1]); if (dd>0.03){ ds.push(dd); inv.push(1/zc); } } }
+const ab = fitInvDepth(ds, inv); if (ab) F.ab = ab;
+dbg.push({i, samples:ds.length, ab:F.ab.map(v=>+v.toFixed(3))});
+}
+}
 busy('Settling the camera path: all views together', 0.9); await tick();
 {
-const fi = new Map(placed.map((f,k)=>[f,k])), NF = placed.length, NQ = 8, NP = NQ*(NF-1);
+const fi = new Map(placed.map((f,k)=>[f,k])), NF = placed.length;
+const colOf = (k, q) => known ? (q>=6 ? k*2+(q-6) : -1) : (k===0 ? -1 : (k-1)*8+q), NP = known ? 2*NF : 8*(NF-1);
 const st = placed.map(f=>({R:pose[f].R.slice(), t:pose[f].t.slice(), k:frames[f].ab[0]/A0, m:frames[f].ab[1]/B0}));
 const kpRay = (F, px, py) => { const D=F.depth, u=(px+.5)/w, v=(py+.5)/h, xi=Math.min(D.w-2,Math.max(1,(u*D.w)|0)), yi=Math.min(D.h-2,Math.max(1,(v*D.h)|0)), i=yi*D.w+xi, dd=D.d[i];
 if (Math.abs(D.d[i+1]-D.d[i-1]) > 0.06 || Math.abs(D.d[i+D.w]-D.d[i-D.w]) > 0.06 || dd < 0.03) return null;
-return [(2*u-1)*tanX, (1-2*v)*tanY, dd]; };
+return [(2*u-1-ox)*tanX, (1-2*v-oy)*tanY, dd]; };
 const obs = [], pairs = new Set();
 for (const i of placed) for (const j of nearOf(i, placed, 3, 3)){ const key=Math.min(i,j)*4096+Math.max(i,j); if (pairs.has(key)) continue; pairs.add(key);
 const A=frames[i].feat, B=frames[j].feat;
@@ -2252,25 +2329,27 @@ const c=[Rj[0]*d[0]+Rj[3]*d[1]+Rj[6]*d[2], Rj[1]*d[0]+Rj[4]*d[1]+Rj[7]*d[2], Rj[
 if (c[2] > -1e-3) return [30,30]; const u=proj(c); return [u[0]-o.x, u[1]-o.y]; };
 const rOf = (o, s) => resid(o, s[o.i].R, s[o.i].t, s[o.i].k, s[o.i].m, s[o.j].R, s[o.j].t);
 const hub = e => e<2 ? e*e : 4*e-4;
-const PM = window.__vsOpt?.pm ?? 40;   // how strongly each frame's depth keeps the model's own shape (offset in step with scale)
-const costOf = (s, list) => { let c=0; for (const o of list){ const r=rOf(o,s); c+=hub(Math.hypot(r[0],r[1])); } for (let k=1;k<s.length;k++){ const l=Math.log(s[k].m/s[k].k); c+=PM*l*l; } return c; };
+const PM = window.__vsOpt?.pm ?? 40, m0 = st.map(f=>Math.log(f.m/f.k));
+const costOf = (s, list) => { let c=0; for (const o of list){ const r=rOf(o,s); c+=hub(Math.hypot(r[0],r[1])); } for (let k=0;k<s.length;k++) if (colOf(k,7)>=0){ const l=Math.log(s[k].m/s[k].k)-m0[k]; c+=PM*l*l; } return c; };
 let use = obs.filter(o=>{ const r=rOf(o,st); return Math.hypot(r[0],r[1]) < 8; });
-const EPS = 1e-5, stepped = (s, d) => s.map((f,k)=>{ if (k===0) return f; const q=d.subarray((k-1)*NQ, k*NQ);
-return {R:mul3(f.R, rodrigues(q[0],q[1],q[2])), t:[f.t[0]+q[3], f.t[1]+q[4], f.t[2]+q[5]], k:f.k*Math.exp(q[6]), m:f.m*Math.exp(q[7])}; });
+const EPS = 1e-5, stepped = (s, d) => s.map((f,k)=>{ const q=[0,1,2,3,4,5,6,7].map(j=>{ const c=colOf(k,j); return c<0 ? 0 : d[c]; });
+return {R:(q[0]||q[1]||q[2]) ? mul3(f.R, rodrigues(q[0],q[1],q[2])) : f.R, t:[f.t[0]+q[3], f.t[1]+q[4], f.t[2]+q[5]], k:f.k*Math.exp(q[6]), m:f.m*Math.exp(q[7])}; });
 let cur = st, c0 = costOf(cur, use), lam = 1e-3;
 const ba0 = {obs:obs.length, used:use.length, rms0:Math.sqrt(c0/Math.max(1,use.length))};
 for (let it=0; it<14 && use.length>=30; it++){
 if (it===7){ use = use.filter(o=>{ const r=rOf(o,cur); return Math.hypot(r[0],r[1]) < 4; }); c0 = costOf(cur, use); }
-const pert = cur.map(f=>({Rw:[0,1,2].map(a=>mul3(f.R, rodrigues(a===0?EPS:0, a===1?EPS:0, a===2?EPS:0)))}));
-const H = new Float64Array(NP*NP), gv = new Float64Array(NP), J = new Float64Array(4*NQ), col = new Int32Array(2*NQ);
+const pert = known ? null : cur.map(f=>({Rw:[0,1,2].map(a=>mul3(f.R, rodrigues(a===0?EPS:0, a===1?EPS:0, a===2?EPS:0)))}));
+const H = new Float64Array(NP*NP), gv = new Float64Array(NP), J = new Float64Array(32), col = new Int32Array(16);
 for (const o of use){ const s0=rOf(o,cur), e=Math.hypot(s0[0],s0[1]), wgt = e<2 ? 1 : 2/e; let nc=0;
-for (const [f,side] of [[o.i,0],[o.j,1]]){ if (f===0) continue; const F=cur[f];
-for (let q=0;q<(side===0 ? NQ : 6);q++){ let R=F.R, t=F.t, k=F.k, m=F.m; if (q<3) R=pert[f].Rw[q]; else if (q<6){ t=F.t.slice(); t[q-3]+=EPS; } else if (q===6) k=F.k*Math.exp(EPS); else m=F.m*Math.exp(EPS);
+for (const [f,side] of [[o.i,0],[o.j,1]]){ const F=cur[f];
+for (let q=0;q<(side===0 ? 8 : 6);q++){ const cc=colOf(f,q); if (cc<0) continue;
+let R=F.R, t=F.t, k=F.k, m=F.m; if (q<3) R=pert[f].Rw[q]; else if (q<6){ t=F.t.slice(); t[q-3]+=EPS; } else if (q===6) k=F.k*Math.exp(EPS); else m=F.m*Math.exp(EPS);
 const r = side===0 ? resid(o, R, t, k, m, cur[o.j].R, cur[o.j].t) : resid(o, cur[o.i].R, cur[o.i].t, cur[o.i].k, cur[o.i].m, R, t);
-J[nc*2]=(r[0]-s0[0])/EPS; J[nc*2+1]=(r[1]-s0[1])/EPS; col[nc]=(f-1)*NQ+q; nc++; } }
+J[nc*2]=(r[0]-s0[0])/EPS; J[nc*2+1]=(r[1]-s0[1])/EPS; col[nc]=cc; nc++; } }
 for (let a=0;a<nc;a++){ gv[col[a]] += wgt*(J[a*2]*s0[0]+J[a*2+1]*s0[1]);
 for (let b=0;b<nc;b++) H[col[a]*NP+col[b]] += wgt*(J[a*2]*J[b*2]+J[a*2+1]*J[b*2+1]); } }
-for (let k=1;k<NF;k++){ const a=(k-1)*NQ+6, b=a+1, l=Math.log(cur[k].m/cur[k].k); H[a*NP+a]+=PM; H[b*NP+b]+=PM; H[a*NP+b]-=PM; H[b*NP+a]-=PM; gv[a]-=PM*l; gv[b]+=PM*l; }
+for (let k=0;k<NF;k++){ const a=colOf(k,6), b=colOf(k,7); if (a<0) continue; const l=Math.log(cur[k].m/cur[k].k)-m0[k];
+H[a*NP+a]+=PM; H[b*NP+b]+=PM; H[a*NP+b]-=PM; H[b*NP+a]-=PM; gv[a]-=PM*l; gv[b]+=PM*l; }
 let acc = false, conv = false;
 for (let tries=0; tries<6 && !acc; tries++){
 const M = Float64Array.from(H); for (let a=0;a<NP;a++) M[a*NP+a] = H[a*NP+a]*(1+lam) + 1e-9;
@@ -2289,21 +2368,17 @@ placed.forEach((f,k)=>{ pose[f] = {s:1, R:cur[k].R, t:cur[k].t}; frames[f].ab = 
 S.vscanLog.ba = {...ba0, used:use.length, rms:+Math.sqrt(c0/Math.max(1,use.length)).toFixed(2), rms0:+ba0.rms0.toFixed(2)};
 }
 S.vscanLog.placed = placed.slice(); S.vscanLog.cams = placed.map(i=>({i, c:pose[i].t.map(v=>+v.toFixed(4)), f:xfR(pose[i].R,[0,0,-1]).map(v=>+v.toFixed(3)), k:+(frames[i].ab[0]/A0).toFixed(3), m:+(frames[i].ab[1]/B0).toFixed(3)})); S.vscanLog.trackMs = Math.round(performance.now()-tRead);
-{ let e=0, c=0; for (const d of dbg) { e+=d.inl; c+=d.of; } S.vscanLog.inlierShare = +(e/c).toFixed(3); }
+if (dbg.length && dbg[0].of){ let e=0, c=0; for (const d of dbg) { e+=d.inl; c+=d.of; } S.vscanLog.inlierShare = +(e/c).toFixed(3); }
 busy('Building the 3D scene', 0.92); await tick();
-const z0=[]; { const D=frames[0].depth; for (let i=0;i<D.d.length;i+=37) if (D.d[i]>0.03) z0.push(zOfD(D.d[i])); z0.sort((a,b)=>a-b); }
-const vs = (z0[z0.length>>1] || 2) * (MOBILE ? 0.006 : 0.0045), vox = new Map();
-let cap = 400000, P = new Float32Array(cap*3), C = new Float32Array(cap*3), cnt = new Uint16Array(cap), seen = new Uint16Array(cap), last = new Int32Array(cap).fill(-1), nv = 0;
-const grow = () => { cap*=2; const g2=(A,T)=>{ const B=new T(cap*(A.length/(cap/2))); B.set(A); return B; }; P=g2(P,Float32Array); C=g2(C,Float32Array); cnt=g2(cnt,Uint16Array); seen=g2(seen,Uint16Array); const L2=new Int32Array(cap).fill(-1); L2.set(last); last=L2; };
 const nbOf = new Map(placed.map(i=>[i, nearOf(i, placed, 3, 3).map(j=>[j, matchesOf(i,j).length]).sort((a,b)=>b[1]-a[1]).slice(0, window.__vsOpt?.nb ?? 6).map(([j])=>j)]));
 for (const i of placed){ const F=frames[i], D=F.depth, z=new Float32Array(D.w*D.h);
 for (let yi=1; yi<D.h-1; yi++) for (let xi=1; xi<D.w-1; xi++){ const k=yi*D.w+xi, dd=D.d[k]; if (dd < 0.03) continue;
 if (Math.abs(D.d[k+1]-D.d[k-1]) > 0.05 || Math.abs(D.d[k+D.w]-D.d[k-D.w]) > 0.05) continue; z[k]=zOfF(F, dd); }
 F.z = z; }
-const camPt = (F, xi, yi, z) => { const D=F.depth, u=(xi+.5)/D.w, v=(yi+.5)/D.h; return [(2*u-1)*tanX*z, (1-2*v)*tanY*z, -z]; };
+const camPt = (F, xi, yi, z) => { const D=F.depth, u=(xi+.5)/D.w, v=(yi+.5)/D.h; return [(2*u-1-ox)*tanX*z, (1-2*v-oy)*tanY*z, -z]; };
 const pixIn = (j, p) => { const c=unapplySim(pose[j], p); if (c[2] > -1e-3) return -1; const u=proj(c), Dj=frames[j].depth;
 const xj=Math.round((u[0]+.5)/w*Dj.w-.5), yj=Math.round((u[1]+.5)/h*Dj.h-.5); return (xj<1||yj<1||xj>=Dj.w-1||yj>=Dj.h-1) ? -1 : yj*Dj.w+xj; };
-if ((window.__vsOpt?.cons ?? 1) > 0){ busy('Building the 3D scene: agreeing on depth', 0.9); await tick();
+if ((window.__vsOpt?.cons ?? 1) > 0){ busy('Building the 3D scene: agreeing on depth', 0.93); await tick();
 const out = new Map(), cand = new Float32Array(16);
 for (const i of placed){ const F=frames[i], D=F.depth, T=pose[i], z2=F.z.slice(), step = MOBILE ? 2 : 1;
 for (let yi=1; yi<D.h-1; yi+=step) for (let xi=1; xi<D.w-1; xi+=step){ const k=yi*D.w+xi, z=F.z[k]; if (!z) continue;
@@ -2319,42 +2394,261 @@ const TOL = window.__vsOpt?.tol ?? 0.05, NEED = window.__vsOpt?.need ?? 2, agree
 for (const j of js){ const q=pixIn(j, p); if (q<0) continue; const zj=frames[j].z[q]; if (!zj) continue; seenBy++;
 const c=unapplySim(pose[j], p); if (Math.abs(zj + c[2]) < TOL*-c[2] && ++ok >= NEED) return 1; }
 return seenBy ? 0 : -1; };
+const zs=[]; { const F=frames[placed[0]]; for (let k=0;k<F.z.length;k+=17) if (F.z[k]) zs.push(F.z[k]); zs.sort((a,b)=>a-b); }
+const vs = (zs[zs.length>>1] || 1.2) * (MOBILE ? 0.006 : 0.0045), vox = new Map();
+let cap = 400000, P = new Float32Array(cap*3), C = new Float32Array(cap*3), Wc = new Float32Array(cap), Nn = new Float32Array(cap*3), cnt = new Uint16Array(cap), seen = new Uint16Array(cap), last = new Int32Array(cap).fill(-1), nv = 0;
+const grow = () => { cap*=2; const g2=(A,T)=>{ const B=new T(cap*(A.length/(cap/2))); B.set(A); return B; };
+P=g2(P,Float32Array); C=g2(C,Float32Array); Wc=g2(Wc,Float32Array); Nn=g2(Nn,Float32Array); cnt=g2(cnt,Uint16Array); seen=g2(seen,Uint16Array); const L2=new Int32Array(cap).fill(-1); L2.set(last); last=L2; };
+const sharpMed = frames.map(F=>F.sharp).sort((a,b)=>a-b)[frames.length>>1] || 1;
 let dropped=0;
 for (const i of placed){
-const F=frames[i], D=F.depth, T=pose[i], step = MOBILE ? 2 : 1;
-const nb = nbOf.get(i);
+const F=frames[i], D=F.depth, T=pose[i], step = MOBILE ? 2 : 1, nb = nbOf.get(i), sw = Math.min(3, F.sharp/sharpMed);
 for (let yi=1; yi<D.h-1; yi+=step) for (let xi=1; xi<D.w-1; xi+=step){
 const k=yi*D.w+xi, z=F.z[k]; if (!z) continue;
 const ci=k*4; if (F.col[ci]+F.col[ci+1]+F.col[ci+2] < 18) continue;       // empty black (letterboxing, lens edges) is not a surface
-const p=applySim(T, camPt(F, xi, yi, z));
+const pc=camPt(F, xi, yi, z), p=applySim(T, pc);
 if (TOL > 0 && agreeIn(p, nb) === 0){ dropped++; continue; }
 const ix=Math.round(p[0]/vs), iy=Math.round(p[1]/vs), iz=Math.round(p[2]/vs); if (Math.abs(ix)>32000||Math.abs(iy)>32000||Math.abs(iz)>32000) continue;
 const key=((ix+32768)*65536 + (iy+32768))*65536 + (iz+32768);
 let j=vox.get(key); if (j===undefined){ if (nv>=cap) grow(); j=nv++; vox.set(key,j); }
-P[j*3]+=p[0]; P[j*3+1]+=p[1]; P[j*3+2]+=p[2]; C[j*3]+=F.col[ci]; C[j*3+1]+=F.col[ci+1]; C[j*3+2]+=F.col[ci+2]; cnt[j]++;
+const zr=F.z[k+1], zl=F.z[k-1], zd=F.z[k+D.w], zu=F.z[k-D.w];
+if (zr && zl && zd && zu){ const a=camPt(F, xi+1, yi, zr), b=camPt(F, xi-1, yi, zl), c=camPt(F, xi, yi+1, zd), e=camPt(F, xi, yi-1, zu);
+const dx=[a[0]-b[0], a[1]-b[1], a[2]-b[2]], dy=[c[0]-e[0], c[1]-e[1], c[2]-e[2]];
+let nx=dx[1]*dy[2]-dx[2]*dy[1], ny=dx[2]*dy[0]-dx[0]*dy[2], nz=dx[0]*dy[1]-dx[1]*dy[0]; const l=Math.hypot(nx,ny,nz);
+if (l>0){ if (nx*pc[0]+ny*pc[1]+nz*pc[2] > 0){ nx=-nx; ny=-ny; nz=-nz; } const nw=xfR(T.R, [nx/l, ny/l, nz/l]); Nn[j*3]+=nw[0]; Nn[j*3+1]+=nw[1]; Nn[j*3+2]+=nw[2]; } }
+const wc = sw/(z*z);
+P[j*3]+=p[0]; P[j*3+1]+=p[1]; P[j*3+2]+=p[2]; C[j*3]+=wc*F.col[ci]; C[j*3+1]+=wc*F.col[ci+1]; C[j*3+2]+=wc*F.col[ci+2]; Wc[j]+=wc; cnt[j]++;
 if (last[j]!==i){ last[j]=i; seen[j]++; }
 }
 await tick(); if (g!==S.gen) return;
 }
 const need = 2; let m=0; for (let j=0;j<nv;j++) if (seen[j]>=need) m++;
 { let s3=0; for (let j=0;j<nv;j++) if (seen[j]>=3) s3++; Object.assign(S.vscanLog, {dropped, voxels:nv, seen2:m, seen3:s3, agree:+(m/nv).toFixed(3)}); }
-const sp = newSplats(m); let o=0;
+const flat = (window.__vsOpt?.flat ?? 1) > 0, sp = newSplats(m); let q=0, discs=0;
 for (let j=0;j<nv;j++){ if (seen[j]<need) continue; const c=cnt[j];
-sp.pos[o*3]=P[j*3]/c; sp.pos[o*3+1]=P[j*3+1]/c; sp.pos[o*3+2]=P[j*3+2]/c;
-sp.scl[o*3]=sp.scl[o*3+1]=sp.scl[o*3+2]=vs*0.62; sp.rot[o*4]=1;
-sp.rgba[o*4]=C[j*3]/c; sp.rgba[o*4+1]=C[j*3+1]/c; sp.rgba[o*4+2]=C[j*3+2]/c; sp.rgba[o*4+3]=240; o++; }
-if (window.__vsKeep){ const q=[]; for (let k=0;k<sp.n;k+=25) q.push([sp.pos[k*3],sp.pos[k*3+1],sp.pos[k*3+2],sp.rgba[k*4],sp.rgba[k*4+1],sp.rgba[k*4+2]]); S.vscanLog.cloud=q; }
+sp.pos[q*3]=P[j*3]/c; sp.pos[q*3+1]=P[j*3+1]/c; sp.pos[q*3+2]=P[j*3+2]/c;
+const nl=Math.hypot(Nn[j*3], Nn[j*3+1], Nn[j*3+2]);
+if (flat && nl > 0.7*c){ const nn=[Nn[j*3]/nl, Nn[j*3+1]/nl, Nn[j*3+2]/nl], ax=Math.abs(nn[1])<0.9 ? [0,1,0] : [1,0,0];
+let e1=[ax[1]*nn[2]-ax[2]*nn[1], ax[2]*nn[0]-ax[0]*nn[2], ax[0]*nn[1]-ax[1]*nn[0]]; const l1=Math.hypot(...e1); e1=e1.map(v=>v/l1);
+const e2=[nn[1]*e1[2]-nn[2]*e1[1], nn[2]*e1[0]-nn[0]*e1[2], nn[0]*e1[1]-nn[1]*e1[0]], qt=quatFromAxes(e1, e2, nn);
+sp.scl[q*3]=sp.scl[q*3+1]=vs*0.78; sp.scl[q*3+2]=vs*0.14; sp.rot.set(qt, q*4); discs++; }
+else { sp.scl[q*3]=sp.scl[q*3+1]=sp.scl[q*3+2]=vs*0.62; sp.rot[q*4]=1; }
+const wc=Wc[j]||1; sp.rgba[q*4]=C[j*3]/wc; sp.rgba[q*4+1]=C[j*3+1]/wc; sp.rgba[q*4+2]=C[j*3+2]/wc; sp.rgba[q*4+3]=240; q++; }
+S.vscanLog.discs = discs;
+if (window.__vsKeep){ const qq=[]; for (let k=0;k<sp.n;k+=25) qq.push([sp.pos[k*3],sp.pos[k*3+1],sp.pos[k*3+2],sp.rgba[k*4],sp.rgba[k*4+1],sp.rgba[k*4+2]]); S.vscanLog.cloud=qq; }
 const pts = pointsFromSplats(sp);
 const scene = {n:pts.n, pos:pts.pos, col:pts.col, upHint:'y', hasColour:true, splats:sp,
-message:`Scanned from the video: followed ${placed.length} of ${n} frames, ${sp.n.toLocaleString()} splats.${lost ? ' Some frames were skipped where the camera could not be followed.' : ''}${trimmed ? ` Only the first ${Math.round(dur)} seconds were used.` : ''}`};
-await finishScan(scene, file.name, g, `Scanned from a video on this device: ${placed.length} of ${n} frames, ${sp.n.toLocaleString()} splats. It stayed on this device.`);
+message:`Scanned from ${o.from}: ${known ? `${n} views` : `followed ${placed.length} of ${n} frames`}, ${sp.n.toLocaleString()} splats.${lost ? ' Some frames were skipped where the camera could not be followed.' : ''}${o.note||''}`};
+await finishScan(scene, o.name, g, `Scanned from ${o.from} on this device: ${placed.length} of ${n} ${known ? 'views' : 'frames'}, ${sp.n.toLocaleString()} splats. It stayed on this device.`);
 if (!LOOKS[look].splat){ applyLook('real'); }
-} finally { vid.removeAttribute('src'); vid.load(); URL.revokeObjectURL(url); try { wake?.release(); } catch(e){} }
 }
 $('#fileVideo').addEventListener('change', async e=>{
 const f = e.target.files[0]; if (!f) return; e.target.value='';
 try { await scanFromVideo(f); } catch(err){ console.error(err); busy(null); notice('Could not scan that video: '+(err.message||err)+'.'); }
 });
+const LIVE = { max: MOBILE ? 36 : 44, min: 8, ring: 16, bands: 3 };
+let liveState = null;
+function liveCue(text, speak){
+const L=liveState; if (!L || L.cueText===text) return; L.cueText=text; $('#liveCue').textContent=text;
+if (speak && L.voice) say(text);
+}
+function liveCount(){ const L=liveState, n=L.views.length; $('#liveCount').textContent = `${n} ${n===1?'view':'views'}`; $('#liveDone').disabled = n < LIVE.min; }
+function liveRing(){
+const L=liveState, svg=$('#liveRing'); if (!L.xr){ svg.hidden=true; return; } svg.hidden=false; let s='';
+for (let b=0;b<LIVE.bands;b++) for (let k=0;k<LIVE.ring;k++){
+const r0=22+b*12, r1=r0+10, a0=(k/LIVE.ring)*2*Math.PI-Math.PI/2+0.03, a1=((k+1)/LIVE.ring)*2*Math.PI-Math.PI/2-0.03;
+const P=(r,a)=>`${(r*Math.cos(a)).toFixed(2)} ${(r*Math.sin(a)).toFixed(2)}`;
+s+=`<path d="M${P(r0,a0)} L${P(r1,a0)} A${r1} ${r1} 0 0 1 ${P(r1,a1)} L${P(r0,a1)} A${r0} ${r0} 0 0 0 ${P(r0,a0)}Z" class="${L.cover.has(b*LIVE.ring+k)?'on':''}"/>`; }
+if (L.here) { const a=(L.here[0]/LIVE.ring)*2*Math.PI-Math.PI/2, r=22+L.here[1]*12+5; s+=`<circle cx="${(r*Math.cos(a)).toFixed(1)}" cy="${(r*Math.sin(a)).toFixed(1)}" r="3.4" class="me"/>`; }
+svg.innerHTML=s;
+}
+function liveThin(){ const L=liveState; L.views = L.views.filter((_,i)=>i%2===0); L.space *= 2;
+if (L.xr){ L.cover = new Set(L.views.filter(v=>v.cell).map(v=>v.cell[1]*LIVE.ring+v.cell[0])); liveRing(); }
+liveCount(); liveCue('Spreading the views out, so the whole walk fits', true); }
+function liveThumb(data, w, h){ const c=$('#liveThumb'), x=c.getContext('2d'), t=document.createElement('canvas'); t.width=w; t.height=h;
+t.getContext('2d').putImageData(new ImageData(data, w, h), 0, 0); const s=Math.min(c.width/w, c.height/h); x.clearRect(0,0,c.width,c.height);
+x.drawImage(t, (c.width-w*s)/2, (c.height-h*s)/2, w*s, h*s); c.hidden=false; }
+async function openLiveScan(){
+let xr=false; try { xr = !!navigator.xr && await navigator.xr.isSessionSupported('immersive-ar'); } catch(e){}
+liveState = {xr, views:[], cover:new Set(), cueText:'', voice:true, done:false, space:1};
+$('#live').hidden=false; $('#liveStart').hidden=false; $('#liveDone').hidden=true; $('#liveThumb').hidden=true; $('#liveRing').hidden=true;
+$('#liveVoice').setAttribute('aria-pressed','true'); liveCount();
+$('#liveIntro').textContent = xr
+? 'Walk slowly around the thing you want to scan. The phone tracks where it is and keeps a view each time you are steady at a new angle. The ring fills in as the sides are covered.'
+: 'Walk slowly around the thing you want to scan. The phone keeps a view each time you are steady at a new angle.';
+$('#liveIntro').hidden=false; liveCue('Tap Start when you are ready', false);
+}
+function closeLive(){ const L=liveState; if (L){ L.done=true; try{ L.session?.end().catch(()=>{}); }catch(e){} L.stream?.getTracks().forEach(t=>t.stop()); }
+const v=$('#liveVid'); v.srcObject=null; v.removeAttribute('src'); v.hidden=true; $('#live').hidden=true; document.body.classList.remove('xr'); liveState=null; }
+async function liveXR(){
+const L=liveState;
+const session = await navigator.xr.requestSession('immersive-ar', {
+requiredFeatures:['camera-access', 'local'], optionalFeatures:['dom-overlay', 'depth-sensing'], domOverlay:{root:$('#live')},
+depthSensing:{usagePreference:['cpu-optimized'], dataFormatPreference:['luminance-alpha', 'float32']} });
+L.session=session; document.body.classList.add('xr');
+const cv=document.createElement('canvas'), gl=cv.getContext('webgl2', {xrCompatible:true, alpha:true, antialias:false});
+await gl.makeXRCompatible?.();
+session.updateRenderState({baseLayer: new XRWebGLLayer(session, gl)});
+const ref = await session.requestReferenceSpace('local'), bind = new XRWebGLBinding(session, gl);
+L.depthOn = session.enabledFeatures ? session.enabledFeatures.includes('depth-sensing') : true;   // older Chrome does not list them; then just try
+const vs=`#version 300 es\nin vec2 p; out vec2 uv; void main(){ uv=p*0.5+0.5; gl_Position=vec4(p,0.,1.); }`;
+const fs=`#version 300 es\nprecision mediump float; uniform sampler2D t; in vec2 uv; out vec4 o; void main(){ o=texture(t, uv); }`;
+const sh=(type,src)=>{ const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s); return s; };
+const prog=gl.createProgram(); gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(prog);
+const vao=gl.createVertexArray(), buf=gl.createBuffer(); gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+const loc=gl.getAttribLocation(prog,'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0); gl.bindVertexArray(null);
+let fbo=null, ftex=null, FW=0, FH=0;
+const grab = (tex, cw, ch) => {
+const s=Math.min(1, 640/Math.max(cw,ch)), W=Math.round(cw*s), H=Math.round(ch*s);
+if (W!==FW || H!==FH){ FW=W; FH=H; ftex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, ftex); gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, W, H);
+fbo=gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, ftex, 0); }
+gl.bindFramebuffer(gl.FRAMEBUFFER, fbo); gl.viewport(0,0,W,H); gl.disable(gl.BLEND); gl.useProgram(prog);
+gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(gl.getUniformLocation(prog,'t'), 0);
+gl.bindVertexArray(vao); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); gl.bindVertexArray(null);
+const px=new Uint8Array(W*H*4); gl.readPixels(0,0,W,H,gl.RGBA,gl.UNSIGNED_BYTE,px);
+const out=new Uint8ClampedArray(W*H*4); for (let y=0;y<H;y++) out.set(px.subarray((H-1-y)*W*4, (H-y)*W*4), y*W*4);
+for (let i=3;i<out.length;i+=4) out[i]=255;
+return {data:out, w:W, h:H};
+};
+let prev=null, anchor=null, lastSay=0;
+const ended = new Promise(res=>session.addEventListener('end', res, {once:true}));
+const onFrame = (t, frame) => {
+if (L.done) return; session.requestAnimationFrame(onFrame);
+const bl=session.renderState.baseLayer; gl.bindFramebuffer(gl.FRAMEBUFFER, bl.framebuffer); gl.clearColor(0,0,0,0); gl.clear(gl.COLOR_BUFFER_BIT);
+const pose=frame.getViewerPose(ref);
+if (!pose || pose.emulatedPosition){ liveCue('Finding its bearings. Move the phone slowly from side to side.', true); prev=null; return; }
+const view=pose.views[0], m=view.transform.matrix, c=[m[12],m[13],m[14]], fwd=[-m[8],-m[9],-m[10]];
+let lin=0, ang=0; if (prev && t>prev.t){ const dt=(t-prev.t)/1000; lin=Math.hypot(c[0]-prev.c[0], c[1]-prev.c[1], c[2]-prev.c[2])/dt;
+ang=Math.acos(Math.min(1, fwd[0]*prev.f[0]+fwd[1]*prev.f[1]+fwd[2]*prev.f[2]))/dt; }
+prev={t, c, f:fwd};
+const cell = () => { if (!anchor) return null; const d=[c[0]-anchor[0], c[1]-anchor[1], c[2]-anchor[2]], r=Math.hypot(...d)||1;
+const az=Math.atan2(d[0], d[2]), el=Math.asin(Math.max(-1, Math.min(1, d[1]/r)));
+return [((Math.round(az/(2*Math.PI)*LIVE.ring)%LIVE.ring)+LIVE.ring)%LIVE.ring, el < 0.26 ? 0 : el < 0.79 ? 1 : 2]; };
+const here=cell(); if (here && (!L.here || here[0]!==L.here[0] || here[1]!==L.here[1])){ L.here=here; liveRing(); }
+if (!L.slow && (lin > 0.22 || ang > 0.45)) L.slow = true; else if (L.slow && lin < 0.15 && ang < 0.3) L.slow = false;
+const steady = !L.slow;
+let novel = Infinity; for (const v of L.views){ const dp=Math.hypot(c[0]-v.c[0], c[1]-v.c[1], c[2]-v.c[2]), da=Math.acos(Math.min(1, fwd[0]*v.f[0]+fwd[1]*v.f[1]+fwd[2]*v.f[2]));
+novel = Math.min(novel, Math.max(dp/(0.08*L.space), da/(0.175*L.space))); }
+if (L.views.length >= LIVE.max) liveThin();
+if (!steady) liveCue('A little slower', t-lastSay > 2500 && (lastSay=t, true));
+else if (novel >= 1 && view.camera){
+const tex=bind.getCameraImage(view.camera); if (!tex) return;
+const img=grab(tex, view.camera.width, view.camera.height);
+gl.bindFramebuffer(gl.FRAMEBUFFER, bl.framebuffer);
+const samples=[]; if (L.depthOn) try { const di=frame.getDepthInformation(view); if (di){ const gw=18, gh=Math.max(8, Math.round(18*img.h/img.w));
+for (let y=0;y<gh;y++) for (let x=0;x<gw;x++){ const u=(x+.5)/gw, v=(y+.5)/gh, z=di.getDepthInMeters(u, v); if (z>0.05 && z<8) samples.push([u, v, z]); } } } catch(e){}
+const P=view.projectionMatrix, K={tanX:1/P[0], tanY:1/P[5], ox:-P[8], oy:-P[9]};
+const R=[m[0],m[4],m[8], m[1],m[5],m[9], m[2],m[6],m[10]];
+if (!anchor){ const zc = samples.length ? samples.map(s=>s[2]).sort((a,b)=>a-b)[samples.length>>1] : 0.6; anchor=[c[0]+fwd[0]*zc, c[1]+fwd[1]*zc, c[2]+fwd[2]*zc]; }
+const cl=cell(); if (cl) L.cover.add(cl[1]*LIVE.ring+cl[0]); L.here=cl;
+L.views.push({img, pose:{s:1, R, t:c}, K, samples, c, f:fwd, cell:cl});
+navigator.vibrate?.(12); liveCount(); liveRing(); liveThumb(img.data, img.w, img.h);
+const n=L.views.length, high=[...L.cover].filter(k=>k>=LIVE.ring).length;
+liveCue(n===1 ? 'Got the first view. Now walk slowly around it.' : n>=14 && high<3 ? 'Now a few from higher up, looking down at it' : 'Keep going slowly around it', n===1 || (n>=14 && high<3));
+}
+else if (L.views.length===0) liveCue('Point at what you want to scan, and hold still', false);
+else liveCue('Keep going slowly around it', false);
+};
+session.requestAnimationFrame(onFrame);
+liveCue('Point at what you want to scan, and hold still', true);
+return ended;
+}
+async function liveCamera(){
+const L=liveState, v=$('#liveVid');
+const test = window.__liveSrc;
+if (test){ v.src=test; await new Promise(r=>{ v.onloadeddata=r; }); }
+else { L.stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}}, audio:false}); v.srcObject=L.stream; }
+v.hidden=false; v.muted=true; v.playsInline=true; if (!test) await v.play();
+const next = f => { if (!test) return v.requestVideoFrameCallback ? v.requestVideoFrameCallback(f) : requestAnimationFrame(f);
+if (v.currentTime + 1/15 >= v.duration){ L.finish?.(); return; } v.onseeked = () => f(); v.currentTime += 1/15; };
+let rot=0; const onMotion = e => { const r=e.rotationRate; if (r) rot=Math.hypot(r.alpha||0, r.beta||0, r.gamma||0); };
+window.addEventListener('devicemotion', onMotion);
+const small=document.createElement('canvas'), sx=small.getContext('2d', {willReadFrequently:true}), recent=[];
+let lastThumb=null, locked=false;
+const thumbOf = (data, w, h) => { const TW=24, TH=Math.max(8, Math.round(24*h/w)), t=new Float32Array(TW*TH); let mu=0, sd=0;
+for (let y=0;y<TH;y++) for (let x=0;x<TW;x++){ const k=(((y+.5)/TH*h|0)*w + ((x+.5)/TW*w|0))*4; t[y*TW+x]=data[k]+data[k+1]+data[k+2]; mu+=t[y*TW+x]; }
+mu/=t.length; for (let k=0;k<t.length;k++){ t[k]-=mu; sd+=t[k]*t[k]; } sd=Math.sqrt(sd)||1; for (let k=0;k<t.length;k++) t[k]/=sd; return t; };
+const corr = (a, b) => { let s=0; for (let k=0;k<a.length;k++) s+=a[k]*b[k]; return s; };
+let lastSay=0;
+const step = () => {
+if (L.done || v.ended){ window.removeEventListener('devicemotion', onMotion); return; }
+const W0=v.videoWidth, H0=v.videoHeight; if (!W0){ next(step); return; }
+const s=160/Math.max(W0,H0), w=Math.round(W0*s), h=Math.round(H0*s); small.width=w; small.height=h; sx.drawImage(v,0,0,w,h);
+const d=sx.getImageData(0,0,w,h).data, sh=sharpness(d, w, h), th=thumbOf(d, w, h);
+recent.push(sh); if (recent.length>40) recent.shift(); const med=recent.slice().sort((a,b)=>a-b)[recent.length>>1];
+if (!L.slow && rot > 35) L.slow = true; else if (L.slow && rot < 22) L.slow = false;       // degrees a second, with a gap so the advice does not flicker
+const moved = lastThumb ? 1-corr(th, lastThumb) : 1, still = !L.slow, sharp = sh >= 0.8*med;
+const t=performance.now(), full = L.views.length >= LIVE.max;
+if (full) liveCue('That is plenty. Tap Make the scan.', true);
+else if (!still) liveCue('A little slower', t-lastSay > 2500 && (lastSay=t, true));
+else if (recent.length >= 6 && (!lastThumb ? sharp : (sharp && moved > 0.25) || moved > 0.4)){
+const jump = moved > 0.6 && L.views.length;
+const S2=Math.min(1, 640/Math.max(W0,H0)), FW=Math.round(W0*S2), FH=Math.round(H0*S2), c=document.createElement('canvas'); c.width=FW; c.height=FH;
+c.getContext('2d', {willReadFrequently:true}).drawImage(v, 0, 0, FW, FH);
+L.views.push({canvas:c, w:FW, h:FH, sharp:sh, at:+v.currentTime.toFixed(2), moved:+moved.toFixed(2)}); lastThumb=th;
+S.liveLog = L.views.map(x=>[x.at, x.moved]);                                   // for testing from the console
+if (!locked && L.stream){ locked=true; const tr=L.stream.getVideoTracks()[0], cap=tr.getCapabilities?.()||{}, set=tr.getSettings?.()||{}, adv={};
+if (cap.exposureMode?.includes('manual') && set.exposureTime) Object.assign(adv, {exposureMode:'manual', exposureTime:set.exposureTime});
+if (cap.whiteBalanceMode?.includes('manual') && set.colorTemperature) Object.assign(adv, {whiteBalanceMode:'manual', colorTemperature:set.colorTemperature});
+if (Object.keys(adv).length) tr.applyConstraints({advanced:[adv]}).catch(()=>{}); }
+navigator.vibrate?.(12); liveCount(); const t2=c.getContext('2d').getImageData(0,0,FW,FH); liveThumb(t2.data, FW, FH);
+if (jump) liveCue('A little slower, so each view overlaps the last', t-lastSay > 2500 && (lastSay=t, true));
+else liveCue(L.views.length===1 ? 'Got the first view. Now walk slowly around it.' : 'Keep going slowly around it', L.views.length===1);
+}
+else if (!L.views.length) liveCue('Point at what you want to scan, and hold still', false);
+next(step);
+};
+step();
+liveCue('Point at what you want to scan, and hold still', true);
+return new Promise(res=>{ L.finish=res; v.addEventListener('ended', res, {once:true}); });
+}
+async function liveBuild(){
+const L=liveState, views=L.views, xr=L.xr && !!L.session; closeLive();
+if (views.length < 3){ notice('Not enough views were kept to make a scan. Walk slowly around the subject, pausing a moment at each new angle.'); return; }
+const g=++S.gen, n=views.length, frames=[], st={};
+let wake=null; try { wake=await navigator.wakeLock?.request('screen'); } catch(e){}
+try {
+const w=xr ? views[0].img.w : views[0].w, h=xr ? views[0].img.h : views[0].h;
+const probe = xr && views.find(v=>v.samples.length>=30);
+S.liveLog = {xr, views:n, at: views.map(v=>v.at), depthSamples: xr ? views.reduce((a,v)=>a+v.samples.length,0) : 0};
+if (probe){ busy('Checking the camera picture', 0); await tick();
+const pic = flip => { const c=document.createElement('canvas'); c.width=w; c.height=h; const x=c.getContext('2d'); x.putImageData(new ImageData(probe.img.data, w, h), 0, 0);
+if (!flip) return c; const f=document.createElement('canvas'); f.width=w; f.height=h; const fx=f.getContext('2d'); fx.translate(0,h); fx.scale(1,-1); fx.drawImage(c,0,0); return f; };
+const rank = a => { const idx=a.map((v,i)=>i).sort((i,j)=>a[i]-a[j]), r=new Array(a.length); idx.forEach((i,k)=>r[i]=k); return r; };
+const agree = async flip => { const raw=await estimateDepth(pic(flip), null, true, MOBILE ? 364 : 434), a=[], b=[];
+for (const [u,v,z] of probe.samples){ a.push(raw.d[Math.min(raw.h-1,(v*raw.h)|0)*raw.w + Math.min(raw.w-1,(u*raw.w)|0)]); b.push(1/z); }
+const ra=rank(a), rb=rank(b), m=(a.length-1)/2; let sab=0, saa=0, sbb=0; for (let i=0;i<a.length;i++){ sab+=(ra[i]-m)*(rb[i]-m); saa+=(ra[i]-m)**2; sbb+=(rb[i]-m)**2; }
+return sab/Math.sqrt(saa*sbb||1); };
+const asIs = await agree(false), turned = await agree(true); S.liveLog.upright = {asIs:+asIs.toFixed(2), turned:+turned.toFixed(2)};
+if (turned > asIs + 0.2){ S.liveLog.flipped = true;
+for (const v of views){ const d=v.img.data, row=w*4, t=new Uint8ClampedArray(row); for (let y=0;y<h>>1;y++){ const a=y*row, b=(h-1-y)*row; t.set(d.subarray(a,a+row)); d.copyWithin(a, b, b+row); d.set(t, b); } } }
+}
+for (let i=0;i<n;i++){
+busy(`Reading view ${i+1} of ${n}: depth and features`, i/n*0.8); await tick();
+let c=views[i].canvas; if (!c){ c=document.createElement('canvas'); c.width=w; c.height=h; c.getContext('2d').putImageData(new ImageData(views[i].img.data, w, h), 0, 0); views[i].img=null; }
+frames.push(await frameFromCanvas(c, w, h, st, views[i].sharp)); if (g!==S.gen) return;
+}
+const TL=0.62, K = xr ? views[0].K : {tanX: w>=h ? TL : TL*w/h, tanY: w>=h ? TL*h/w : TL, ox:0, oy:0};
+if (window.__vsKeep) window.__vsKeep.live = {frames, w, h, K, poses: xr ? views.map(v=>v.pose) : null};     // testing only
+const note = xr ? ` Placed by the phone's own AR tracking${S.liveLog.depthSamples ? ' and scaled by its depth sensor' : ''}.` : '';
+await buildScanScene(frames, {g, w, h, K, name:'Live scan', from:'a live scan', note,
+poses: xr ? views.map(v=>v.pose) : null, metric: xr ? views.map(v=>v.samples) : null});
+} finally { try { wake?.release(); } catch(e){} }
+}
+$('#liveStart').addEventListener('click', async ()=>{
+const L=liveState; if (!L) return; $('#liveStart').hidden=true; $('#liveIntro').hidden=true; $('#liveDone').hidden=false;
+try { if (typeof DeviceMotionEvent!=='undefined' && DeviceMotionEvent.requestPermission) await DeviceMotionEvent.requestPermission().catch(()=>{}); } catch(e){}
+try {
+if (L.xr){ try { await liveXR(); } catch(err){ console.warn(err); L.xr=false; liveCue('The phone\'s AR tracking is not available here, so the camera alone is used', true); await liveCamera(); } }
+else await liveCamera();
+if (liveState && !liveState.done && liveState.views.length) await liveBuild(); else if (liveState) closeLive();
+} catch(err){ console.error(err); busy(null); closeLive(); notice('Could not make a live scan: '+(err.message||err)+'.'); }
+});
+$('#liveDone').addEventListener('click', ()=>{ const L=liveState; if (!L) return;
+if (L.session){ L.stopping=true; L.session.end().catch(()=>{}); } else L.finish?.(); });
+$('#liveCancel').addEventListener('click', ()=>{ const L=liveState; if (L){ L.views.length=0; if (L.session) L.session.end().catch(()=>{}); else L.finish?.(); } closeLive(); });
+$('#liveVoice').addEventListener('click', e=>{ const L=liveState; if (!L) return; L.voice=!L.voice; e.currentTarget.setAttribute('aria-pressed', String(L.voice)); if (!L.voice) try{ speechSynthesis.cancel(); }catch(err){} });
 const SESSION_DB = 'first-return-session';
 function sessionDb(){
 return new Promise((res, rej)=>{ const r = indexedDB.open(SESSION_DB, 1);
@@ -2948,8 +3242,9 @@ m.hidden=false; btn.setAttribute('aria-expanded','true');
 return m;
 }
 $('#openBtn').addEventListener('click', e=>{ e.stopPropagation();
-const m=menu($('#openBtn'), '#openMenu', [['photo','Photo','From your camera or gallery'],['vscan','Scan from video','Walk slowly around something for 10 to 30 seconds; makes a 3D splat here'],['scan','3D scan','A .ply, .splat or .spz from Polycam, Scaniverse, a lidar app or a splat trainer']]);
+const m=menu($('#openBtn'), '#openMenu', [['photo','Photo','From your camera or gallery'],['live','Live scan','Walk around something while the phone picks the views; makes a 3D splat here'],['vscan','Scan from video','Walk slowly around something for 10 to 30 seconds; makes a 3D splat here'],['scan','3D scan','A .ply, .splat or .spz from Polycam, Scaniverse, a lidar app or a splat trainer']]);
 if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ m.hidden=true; $('#openBtn').setAttribute('aria-expanded','false');
+if (b.dataset.v==='live'){ openLiveScan(); return; }
 (b.dataset.v==='scan' ? $('#fileScan') : b.dataset.v==='vscan' ? $('#fileVideo') : $('#file')).click(); })); });
 $('#shapeBtn').addEventListener('click', e=>{ e.stopPropagation();
 const items=[['photo','Same as the photo','',S.shape==='photo'],['wide','Wide','16 by 9',S.shape==='wide'],['square','Square','',S.shape==='square'],['tall','Tall','9 by 16, for stories',S.shape==='tall']];
