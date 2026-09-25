@@ -281,3 +281,27 @@ Everything before RF-DETR adds about 8 KB and no models.
 
 **Avoid (licence):** DUSt3R and MASt3R, MV-DUSt3R+, Fast3R, Pi3, the original VGGT, ORB-SLAM3 (GPL), and Video Depth Anything Base and Large.
 **Too big for a phone:** MapAnything (its Apache variant is useful as a desktop reference), VGGT-1B-Commercial and AnySplat.
+
+---
+
+# Round seven, 25 September 2026: tested on real phone video
+
+Two hand-held clips of books and a toy on a bedside table (1080 x 1920, 20 and 23 s). The first run, before this round, followed 25 of 44 frames of the easier clip and doubled the toy about four times. The changes below follow the standard visual-odometry and multi-view-stereo recipe (ORB-SLAM keyframe relocalisation, PnP, bundle adjustment, COLMAP-style depth fusion; CasualSAM for fitting monocular depth per frame).
+
+## Built
+- **Sharpest moment.** Each sample time looks at three nearby moments and keeps the sharpest (Laplacian energy). Frames are spread over the whole clip, at most about 0.65 s apart, instead of cutting it at 18 s.
+- **PnP placement.** A new frame is placed by where points already in the scene land in its picture, from the last three placed frames at once. Hypotheses come from Horn on three matches, then Levenberg-Marquardt polishes the pose on Huber-weighted pixel error. Depth from one photo is used only on the side already in the scene, so errors no longer compound.
+- **Depth scale only while chaining.** Fitting scale and shift per frame during the chain let each frame pass a flatter scene to the next (the scale fell from 0.58 to 0.06 over 26 frames). While chaining, only the scale is fitted.
+- **Found again.** A lost frame is searched for across the whole scene so far, with candidates ranked by a tiny thumbnail, so tracking resumes when the walk comes back to a place it has seen.
+- **Bundle adjustment.** All cameras plus each frame's depth scale and offset are solved together (8 unknowns a frame, frame 0 fixed, numerical Jacobians, Cholesky, Huber, outliers dropped halfway). Pixel error went from 2.6 to 1.85 px on both clips.
+- **Depth consensus, then agreement.** Before fusion, each pixel's depth becomes the median of what up to six neighbouring views put on that line of sight. A point is then kept only when two other views find a surface within 5 percent. Agreement (voxels seen by 2 or more frames) went from 0.13 to 0.38.
+- **Cheaper and steadier on phones.** Frame colour is kept at the depth grid's size (a quarter of the memory). Depth runs at 364 px on phones and 434 px on computers. The screen stays awake during a scan (Wake Lock). Progress changes within each frame, not only between frames. Candidate frames are chosen by thumbnail before any feature matching: that cut tracking from 42 s to 12 s.
+
+## Results (PC, hidden test tab, so slower than real)
+- Toy clip: 36 of 44 frames followed; the book, shelf and bottles are solid and square. The white toy's eyes still show a few copies: it has no texture to match, so each view's depth guess for it stands alone.
+- Books clip: 29 of 44 frames followed. The blurry close-ups from about 9 to 16 s are lost, then tracking finds itself again. The Bible, the green book, the shelf post, the toy and the tissue box all come out as solid, legible objects.
+- Tried and set aside: a lens-angle search. Inliers were flat from tan 0.5 to 0.8, and agreement peaked at the 0.62 already used.
+
+## Next
+- **Live capture (see below)** would remove the hardest part, following the camera, by using the phone's own AR tracking.
+- A photometric refine (Brush) is what would fix plain, textureless things like the white toy.
