@@ -44,7 +44,16 @@ button{cursor:pointer}
 .notice .say,.banner .say{pointer-events:auto}
 .banner{display:flex;align-items:center;gap:10px;padding:6px 14px 6px 6px}
 .banner[hidden]{display:none}
-.measurebar{position:absolute;left:10px;right:10px;top:10px;z-index:5;background:rgba(8,10,12,.92);border:1px solid var(--accent);border-radius:12px;padding:8px 10px}
+.measurebar{padding:12px 14px;overflow-y:auto;max-height:44vh;max-height:44dvh;border-bottom:1px solid var(--line)}
+.measurebar h3{margin:0 0 8px;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
+.measurebar h3 .sp{margin-left:auto}
+.msteps{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:6px;counter-reset:ms}
+.msteps li{counter-increment:ms;display:flex;gap:10px;align-items:flex-start;color:var(--faint);font-size:15px;line-height:1.35}
+.msteps li::before{content:counter(ms);flex:none;width:24px;height:24px;border-radius:50%;border:1px solid var(--line2);display:grid;place-items:center;font-size:13px;font-weight:700}
+.msteps li.now{color:var(--text)} .msteps li.now::before{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.msteps li.done{color:var(--dim)} .msteps li.done::before{content:"✓";color:var(--accent)}
+.mnote{color:var(--dim);font-size:13px;margin:8px 0 0}
+body.measuring #tray{display:none} body.measuring .msgs{display:none}
 #measures svg{position:absolute;inset:0;overflow:visible} #measures .ml{stroke:#fff;stroke-width:2;stroke-dasharray:6 4} #measures .me{fill:#72e8cb;stroke:#03140f;stroke-width:1.5} #measures .pending{fill:#fff} #measures .mhz{stroke:#ffd166;stroke-width:2;stroke-dasharray:10 6} #measures .mtag rect{fill:#ffd166} #measures .mtag text{fill:#221a02;font:700 13px var(--ui);text-anchor:middle}
 #measures .mt{fill:#fff;font:700 15px var(--ui);text-anchor:middle;paint-order:stroke;stroke:rgba(0,0,0,.85);stroke-width:4px} #measures .mh{fill:#c9f5ea;font:600 12.5px var(--ui);text-anchor:middle;paint-order:stroke;stroke:rgba(0,0,0,.85);stroke-width:3px}
 .panpill{position:absolute;left:10px;top:10px;border:1px solid var(--accent);background:rgba(8,10,12,.88);color:var(--accent);border-radius:16px;padding:7px 12px;font-size:13px}
@@ -191,7 +200,6 @@ body.xr .live{background:transparent}
     <div class="overlay" id="pins"></div>
     <div class="overlay" id="labels"></div>
     <div class="overlay" id="measures"></div>
-    <div class="measurebar" id="measureBar" hidden></div>
     <div class="msgs"><div class="notice" id="notice" role="status" aria-live="polite" hidden></div><div class="banner" id="banner" role="status" aria-live="polite" hidden></div></div>
     <button class="btn stop" id="stopBtn" hidden>Stop</button>
     <button class="panpill" id="panPill" hidden>Pan: drag to slide, tap a spot to centre it. Tap here to stop.</button>
@@ -215,6 +223,7 @@ body.xr .live{background:transparent}
       <button class="tab" role="tab" data-tab="people"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4.5-6.5 8-6.5s7 2 8 6.5"/></svg>People</button>
     </nav>
     <section class="tray" id="tray"></section>
+    <section class="measurebar" id="measureBar" aria-label="Measure" hidden></section>
   </aside>
 </div>
 

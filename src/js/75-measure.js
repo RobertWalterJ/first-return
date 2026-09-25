@@ -59,7 +59,8 @@ function lineText(L){ if (L.m==null) return (v3.len(v3.sub(L.a,L.b))).toFixed(2)
   return (L.kind==='rough' ? 'about ' : '') + fmtM(Math.abs(L.m)*S.mCorr) + (L.kind==='height' ? ' high' : ''); }
 
 function setMeasure(on){
-  S.measure = on; S.mPts = []; $('#measureBtn').setAttribute('aria-pressed', on); $('#measureBar').hidden = !on;
+  // the steps and buttons sit in the tools panel, not over the picture, so the whole picture stays free to tap
+  S.measure = on; S.mPts = []; $('#measureBtn').setAttribute('aria-pressed', on); $('#measureBar').hidden = !on; document.body.classList.toggle('measuring', on);
   if (on && S.panMode){ S.panMode=false; syncPan(); }
   renderMeasureBar(); renderMeasures();
 }
@@ -71,16 +72,22 @@ function measureTap(cx, cy){
 }
 function renderMeasureBar(){
   const bar = $('#measureBar'); if (bar.hidden) return;
-  const how = S.mCorr!==1 ? 'Corrected by your known length.' : S.scan ? 'Scan units, usually metres.' : `Eye level is taken as ${S.camH} m above the ground. Expect some error; a known length makes it better.`;
-  const tip = (S.scan ? (S.mPts.length ? 'Now tap the second point.' : 'Tap two points to measure between them.')
-    : (S.mPts.length ? 'Now tap its top for its height, or another spot on the ground for a distance.' : "First drag the dashed line to eye level, at the height of a standing person's eyes. Then tap where something meets the ground."))+' '+how;
-  bar.innerHTML = `<p class="hint" style="margin:0 0 6px">${sayBtn(tip)}<span>${tip}</span></p>
+  const how = S.mCorr!==1 ? 'Corrected by your known length.' : S.scan ? 'Scan units, usually metres.' : `Eye level is taken as ${S.camH} m above the ground (Camera changes it). Expect some error; Set length makes it better.`;
+  // the steps, the one to do now highlighted
+  const steps = S.scan
+    ? ['Tap the first point.', 'Tap the second point.']
+    : ["Drag the yellow eye-level tag to where a standing person's eyes would be.", 'Tap where something meets the ground.', 'Tap its top for its height, or another spot on the ground for a distance.'];
+  const now = S.scan ? S.mPts.length : (S.mPts.length ? 2 : S.hzMoved || S.mLines.length ? 1 : 0);
+  const spoken = steps[now] + ' ' + how;
+  bar.innerHTML = `<h3>Measure<span class="sp">${sayBtn(spoken)}</span></h3>
+    <ol class="msteps">${steps.map((t,i)=>`<li class="${i===now?'now':i<now?'done':''}">${t}</li>`).join('')}</ol>
     <div class="row">${S.scan ? '' : `<button class="chip" id="mCam">Camera ${S.camH} m</button>`}
     <button class="chip" id="mSet" ${S.mLines.length?'':'disabled'}>Set length</button><button class="chip" id="mClear" ${S.mLines.length||S.mPts.length?'':'disabled'}>Clear</button><button class="chip" id="mDone">Done</button></div>
-    ${S.mSetting ? `<div class="row" style="margin-top:6px"><input id="mLen" class="nameinput" inputmode="decimal" placeholder="Real length of the last line, in metres" aria-label="Real length in metres"><button class="btn primary" id="mOk">Set</button></div>` : ''}`;
+    ${S.mSetting ? `<div class="row" style="margin-top:8px"><input id="mLen" class="nameinput" inputmode="decimal" placeholder="Real length of the last line, in metres" aria-label="Real length in metres"><button class="btn primary" id="mOk">Set</button></div>` : ''}
+    <p class="mnote">${how}</p>`;
   bar.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say)));
   if ($('#mCam')) $('#mCam').addEventListener('click',()=>{ const i=CAM_HEIGHTS.indexOf(S.camH); S.camH=CAM_HEIGHTS[(i+1)%CAM_HEIGHTS.length]; S.mLines=S.mLines.map(L=>L.taps?makeLine(...L.taps):L); renderMeasureBar(); renderMeasures(); });
-  $('#mSet').addEventListener('click',()=>{ S.mSetting=!S.mSetting; renderMeasureBar(); });
+  $('#mSet').addEventListener('click',()=>{ S.mSetting=!S.mSetting; renderMeasureBar(); if (S.mSetting) $('#mLen')?.focus(); });
   $('#mClear').addEventListener('click',()=>{ S.mLines=[]; S.mPts=[]; S.mScale=null; S.mCorr=1; renderMeasureBar(); renderMeasures(); });
   $('#mDone').addEventListener('click',()=>setMeasure(false));
   if ($('#mOk')) $('#mOk').addEventListener('click',()=>{ const v=parseFloat(($('#mLen').value||'').replace(',','.')), L=S.mLines[S.mLines.length-1];
@@ -119,8 +126,8 @@ let hzDrag = null;
 cv.addEventListener('pointerdown', e=>{ if (!S.measure || S.scan || !S.photo || !S.P) return;
   // only the eye-level tag at the left starts a drag, so taps near the line still measure
   const r=cv.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top, s=project(unproject(0,horizonV(),400), S.cssW, S.cssH);
-  if (s && x < 110 && Math.abs(y-s[1]) < 18){ hzDrag = {y0:e.clientY, v0:horizonV()}; e.stopImmediatePropagation(); try{ cv.setPointerCapture(e.pointerId); }catch(err){} } }, true);
+  if (s && x < 124 && Math.abs(y-s[1]) < 26){ hzDrag = {y0:e.clientY, v0:horizonV()}; e.stopImmediatePropagation(); try{ cv.setPointerCapture(e.pointerId); }catch(err){} } }, true);
 cv.addEventListener('pointermove', e=>{ if (!hzDrag) return; e.stopImmediatePropagation();
   const dv = (e.clientY-hzDrag.y0)/S.cssH * viewTan(S.cssW/S.cssH)/S.tanV / Math.max(0.3, S.zoom);
   S.hzV = Math.max(0.05, Math.min(0.95, hzDrag.v0 + dv)); S.mLines = S.mLines.map(L=>L.taps?makeLine(...L.taps):L); renderMeasures(); }, true);
-cv.addEventListener('pointerup', e=>{ if (!hzDrag) return; e.stopImmediatePropagation(); hzDrag = null; renderMeasureBar(); }, true);
+cv.addEventListener('pointerup', e=>{ if (!hzDrag) return; e.stopImmediatePropagation(); hzDrag = null; S.hzMoved = true; renderMeasureBar(); }, true);

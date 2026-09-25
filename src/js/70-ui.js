@@ -86,7 +86,7 @@ function setTab(t){
   requestAnimationFrame(layout);
   if (t) store('tab', t);
 }
-document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click', ()=>{ notice(''); setTab(b.dataset.tab); }));
+document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click', ()=>{ notice(''); if (S.measure) setMeasure(false); setTab(b.dataset.tab); }));      // choosing a tab ends measuring, so its panel shows
 
 function modeText(){
   if (S.placing==='face') return 'Tap a face to cover it.';
@@ -478,14 +478,14 @@ cv.addEventListener('pointerdown', e=>{ try { cv.setPointerCapture(e.pointerId);
   if (ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch0=Math.hypot(a.x-b.x,a.y-b.y); zoom0=S.zoom; mid0=midOf(); } });
 cv.addEventListener('pointermove', e=>{ const p=ptrs.get(e.pointerId); if(!p || S.recording) return;
   const dx=e.clientX-p.x, dy=e.clientY-p.y; p.x=e.clientX; p.y=e.clientY; moved+=Math.abs(dx)+Math.abs(dy);
-  if (moved<8) return;
+  if (moved < (e.pointerType==='touch' ? 12 : 8)) return;            // a fingertip drifts a little on a tap
   if (ptrs.size===1){ if (panDrag) panBy(dx, dy); else { S.yaw+=dx*0.35; S.pitch=Math.max(-80,Math.min(80,S.pitch+dy*0.3)); } }
   else if (ptrs.size===2){ const [a,b]=[...ptrs.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y); if (pinch0) S.zoom=Math.max(0.35,Math.min(5,zoom0*pinch0/d));
     // two fingers moving together slide the view
     const m=midOf(); if (mid0){ panBy(m[0]-mid0[0], m[1]-mid0[1]); } mid0=m; }
   S.dirtyDraw=true; viewButton(); });
 cv.addEventListener('pointerup', e=>{
-  if (ptrs.size===1 && moved<8){ const r=cv.getBoundingClientRect(), now=performance.now(), cx=e.clientX-r.left, cy=e.clientY-r.top;
+  if (ptrs.size===1 && moved < (e.pointerType==='touch' ? 12 : 8)){ const r=cv.getBoundingClientRect(), now=performance.now(), cx=e.clientX-r.left, cy=e.clientY-r.top;
     if (S.measure){ measureTap(cx, cy); }
     else if (S.panMode && S.tab!=='subject' && !S.placing){ const hit=pickPoint(cx,cy); if (hit) centreOn(hit.p); }      // no timing needed
     else if (S.tab!=='subject' && !S.placing && now-lastTap<320){ const hit=pickPoint(cx,cy); if (hit) centreOn(hit.p); lastTap=0; }
