@@ -91,7 +91,7 @@ document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click', ()=>{ n
 function modeText(){
   if (S.placing==='face') return 'Tap a face to cover it.';
   if (S.placing==='label') return 'Tap a person or thing to name it.';
-  if (S.tab==='subject') return S.picks.length ? 'Tap more things to add them. Tap a ring to remove one.' : 'Tap Find, or tap what matters in the picture.';
+  if (S.tab==='subject') return S.picks.length ? 'Tap more things to add them. Tap a ring to remove one.' : '';        // the panel already says how to start
   return '';
 }
 
@@ -134,32 +134,27 @@ function renderTray(){
     if (!groupKeys(S.group).length) S.group = GROUPS.find(g=>groupKeys(g.id).length).id;
     const keys = groupKeys(S.group);
     if (!keys.includes(S.ctrl)) S.ctrl = keys[0];
-    const c = CTRL[S.ctrl];
-    let body;
-    if (c.chips){
-      body = `<div class="scroller" style="margin-top:12px">${c.chips.map(([v,n])=>`<button class="chip ${activePreset()[c.key]===v?'def':''}" data-choice="${v}" aria-pressed="${P[c.key]===v}">${n}</button>`).join('')}</div>`;
-    } else {
+    // every control in the group at once, each with its own named steps (one level less to find things in);
+    // the explanation below is for the control last touched
+    const block = k => { const c=CTRL[k];
+      if (c.chips) return `<div class="ctl"><div class="ctlh">${c.name}</div><div class="scroller" style="margin-top:6px">${c.chips.map(([v,n])=>`<button class="chip ${activePreset()[c.key]===v?'def':''}" data-key="${k}" data-choice="${v}" aria-pressed="${P[c.key]===v}">${n}</button>`).join('')}</div></div>`;
       const def = c.key==='light' ? S.lightAuto : Math.round(activePreset()[c.key]);
       // splats have no backs to fill, so Hidden parts is Off or On there
       const stops = c.key==='hidden' && LOOKS[look].splat ? [['Off',0],['On',1]] : c.stops;
-      body = `<div class="stepper"><input type="range" id="ctl" min="0" max="${stops.length-1}" step="0.05" value="${Math.min(P[c.key], stops.length-1)}" aria-label="${c.name}">
-        <div class="stops">${stops.map(([n],i)=>`<button data-stop="${i}" aria-current="${Math.abs(P[c.key]-i)<0.15}" class="${i===def?'def':''}">${n}${i===def?(c.key==='light'?' (auto)':' ·'):''}</button>`).join('')}</div></div>`;
-    }
-    const note = c.key==='floor' && !S.hasFloor && !S.scan ? ' This photo has no floor, so moving this adds one.' : '';
-    tr.innerHTML = `${groupRow()}
-      ${keys.length>1 ? `<div class="scroller" style="margin-top:8px">${keys.map(k=>`<button class="chip" data-ctrl="${k}" aria-pressed="${k===S.ctrl}">${CTRL[k].name}</button>`).join('')}${S.group==='scene' && S.rollAuto && !S.scan ? `<button class="chip" id="levelChip" aria-pressed="${S.level}">Straighten ${(Math.abs(S.rollAuto)*180/Math.PI).toFixed(1)}°</button>` : ''}</div>` : ''}
-      ${body}<p class="hint">${sayBtn(c.hint+note)}<span>${c.hint}${note}</span></p>
+      return `<div class="ctl"><div class="ctlh">${c.name}</div><div class="stepper"><input type="range" data-key="${k}" min="0" max="${stops.length-1}" step="0.05" value="${Math.min(P[c.key], stops.length-1)}" aria-label="${c.name}">
+        <div class="stops">${stops.map(([n],i)=>`<button data-key="${k}" data-stop="${i}" aria-current="${Math.abs(P[c.key]-i)<0.15}" class="${i===def?'def':''}">${n}${i===def?(c.key==='light'?' (auto)':' ·'):''}</button>`).join('')}</div></div></div>`; };
+    const c = CTRL[S.ctrl], note = c.key==='floor' && !S.hasFloor && !S.scan ? ' This photo has no floor, so moving this adds one.' : '';
+    tr.innerHTML = `${groupRow()}${keys.map(block).join('')}
+      ${S.group==='scene' && S.rollAuto && !S.scan ? `<div class="scroller" style="margin-top:12px"><button class="chip" id="levelChip" aria-pressed="${S.level}">Straighten ${(Math.abs(S.rollAuto)*180/Math.PI).toFixed(1)}°</button></div>` : ''}
+      <p class="hint">${sayBtn(c.name+'. '+c.hint+note)}<span><b>${c.name}:</b> ${c.hint}${note}</span></p>
       <div class="sect row">${undoBtn}</div>`;
-    tr.querySelectorAll('[data-ctrl]').forEach(b=>b.addEventListener('click',()=>{ S.ctrl=b.dataset.ctrl; renderTray(); }));
     if ($('#levelChip')) $('#levelChip').addEventListener('click',()=>{ pushUndo(); S.level=!S.level; S.roll = S.level ? S.rollAuto : 0; S.adv.roll=null; S.dirtyDraw=true; commit(); });
-    tr.querySelectorAll('[data-choice]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); P[c.key]=b.dataset.choice; if (c.rebuild) S.dirtyBuild=true; S.dirtyDraw=true; commit(); }));
+    tr.querySelectorAll('[data-choice]').forEach(b=>b.addEventListener('click',()=>{ const k=b.dataset.key, cc=CTRL[k]; S.ctrl=k; pushUndo(); P[k]=b.dataset.choice; if (cc.rebuild) S.dirtyBuild=true; S.dirtyDraw=true; commit(); }));
     wireGroupRow(tr);
-    const r = $('#ctl');
-    if (r){
-      r.addEventListener('input', ()=>{ pushUndo(); P[c.key]=+r.value; if (c.key==='floor') S.floorTouched=true; if (c.rebuild){ S.lowDetail=true; S.dirtyBuild=true; } S.dirtyDraw=true; markStops(c); });
-      r.addEventListener('change', ()=>{ if (c.rebuild){ S.lowDetail=false; S.dirtyBuild=true; } commit(); });
-      tr.querySelectorAll('[data-stop]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); P[c.key]=+b.dataset.stop; if (c.key==='floor') S.floorTouched=true; if (c.rebuild){ S.lowDetail=false; S.dirtyBuild=true; } S.dirtyDraw=true; commit(); }));
-    }
+    tr.querySelectorAll('input[type=range][data-key]').forEach(r=>{ const k=r.dataset.key, cc=CTRL[k];
+      r.addEventListener('input', ()=>{ S.ctrl=k; pushUndo(); P[k]=+r.value; if (k==='floor') S.floorTouched=true; if (cc.rebuild){ S.lowDetail=true; S.dirtyBuild=true; } S.dirtyDraw=true; markStops(cc); });
+      r.addEventListener('change', ()=>{ if (cc.rebuild){ S.lowDetail=false; S.dirtyBuild=true; } commit(); }); });
+    tr.querySelectorAll('[data-stop][data-key]').forEach(b=>b.addEventListener('click',()=>{ const k=b.dataset.key, cc=CTRL[k]; S.ctrl=k; pushUndo(); P[k]=+b.dataset.stop; if (k==='floor') S.floorTouched=true; if (cc.rebuild){ S.lowDetail=false; S.dirtyBuild=true; } S.dirtyDraw=true; commit(); }));
   }
   else if (S.tab==='subject' && S.scan){
     tr.innerHTML = `<p class="hint" style="margin:0">${sayBtn('A scan keeps every point it measured, so there is no subject to pick. Use Background under Adjust, Scene to thin out its floor.')}<span>A scan keeps every point it measured, so there is no subject to pick. Use Background under Adjust, Scene to thin out its floor.</span></p>`;
@@ -312,7 +307,7 @@ function showDebug(){
   Object.assign(c.style, {width:w+'px', height:h+'px', left:(parseFloat(cv.style.left)+(S.cssW-w)/2)+'px', top:(parseFloat(cv.style.top)+(S.cssH-h)/2)+'px'});
   c.hidden=false;
 }
-function markStops(c){ document.querySelectorAll('[data-stop]').forEach(b=>b.setAttribute('aria-current', Math.abs(P[c.key]-(+b.dataset.stop))<0.15)); }
+function markStops(c){ document.querySelectorAll('[data-stop]').forEach(b=>(!b.dataset.key || b.dataset.key===c.key) && b.setAttribute('aria-current', Math.abs(P[c.key]-(+b.dataset.stop))<0.15)); }
 
 // ---------------------------------------------------------------- look thumbnails, drawn from your own photo
 let thumbsFor = null, thumbJob = 0;
@@ -472,7 +467,7 @@ function centreOn(p){
 const ptrs=new Map(); let pinch0=0, zoom0=1, moved=0, lastTap=0, mid0=null, panDrag=false, didPan=false;
 const midOf = () => { const v=[...ptrs.values()]; return [(v[0].x+v[1].x)/2, (v[0].y+v[1].y)/2]; };
 cv.addEventListener('contextmenu', e=>e.preventDefault());
-cv.addEventListener('pointerdown', e=>{ try { cv.setPointerCapture(e.pointerId); } catch(err){} if (!ptrs.size) didPan=false; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); moved=0; glide++;
+cv.addEventListener('pointerdown', e=>{ if (S.noticeText) notice(''); try { cv.setPointerCapture(e.pointerId); } catch(err){}       // a touch on the picture clears a message, so messages never stand in the way if (!ptrs.size) didPan=false; ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); moved=0; glide++;
   // pan with the Pan button on, a right or middle mouse button, or Shift held
   panDrag = S.panMode || e.button===1 || e.button===2 || e.shiftKey;
   if (ptrs.size===2){ const [a,b]=[...ptrs.values()]; pinch0=Math.hypot(a.x-b.x,a.y-b.y); zoom0=S.zoom; mid0=midOf(); } });
@@ -568,11 +563,7 @@ $('#openBtn').addEventListener('click', e=>{ e.stopPropagation();
   if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ m.hidden=true; $('#openBtn').setAttribute('aria-expanded','false');
     if (b.dataset.v==='live'){ openLiveScan(); return; }
     (b.dataset.v==='scan' ? $('#fileScan') : b.dataset.v==='vscan' ? $('#fileVideo') : $('#file')).click(); })); });
-$('#shapeBtn').addEventListener('click', e=>{ e.stopPropagation();
-  const items=[['photo','Same as the photo','',S.shape==='photo'],['wide','Wide','16 by 9',S.shape==='wide'],['square','Square','',S.shape==='square'],['tall','Tall','9 by 16, for stories',S.shape==='tall']];
-  const m=menu($('#shapeBtn'), '#shapeMenu', items);
-  if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ m.hidden=true; $('#shapeBtn').setAttribute('aria-expanded','false');
-    pushUndo(); S.shape=b.dataset.v; commit(); layout(); })); });
+function setShape(v){ pushUndo(); S.shape=v; commit(); layout(); }
 const PIC_SIZES = [null, 1080, 2048, 2880, 4096];
 // Effects play over a camera move, in preview and in the video.
 const FX = [['none','None','Just the move.'],
@@ -590,8 +581,7 @@ const MOVE_LENGTHS = [4, 6, 10, 20, 30];
 $('#saveBtn').addEventListener('click', e=>{ e.stopPropagation();
   const px = S.adv.exportLong || (MOBILE ? 2048 : 2880);
   const m=menu($('#saveBtn'), '#saveMenu', [['png','Picture',`PNG, ${px} pixels on the long side`],
-    ['size', `Picture size: ${S.adv.exportLong ? S.adv.exportLong+' pixels' : 'Auto'}`, 'Tap to change. Videos stop at 1920.'],
-    ['video','Video','Moves and effects, on the Move tab'],['ply','Points (.ply)','For Blender, MeshLab, CloudCompare'], ...(hasSplats() ? [['spz','Splat, small (.spz)','For SuperSplat and splat apps'],['splat','Splat, full (.ply)','Larger, for any 3DGS tool']] : [])]);
+    ['video','Video','Opens the Move tab, to choose a move and record'],['ply','Points (.ply)','For Blender, MeshLab, CloudCompare'], ...(hasSplats() ? [['spz','Splat, small (.spz)','For SuperSplat and splat apps'],['splat','Splat, full (.ply)','Larger, for any 3DGS tool']] : [])]);
   if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',ev=>{
     if (b.dataset.v==='size'){ ev.stopPropagation(); const i=PIC_SIZES.indexOf(S.adv.exportLong); S.adv.exportLong=PIC_SIZES[(i+1)%PIC_SIZES.length]; persist();
       m.hidden=true; $('#saveBtn').click(); return; }       // reopen with the new size showing
@@ -601,14 +591,14 @@ document.addEventListener('keydown', e=>{ if (e.key!=='Escape') return;
   document.querySelectorAll('.menu').forEach(x=>x.hidden=true); document.querySelectorAll('.tb[aria-haspopup]').forEach(b=>b.setAttribute('aria-expanded','false'));
   if (!$('#info').hidden) $('#info').hidden=true; if (!$('#sheet').hidden) $('#sheetClose').click(); });
 document.addEventListener('click', ()=>{ document.querySelectorAll('.menu').forEach(x=>x.hidden=true); document.querySelectorAll('.tb[aria-haspopup]').forEach(b=>b.setAttribute('aria-expanded','false')); });
-$('#infoBtn').addEventListener('click', e=>{ e.stopPropagation(); const i=$('#info'); i.hidden=!i.hidden; $('#infoBtn').setAttribute('aria-expanded', !i.hidden);
-  if (!i.hidden){ const text='First Return turns a photo into a lidar style point cloud. Depth is worked out on your device, and the photo never leaves it.';
+function showAbout(){ const i=$('#info'); i.hidden=false;
+  { const text='First Return turns a photo into a lidar style point cloud. Depth is worked out on your device, and the photo never leaves it.';
     i.innerHTML = `<p style="display:flex;gap:8px;align-items:center">${sayBtn(text)}<b>${text}</b></p>
       <p>${S.count.toLocaleString()} dots. ${S.nComp} subject${S.nComp===1?'':'s'}. Camera view: ${esc(S.fovSource)}. ${self.crossOriginIsolated ? `Using up to ${Math.min(4, navigator.hardwareConcurrency||2)} processor cores.` : 'Using one processor core.'}${S.planes.length?` ${S.planes.length===1?'A floor':S.planes.length+' floor surfaces'} found in the photo.`:''}${P.light?' Light evened out.':''}</p>
       <p>${esc(S.credit||'')}</p><p>Depth: Depth Anything V2 Small (Apache 2.0). Finder: MediaPipe EfficientDet Lite0 (Apache 2.0). Outlines: MediaPipe Magic Touch (Apache 2.0). Faces: YuNet, OpenCV Zoo (MIT). Runtime: ONNX Runtime Web (MIT). Photoreal: Gaussian splatting (Kerbl and others, 2023), drawn by this app; .spz is Niantic's format (MIT).</p>
       <button class="btn" id="infoClose">Close</button>`;
     $('#infoClose').addEventListener('click',()=>{ i.hidden=true; });
-    i.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say))); } });
+    i.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say))); } }
 $('#info').addEventListener('click', e=>e.stopPropagation());
 
 // A fitted "floor" lying mostly on found people or things is a body or an object, not a floor.

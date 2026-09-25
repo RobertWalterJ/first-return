@@ -37,14 +37,14 @@ button{cursor:pointer}
 .overlay{position:absolute;inset:0;pointer-events:none}
 .lbl{position:absolute;transform:translate(-50%,-100%);white-space:nowrap;color:#fff;font-weight:560;text-shadow:0 0 6px rgba(255,255,255,.55),0 0 16px rgba(255,255,255,.28)}
 .pin{position:absolute;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;border:2px solid var(--accent);background:rgba(114,232,203,.25);pointer-events:none}
-.msgs{position:absolute;left:12px;right:12px;bottom:64px;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none}
+.msgs{position:absolute;left:10px;right:10px;top:10px;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none}
 .banner,.notice{max-width:100%;background:rgba(8,10,12,.88);border:1px solid var(--line2);border-radius:18px;padding:7px 14px;font-size:14px;text-align:center}
 .notice{border-color:var(--accent);color:var(--text);display:flex;align-items:center;gap:10px;text-align:left;padding:6px 14px 6px 6px}
 .notice[hidden]{display:none}
 .notice .say,.banner .say{pointer-events:auto}
 .banner{display:flex;align-items:center;gap:10px;padding:6px 14px 6px 6px}
 .banner[hidden]{display:none}
-.measurebar{padding:12px 14px;overflow-y:auto;max-height:44vh;max-height:44dvh;border-bottom:1px solid var(--line)}
+.measurebar{padding:12px 14px;overflow-y:auto;height:40vh;height:40dvh;border-bottom:1px solid var(--line)}
 .measurebar h3{margin:0 0 8px;font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
 .measurebar h3 .sp{margin-left:auto}
 .msteps{list-style:none;margin:0 0 10px;padding:0;display:grid;gap:6px;counter-reset:ms}
@@ -61,9 +61,10 @@ body.measuring #tray{display:none} body.measuring .msgs{display:none}
 .pin b{position:absolute;left:50%;top:22px;transform:translateX(-50%);white-space:nowrap;font:600 12px var(--ui);color:var(--accent);text-shadow:0 0 4px #000}
 body.locked .side, body.locked .top .tb{pointer-events:none;opacity:.55}
 body.scan .tab[data-tab="subject"]{opacity:.5}
-.float{position:absolute;right:10px;bottom:10px;display:flex;gap:8px}
-.fb{width:44px;height:44px;border-radius:50%;border:1px solid var(--line2);background:rgba(10,12,14,.8);display:grid;place-items:center;padding:0}
-.fb svg{width:22px;height:22px;stroke:var(--text);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.float{position:absolute;right:8px;bottom:8px;display:flex;gap:6px}
+.fb{min-width:52px;height:50px;border-radius:12px;border:1px solid var(--line2);background:rgba(10,12,14,.82);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px 6px}
+.fbl{font-size:10.5px;color:var(--dim);line-height:1} .fb[aria-pressed="true"] .fbl{color:var(--accent)}
+.fb svg{width:20px;height:20px;stroke:var(--text);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .fb[aria-pressed="true"]{border-color:var(--accent)} .fb[aria-pressed="true"] svg{stroke:var(--accent)}
 .recbar{position:absolute;left:0;right:0;top:0;height:3px;background:var(--line)}
 .recbar i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--rec)}
@@ -77,7 +78,7 @@ body.scan .tab[data-tab="subject"]{opacity:.5}
 .tab{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 2px 7px;border:0;background:none;color:var(--dim);font-size:13px;border-top:2px solid transparent}
 .tab svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .tab[aria-selected="true"]{color:var(--accent);border-top-color:var(--accent)}
-.tray{padding:12px 14px 10px;border-bottom:1px solid var(--line);overflow-y:auto;max-height:44vh;max-height:44dvh}
+.tray{padding:12px 14px 10px;border-bottom:1px solid var(--line);overflow-y:auto;height:40vh;height:40dvh}   /* a steady height, so the picture does not jump between tabs */
 .tray h3{margin:0 0 8px;font-size:13.5px;font-weight:650;letter-spacing:.01em;color:#b9c4cb;display:flex;align-items:center;gap:8px}
 .rowlabel{margin:6px 0 4px;font-size:13px;color:var(--dim)}
 .look small{font-size:11.5px;color:var(--dim);padding:0 3px}
@@ -97,6 +98,22 @@ body.scan .tab[data-tab="subject"]{opacity:.5}
 .btn{border:1px solid var(--line2);background:var(--raise);border-radius:8px;padding:10px 14px;font-weight:560;line-height:1.1}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .btn.rec{background:var(--rec);border-color:var(--rec);color:#1a0302}
+/* ---------- the menu tray ---------- */
+.menub{min-width:44px;min-height:44px;margin-right:2px;justify-content:center}
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40}
+.drawer{position:fixed;top:0;bottom:0;left:0;width:min(340px,88vw);z-index:41;background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:10px 14px calc(18px + var(--safe-b))}
+.dhead{display:flex;align-items:center;gap:8px;margin:0 0 6px}
+.dhead b{font-weight:780;font-stretch:125%;letter-spacing:.07em;text-transform:uppercase;font-size:14px;margin-right:auto}
+.dsec{margin:16px 0 6px;font-size:12.5px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.ditem{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:0;background:none;border-radius:10px;padding:10px 8px;font-size:15.5px}
+.ditem:hover,.ditem:focus-visible{background:var(--raise)}
+.ditem svg{width:22px;height:22px;flex:none;stroke:var(--text);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ditem small{display:block;color:var(--dim);font-size:12.5px;margin-top:1px}
+.ditem[aria-pressed="true"] svg{stroke:var(--accent)} .ditem[aria-pressed="true"]{color:var(--accent)}
+.dseg{display:flex;gap:6px;flex-wrap:wrap;padding:4px 8px 8px}
+.dlabel{padding:6px 8px 0;font-size:14px;color:var(--dim)}
+.ctl{margin-top:14px}
+.ctlh{font-size:14px;font-weight:650;color:#cfd8dd} .ctl .stepper{margin-top:2px}
 /* ---------- live scan ---------- */
 .live{position:fixed;inset:0;z-index:50;background:var(--void);display:flex;flex-direction:column;justify-content:space-between;color:#fff}
 body.xr .live{background:transparent}
@@ -165,7 +182,7 @@ body.xr .live{background:transparent}
   .tabs{border-bottom:1px solid var(--line);padding-bottom:0}
   .tab{border-top:0;border-bottom:2px solid transparent}
   .tab[aria-selected="true"]{border-bottom-color:var(--accent)}
-  .tray{max-height:none;flex:1;border-bottom:0;padding:16px 18px}
+  .tray{height:auto;max-height:none;flex:1;border-bottom:0;padding:16px 18px} .measurebar{height:auto;flex:1}
   .looks{display:grid;grid-template-columns:1fr 1fr;overflow:visible} .look{width:auto} .look canvas{height:auto;aspect-ratio:4/3}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -173,25 +190,14 @@ body.xr .live{background:transparent}
 
 <div class="app">
   <header class="top">
+    <button class="tb menub" id="menuBtn" aria-expanded="false" aria-controls="drawer" aria-label="Menu" title="Menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
     <div class="brand"><img class="brandmark" src="mark.svg" alt="" width="26" height="26"><span style="color:inherit">First</span> <span>Return</span></div>
     <button class="tb primary" id="openBtn" aria-haspopup="true" aria-expanded="false" title="Open a photo or a 3D scan"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>Open</button>
     <input id="file" type="file" accept="image/*" hidden>
     <input id="fileScan" type="file" accept=".ply,.splat,.spz" hidden>
     <input id="fileVideo" type="file" accept="video/*" hidden>
-    <div id="live" class="live" hidden>
-      <video id="liveVid" playsinline muted hidden></video>
-      <div class="liveTop"><b>Live scan</b><span id="liveCount">0 views</span><button class="btn" id="liveVoice" aria-pressed="true" title="Spoken guidance on or off">Voice</button></div>
-      <p id="liveIntro" class="liveIntro"></p>
-      <div class="liveBottom">
-        <div class="liveRow"><svg id="liveRing" viewBox="-60 -60 120 120" aria-hidden="true" hidden></svg><canvas id="liveThumb" width="72" height="96" hidden></canvas></div>
-        <p id="liveCue" class="liveCue" role="status" aria-live="polite"></p>
-        <div class="liveBtns"><button class="btn" id="liveCancel">Cancel</button><button class="btn primary" id="liveStart">Start</button><button class="btn primary" id="liveDone" hidden disabled>Make the scan</button></div>
-      </div>
-    </div>
     <input id="fileLooks" type="file" accept=".json,application/json" hidden>
-    <button class="tb" id="shapeBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M6 3v15h15"/><path d="M3 6h15v15"/></svg>Shape</button>
     <button class="tb" id="saveBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>Save</button>
-    <button class="tb" id="infoBtn" aria-expanded="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.5v.5"/></svg>About</button>
   </header>
 
   <div class="stage" id="stage">
@@ -206,11 +212,11 @@ body.xr .live{background:transparent}
     <button class="panpill" id="panPill" hidden>Pan: drag to slide, tap a spot to centre it. Tap here to stop.</button>
     <div class="recbar" id="recbar" hidden><i id="recfill"></i></div>
     <div class="float">
-      <button class="fb" id="photoView" aria-label="Line up with the photo" title="Line up with the photo" hidden><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4"/></svg></button>
-      <button class="fb" id="panBtn" aria-pressed="false" aria-label="Pan: drag slides the view" title="Pan: drag slides the view"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"/><path d="M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/></svg></button>
-      <button class="fb" id="measureBtn" aria-pressed="false" aria-label="Measure" title="Measure"><svg viewBox="0 0 24 24"><path d="M3 16l13-13 5 5-13 13z"/><path d="M7 12l2 2M10 9l2 2M13 6l2 2"/></svg></button>
-      <button class="fb" id="spin" aria-pressed="false" aria-label="Turntable" title="Turntable"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="15" rx="8" ry="3"/><path d="M12 12V4"/><path d="M16 7l-4-3-4 3"/></svg></button>
-      <button class="fb" id="compareBtn" aria-label="Hold to see the original photo" title="Hold to see the original photo"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 5v14"/><path d="M12 9l9 6"/></svg></button>
+      <button class="fb" id="photoView" aria-label="Line up with the photo" title="Line up with the photo" hidden><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 3-6.2"/><path d="M4 4v4h4"/></svg><span class="fbl">Line up</span></button>
+      <button class="fb" id="panBtn" aria-pressed="false" aria-label="Pan: drag slides the view" title="Pan: drag slides the view"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"/><path d="M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/></svg><span class="fbl">Pan</span></button>
+      <button class="fb" id="measureBtn" aria-pressed="false" aria-label="Measure" title="Measure"><svg viewBox="0 0 24 24"><path d="M3 16l13-13 5 5-13 13z"/><path d="M7 12l2 2M10 9l2 2M13 6l2 2"/></svg><span class="fbl">Measure</span></button>
+      <button class="fb" id="spin" aria-pressed="false" aria-label="Turntable" title="Turntable"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="15" rx="8" ry="3"/><path d="M12 12V4"/><path d="M16 7l-4-3-4 3"/></svg><span class="fbl">Spin</span></button>
+      <button class="fb" id="compareBtn" aria-label="Hold to see the original photo" title="Hold to see the original photo"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 5v14"/><path d="M12 9l9 6"/></svg><span class="fbl">Compare</span></button>
     </div>
     <div class="busy" id="busy" role="status" aria-live="polite" hidden><div><div id="busyText">Working</div><div class="bar"><i id="busyBar"></i></div></div></div>
   </div>
@@ -229,6 +235,19 @@ body.xr .live{background:transparent}
 </div>
 
 <div class="menu" id="openMenu" hidden></div>
+<div class="scrim" id="scrim" hidden></div>
+<nav class="drawer" id="drawer" aria-label="Menu" hidden></nav>
+    <div id="live" class="live" hidden>
+  <video id="liveVid" playsinline muted hidden></video>
+  <div class="liveTop"><b>Live scan</b><span id="liveCount">0 views</span><button class="btn" id="liveVoice" aria-pressed="true" title="Spoken guidance on or off">Voice</button></div>
+  <p id="liveIntro" class="liveIntro"></p>
+  <div class="liveBottom">
+    <div class="liveRow"><svg id="liveRing" viewBox="-60 -60 120 120" aria-hidden="true" hidden></svg><canvas id="liveThumb" width="72" height="96" hidden></canvas></div>
+    <p id="liveCue" class="liveCue" role="status" aria-live="polite"></p>
+    <div class="liveBtns"><button class="btn" id="liveCancel">Cancel</button><button class="btn primary" id="liveStart">Start</button><button class="btn primary" id="liveDone" hidden disabled>Make the scan</button></div>
+  </div>
+</div>
+
 <div class="menu" id="shapeMenu" hidden></div>
 <div class="menu" id="saveMenu" hidden></div>
 <div class="info" id="info" hidden></div>
