@@ -253,3 +253,31 @@ Everything before RF-DETR adds about 8 KB and no models.
 - Tap to centre: with Pan on, a single tap centres on a spot, so there is no timing.
 - Weight: the built page drops full-line comments and indentation, so it is 194 KB, down from 225 KB (the sources keep them).
 - New: Focus (depth of field for dots and splats) and the Focus pull effect.
+
+---
+
+# Round six, 25 September 2026: Scan from video, audit and research
+
+## Fixed now (the audit's quick batch)
+- **Symmetric (Horn) scale.** Every pose step used a one-sided scale, which is biased low when both point sets are noisy. Chained over 30 frames, that shrank the scene by 25 to 45 percent. Each step is also gated to 0.6 to 1.6x.
+- **Inliers in pixels.** Inliers are judged by where a point lands in the picture (3.5 px) rather than by distance along the depth ray, where depth from one photo is least reliable. Depth now only gates.
+- **Progress stays readable.** The scan's own progress text is no longer overwritten by the depth step.
+- **Seeking cannot hang.** Seeks time out, and each seek waits for the decoded frame (requestVideoFrameCallback).
+- **Long videos.** A long video is cut to what the frame budget covers (about 0.4 s apart), and the result says so.
+- **Lost frames.** A frame that could not be placed gets a second try against the nearest placed frames.
+- **FAST.** Uses the proper FAST-9 pre-test.
+- **Tidying.** Empty black pixels no longer create voxels. The video decoder is released however the scan ends.
+
+## Ranked plan (audit and research agree)
+1. **Pose from 2D matches plus a depth fit for each frame.** PnP on pixel error against points already placed in the world. Then fit each frame's disparity as 1/z = a*d + b to those points, which removes the fixed shift and the bending. This is the biggest geometry gain (3 to 5 days).
+2. **Capture quality.** Keyframes chosen by sharpness (variance of the Laplacian) and parallax, and in-app capture with exposure and white balance locked (applyConstraints) and a "too fast" cue from the gyro. No timers.
+3. **Multi-view consistency in fusion.** Keep a pixel only where 2 or more neighbouring depth maps agree, and take a weighted mean or median. This removes doubled surfaces and floaters.
+4. **Swap the depth model to Depth Anything 3 Small** (Apache-2.0, single-view ONNX exists), and run it on WebGPU where the phone has it.
+5. **Focal length** found by a 1D search that maximises inliers.
+6. **Oriented, disc-like splats** from depth normals (reuses the photo-splat logic).
+7. **Loop closure, a pose graph, then windowed bundle adjustment** (Levenberg-Marquardt with a Schur complement; under a second for about 40 cameras).
+8. **Later: DA3-Small's multi-view pose-and-depth graph** exported to ONNX and run in windows of 8 to 16 keyframes on WebGPU.
+9. **Later: optional Brush "Refine"** (Apache-2.0, trains in the browser on WebGPU) seeded from the fused splats, on phones that support it.
+
+**Avoid (licence):** DUSt3R and MASt3R, MV-DUSt3R+, Fast3R, Pi3, the original VGGT, ORB-SLAM3 (GPL), and Video Depth Anything Base and Large.
+**Too big for a phone:** MapAnything (its Apache variant is useful as a desktop reference), VGGT-1B-Commercial and AnySplat.

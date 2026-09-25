@@ -81,10 +81,10 @@ async function loadModel(){
   return session;
 }
 // onReady runs once the depth runtime is up: starting another model's runtime at the same moment hangs both
-async function estimateDepth(photoCanvas, onReady){
+async function estimateDepth(photoCanvas, onReady, quiet){
   const sess = await loadModel();
   if (onReady) onReady();
-  busy('Reading depth from the photo', null); await tick();
+  if (!quiet){ busy('Reading depth from the photo', null); await tick(); }
   const LONG = MOBILE ? 434 : 518, s = LONG/Math.max(photoCanvas.width, photoCanvas.height);
   const mw = Math.max(14, Math.round(photoCanvas.width*s/14)*14), mh = Math.max(14, Math.round(photoCanvas.height*s/14)*14);
   const c = document.createElement('canvas'); c.width=mw; c.height=mh; const x=c.getContext('2d',{willReadFrequently:true});
