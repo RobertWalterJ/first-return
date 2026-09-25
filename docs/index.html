@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="theme-color" content="#0b0d0f">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icon.svg">
+<link rel="icon" href="mark.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <script>window.coi={coepCredentialless:()=>true,quiet:true};</script>
 <script src="coi-serviceworker.js"></script>
 </head>
@@ -36,6 +37,7 @@ button{cursor:pointer}
 .top{grid-area:top;display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
 .brand{font-weight:780;font-stretch:125%;letter-spacing:.07em;text-transform:uppercase;font-size:15px;margin-right:auto;white-space:nowrap}
 .brand span{color:var(--accent)}
+.brand{display:flex;align-items:center;gap:8px} .brandmark{width:26px;height:26px;flex:none}
 .tb{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:52px;padding:4px 6px;border:0;background:none;border-radius:6px;font-size:12.5px;color:var(--dim)}
 .tb svg{width:22px;height:22px;stroke:var(--text);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .tb:hover,.tb[aria-expanded="true"]{background:var(--raise);color:var(--text)}
@@ -155,7 +157,7 @@ body.scan .tab[data-tab="subject"]{opacity:.5}
 
 <div class="app">
   <header class="top">
-    <div class="brand">First <span>Return</span></div>
+    <div class="brand"><img class="brandmark" src="mark.svg" alt="" width="26" height="26"><span style="color:inherit">First</span> <span>Return</span></div>
     <button class="tb primary" id="openBtn" aria-haspopup="true" aria-expanded="false" title="Open a photo or a 3D scan"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>Open</button>
     <input id="file" type="file" accept="image/*" hidden>
     <input id="fileScan" type="file" accept=".ply,.splat,.spz" hidden>

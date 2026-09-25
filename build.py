@@ -7,7 +7,7 @@ js = "\n".join(p.read_text(encoding="utf-8") for p in sorted((root / "src" / "js
 head = ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">\n'
         '<meta name="theme-color" content="#0b0d0f">\n<link rel="manifest" href="manifest.webmanifest">\n'
-        '<link rel="icon" href="icon.svg">\n'
+        '<link rel="icon" href="mark.svg" type="image/svg+xml">\n<link rel="apple-touch-icon" href="apple-touch-icon.png">\n'
         # coi-serviceworker (MIT) adds the cross-origin isolation headers GitHub Pages cannot send, so the
         # models can use several CPU cores. It reloads the page once on the first visit.
         '<script>window.coi={coepCredentialless:()=>true,quiet:true};</script>\n<script src="coi-serviceworker.js"></script>\n'
