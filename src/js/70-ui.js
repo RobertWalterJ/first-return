@@ -196,7 +196,6 @@ function renderTray(){
     const fx = FX.find(f=>f[0]===S.fx) || FX[0], st = S.strength||'gentle';
     const moveHint = fx[2]+' The move starts from the view on screen.';
     tr.innerHTML = `<h3>Move</h3><div class="scroller">${MOVE_NAMES.map(([v,n])=>`<button class="chip" data-move="${v}" aria-pressed="${mv===v}">${n}</button>`).join('')}</div>
-      ${S.clip ? `<h3 style="margin-top:10px">Clip frame</h3><input type="range" id="clipI" min="0" max="${S.clip.n-1}" step="1" value="${S.clip.want}" aria-label="Clip frame" style="width:100%;accent-color:var(--accent)">` : ''}
       <h3 style="margin-top:10px">Effect</h3><div class="scroller">${fxs.map(([v,n])=>`<button class="chip" data-fx="${v}" aria-pressed="${fx[0]===v}">${n}</button>`).join('')}</div>
       <h3 style="margin-top:10px">Strength</h3>
       <div class="scroller">${STRENGTH.map(([v,n])=>`<button class="chip" data-strength="${v}" aria-pressed="${st===v}">${n}</button>`).join('')}</div>
@@ -206,7 +205,6 @@ function renderTray(){
     // a new tap cuts off the look still playing, so trying options never means waiting
     const peek = async () => { if (S.peeking){ S.stopReq=true; await S.playP; } S.playP = previewMove(S.move||'push', S.moveLen||6, Math.min(1, 4/(S.moveLen||6)), true); };
     tr.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>{ S.move=b.dataset.move; persist(); renderTray(); peek(); }));
-    if ($('#clipI')) $('#clipI').addEventListener('change', async e=>{ S.clip.want=+e.target.value; await clipFrame(S.clip.want); S.dirtyDraw=true; });
     $('#loopChip').addEventListener('click',()=>{ S.loop=!S.loop; persist(); renderTray(); });
     $('#lenChip').addEventListener('click',()=>{ const i=MOVE_LENGTHS.indexOf(S.moveLen||6); S.moveLen=MOVE_LENGTHS[(i+1)%MOVE_LENGTHS.length]; persist(); renderTray(); });
     tr.querySelectorAll('[data-strength]').forEach(b=>b.addEventListener('click',()=>{ S.strength=b.dataset.strength; persist(); renderTray(); peek(); }));
@@ -566,9 +564,9 @@ function menu(btn, id, items){
   return m;
 }
 $('#openBtn').addEventListener('click', e=>{ e.stopPropagation();
-  const m=menu($('#openBtn'), '#openMenu', [['photo','Photo','From your camera or gallery'],['clip','Video clip','Up to 6 seconds; every frame gets depth'],['scan','3D scan','A .ply, .splat or .spz from Polycam, Scaniverse, a lidar app or a splat trainer']]);
+  const m=menu($('#openBtn'), '#openMenu', [['photo','Photo','From your camera or gallery'],['vscan','Scan from video','Walk slowly around something for 10 to 30 seconds; makes a 3D splat here'],['scan','3D scan','A .ply, .splat or .spz from Polycam, Scaniverse, a lidar app or a splat trainer']]);
   if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ m.hidden=true; $('#openBtn').setAttribute('aria-expanded','false');
-    (b.dataset.v==='scan' ? $('#fileScan') : b.dataset.v==='clip' ? $('#fileClip') : $('#file')).click(); })); });
+    (b.dataset.v==='scan' ? $('#fileScan') : b.dataset.v==='vscan' ? $('#fileVideo') : $('#file')).click(); })); });
 $('#shapeBtn').addEventListener('click', e=>{ e.stopPropagation();
   const items=[['photo','Same as the photo','',S.shape==='photo'],['wide','Wide','16 by 9',S.shape==='wide'],['square','Square','',S.shape==='square'],['tall','Tall','9 by 16, for stories',S.shape==='tall']];
   const m=menu($('#shapeBtn'), '#shapeMenu', items);
@@ -634,7 +632,7 @@ function protectFound(picks){
 // opened is dropped instead of landing on the wrong picture.
 // restore: {picks} when coming back to earlier work, so the finder does not run again
 async function setPhoto(ph, D, credit, restore){
-  const g = S.gen; S.clip = null;
+  const g = S.gen;
   if (!restore) mediaId = null;      // until this photo is saved, nothing is paired with the previous one
   S.scan=null; document.body.classList.remove('scan'); $('#compareBtn').hidden=false; S.roll=0; S.rollAuto=0; S.pitchTan=0;
   if (S.colourBeforeScan){ P.colour=S.colourBeforeScan; S.colourBeforeScan=null; }

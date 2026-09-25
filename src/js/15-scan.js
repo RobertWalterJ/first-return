@@ -134,7 +134,7 @@ function buildScanCloud(cfg){
 }
 
 async function openScan(file){
-  const g = ++S.gen; S.clip = null;
+  const g = ++S.gen;
   busy('Reading the scan', null); await tick();
   const name = (file.name||'').toLowerCase(), buf = await file.arrayBuffer();
   let sc;
@@ -143,14 +143,18 @@ async function openScan(file){
     sc = {n:pts.n, pos:pts.pos, col:pts.col, upHint:null, hasColour:true, splats:sp};
   } else sc = parsePly(buf);
   if (g!==S.gen) return;
+  await finishScan(sc, file.name, g);
+}
+// A parsed scan (from a file, or made from a video) is levelled, framed and shown.
+async function finishScan(sc, name, g, credit){
   if (sc.n < 100) throw new Error('only '+sc.n+' usable points in this file');
-  busy('Levelling the scan', null); await tick();
+  busy('Levelling the scan', null); await tick(); if (g!==S.gen) return;
   const L = levelScan(sc);
   if (sc.splats) levelSplats(sc.splats, L.Rm, L.shift);
   S.scan = {n:sc.n, pos:L.pos, col:sc.col, floor:L.floor, splats:sc.splats};
   S.photo = S.photoSrc = {w:1600, h:1200, data:null}; S.photoCanvas = null; S.depth = S.depthSrc = null;
   S.tanV = S.tanVAuto = Math.tan(25*Math.PI/180); Object.assign(S.adv, {fov:null, ratio:null, roll:null, beams:null}); S.dbg='result'; showDebug(); S.planes=[]; S.plane=null; S.ground=null; S.compMap=null; S.comps=[];
-  S.fovSource = 'a 3D scan'; S.credit = `3D scan: ${file.name}, ${sc.n.toLocaleString()} points${L.levelled ? `, levelled on its floor${L.tilt>=1 ? ` (it was ${L.tilt.toFixed(0)}° off)` : ''}` : ''}. It stayed on this device.`;
+  S.fovSource = 'a 3D scan'; S.credit = credit || `3D scan: ${name}, ${sc.n.toLocaleString()} points${L.levelled ? `, levelled on its floor${L.tilt>=1 ? ` (it was ${L.tilt.toFixed(0)}° off)` : ''}` : ''}. It stayed on this device.`;
   S.undo=[]; undoArmed=true; S.placing=false; S.panMode=false; syncPan(); S.autoFrame=false; S.home=null; S.refFrozen=true; S.pitchTan=0;
   S.picks=[]; S.labels=[]; S.faces=[]; S.faceMask=null; S.mLines=[]; S.mPts=[]; S.mScale=null; S.mCorr=1; S.hzV=null; S.rollAuto=0; S.roll=0; S.compCache=null;
   S.target=[0,0,-L.D]; S.refDist=L.D; S.pivot=S.target.slice(); S.pan=[0,0,0]; S.userMoved=false;
@@ -159,6 +163,6 @@ async function openScan(file){
   if (FX_NEEDS_SPLATS.has(S.fx) && !sc.splats) S.fx='none';
   const Lk=LOOKS[look]; S.yaw=Lk.yaw; S.pitch=Math.max(Lk.pitch, 12); S.zoom=Lk.zoom;
   invalidateCompare(); $('#compareBtn').hidden = true;
-  busy(null); banner(''); notice(`Opened a 3D scan: ${sc.n.toLocaleString()} points${L.levelled ? ', levelled on its floor' : ''}.`);
+  busy(null); banner(''); notice(sc.message || `Opened a 3D scan: ${sc.n.toLocaleString()} points${L.levelled ? ', levelled on its floor' : ''}.`);
   document.body.classList.add('scan'); layout(); S.dirtyBuild=true; renderTray(); queueThumbs(); viewButton();
 }
