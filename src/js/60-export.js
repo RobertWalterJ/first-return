@@ -145,6 +145,7 @@ async function recordMove(move, secs){
       enc.configure(config);
       await withCanvasSize(W, H, async ()=>{
         for (let i=0;i<frames && !failed && !S.stopReq;i++){
+          if (S.clip) await clipFrame(clipIndexAt(Math.max(0, i-hold)/fps, secs));     // a clip moves on with the video
           frameAt(i);
           const vf = new VideoFrame(rc, {timestamp:Math.round(i*1e6/fps), duration:Math.round(1e6/fps)});
           enc.encode(vf, {keyFrame: i%60===0}); vf.close();
@@ -171,6 +172,7 @@ async function recordMove(move, secs){
     }
   } catch(err){ console.error(err); notice('The video could not be made: '+String(err.message||err)); }
   const stopped = S.stopReq; if (stopped){ blob=null; notice('Stopped. No video was saved.'); }
+  if (S.clip) await clipFrame(S.clip.want);                                           // back to the chosen still
   S.recording=false; S.exporting=false; S.stopReq=false; S.fxNow='none'; $('#recbar').hidden=true; $('#stopBtn').hidden=true; document.body.classList.remove('locked'); stayAwake(false); Object.assign(S, base); S.dirtyDraw=true;
   if (blob){ banner(modeText()); showSheet(URL.createObjectURL(blob), 'video', 'first-return.'+ext, blob); }
 }

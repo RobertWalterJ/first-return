@@ -164,6 +164,7 @@ body.scan .tab[data-tab="subject"]{opacity:.5}
     <button class="tb primary" id="openBtn" aria-haspopup="true" aria-expanded="false" title="Open a photo or a 3D scan"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>Open</button>
     <input id="file" type="file" accept="image/*" hidden>
     <input id="fileScan" type="file" accept=".ply,.splat,.spz" hidden>
+    <input id="fileClip" type="file" accept="video/*" hidden>
     <input id="fileLooks" type="file" accept=".json,application/json" hidden>
     <button class="tb" id="shapeBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M6 3v15h15"/><path d="M3 6h15v15"/></svg>Shape</button>
     <button class="tb" id="saveBtn" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>Save</button>
@@ -703,7 +704,7 @@ out[o+6]=kind; out[o+7]=hash2(i,13,17); out[o+8]=0.299*cr+0.587*cg+0.114*cb; out
 return {out, comp, n:m, cinfo:[], live:[], floorPlane:null};
 }
 async function openScan(file){
-const g = ++S.gen;
+const g = ++S.gen; S.clip = null;
 busy('Reading the scan', null); await tick();
 const name = (file.name||'').toLowerCase(), buf = await file.arrayBuffer();
 let sc;
@@ -1981,6 +1982,7 @@ const enc = new VideoEncoder({output:(chunk,meta)=>muxer.addVideoChunk(chunk,met
 enc.configure(config);
 await withCanvasSize(W, H, async ()=>{
 for (let i=0;i<frames && !failed && !S.stopReq;i++){
+if (S.clip) await clipFrame(clipIndexAt(Math.max(0, i-hold)/fps, secs));     // a clip moves on with the video
 frameAt(i);
 const vf = new VideoFrame(rc, {timestamp:Math.round(i*1e6/fps), duration:Math.round(1e6/fps)});
 enc.encode(vf, {keyFrame: i%60===0}); vf.close();
@@ -2007,9 +2009,66 @@ blob = new Blob(chunks, {type:mime.split(';')[0]});
 }
 } catch(err){ console.error(err); notice('The video could not be made: '+String(err.message||err)); }
 const stopped = S.stopReq; if (stopped){ blob=null; notice('Stopped. No video was saved.'); }
+if (S.clip) await clipFrame(S.clip.want);                                           // back to the chosen still
 S.recording=false; S.exporting=false; S.stopReq=false; S.fxNow='none'; $('#recbar').hidden=true; $('#stopBtn').hidden=true; document.body.classList.remove('locked'); stayAwake(false); Object.assign(S, base); S.dirtyDraw=true;
 if (blob){ banner(modeText()); showSheet(URL.createObjectURL(blob), 'video', 'first-return.'+ext, blob); }
 }
+async function openClip(file){
+const g = ++S.gen, url = URL.createObjectURL(file), vid = document.createElement('video');
+vid.muted = true; vid.playsInline = true; vid.preload = 'auto'; vid.src = url;
+busy('Opening the clip', null);
+await new Promise((res, rej)=>{ vid.onloadeddata = res; vid.onerror = () => rej(new Error('this video could not be read')); });
+if (!isFinite(vid.duration)){ vid.currentTime = 1e7; await new Promise(res=>{ vid.ondurationchange = res; vid.onseeked = res; setTimeout(res, 3000); }); vid.currentTime = 0; }
+if (!(vid.duration > 0.2) || !isFinite(vid.duration)) throw new Error('this clip has no length the browser can read');
+const fps = MOBILE ? 6 : 8, dur = Math.min(6, vid.duration), n = Math.max(2, Math.min(48, Math.floor(dur*fps)));
+const LONG = MOBILE ? 960 : 1280, s = Math.min(1, LONG/Math.max(vid.videoWidth, vid.videoHeight));
+const w = Math.round(vid.videoWidth*s), h = Math.round(vid.videoHeight*s);
+const frames = []; let lo = null, hi = null;
+for (let i=0;i<n;i++){
+busy(`Reading depth, frame ${i+1} of ${n}`, i/n);
+vid.currentTime = Math.min(dur - 0.01, i/fps);
+await new Promise(res=>{ vid.onseeked = res; });
+if (g!==S.gen){ URL.revokeObjectURL(url); return; }
+const c = document.createElement('canvas'); c.width=w; c.height=h; c.getContext('2d').drawImage(vid, 0, 0, w, h);
+const raw = await estimateDepth(c); if (g!==S.gen){ URL.revokeObjectURL(url); return; }
+const srt = Float32Array.from(raw.d).sort(), l0 = srt[Math.floor(srt.length*0.005)], h0 = srt[Math.min(srt.length-1, Math.floor(srt.length*0.9995))];
+lo = lo==null ? l0 : lo*0.75 + l0*0.25; hi = hi==null ? h0 : hi*0.75 + h0*0.25;
+const d = new Float32Array(raw.d.length); for (let k=0;k<d.length;k++) d[k] = Math.min(1, Math.max(0, (raw.d[k]-lo)/(hi-lo||1)));
+frames.push({blob: await canvasBlob(c), depth: {w:raw.w, h:raw.h, d}});
+}
+URL.revokeObjectURL(url);
+const bmp = await createImageBitmap(frames[0].blob), c0 = document.createElement('canvas'); c0.width=w; c0.height=h; const x0 = c0.getContext('2d', {willReadFrequently:true}); x0.drawImage(bmp, 0, 0);
+const ph = {canvas:c0, w, h, data:x0.getImageData(0,0,w,h).data, fov:{tanV:Math.tan(25*Math.PI/180), src:'video clip, lens assumed'}, url:URL.createObjectURL(frames[0].blob)};
+S.clip = null;
+await setPhoto(ph, frames[0].depth, `Video clip: ${n} frames over ${dur.toFixed(1)} seconds. It stayed on this device.`);
+if (g!==S.gen) return;
+S.picks.forEach(p=>{ delete p.seg; delete p.box; });
+S.clip = {frames, fps, n, w, h, shown:0, want:0};
+notice(`Opened a clip: ${n} frames. Moves and effects play it in the video; Clip frame on the Move tab picks the still.`);
+renderTray();
+}
+async function clipFrame(i){
+const C = S.clip; if (!C) return; i = Math.max(0, Math.min(C.n-1, i|0)); if (C.shown===i && S.photoSrc && S.photoSrc.clipI===i) return;
+const F = C.frames[i], bmp = await createImageBitmap(F.blob), c = document.createElement('canvas'); c.width=C.w; c.height=C.h;
+const x = c.getContext('2d', {willReadFrequently:true}); x.drawImage(bmp, 0, 0);
+S.photoCanvas = c; S.photo = S.photoSrc = {w:C.w, h:C.h, data:x.getImageData(0,0,C.w,C.h).data, clipI:i};
+S.depthSrc = S.depth = refineDepth(F.depth, c); S.sky = skyMask(S.depth);
+S.ground = groundMask(S.depth, S.planes); S.autoCut = otsu(S.depth.d, S.ground);
+S.depthVer++; S.compCache = null; S.fillCache = null;
+if (S.anon) applyAnon();
+const keep = {target:S.target.slice(), pivot:S.pivot.slice(), pan:S.pan.slice(), userMoved:S.userMoved, rng:S.rng.slice(), yr:S.yr.slice()};
+S.userMoved = true; build(); Object.assign(S, keep);
+C.shown = i;
+}
+function clipIndexAt(t, secs){
+const C = S.clip; if (!C) return 0;
+const f = t*C.fps; if (!S.loop) return Math.min(C.n-1, Math.floor(f));
+const period = 2*(C.n-1); let k = Math.floor(f) % period; if (k >= C.n) k = period - k; return k;
+}
+$('#fileClip').addEventListener('change', async e=>{
+const f = e.target.files[0]; if (!f) return; e.target.value='';
+try { await openClip(f); } catch(err){ console.error(err); busy(null); notice('Could not read that clip: '+(err.message||err)); }
+});
 const SESSION_DB = 'first-return-session';
 function sessionDb(){
 return new Promise((res, rej)=>{ const r = indexedDB.open(SESSION_DB, 1);
@@ -2270,6 +2329,7 @@ const fxs = FX.filter(([v])=>!FX_NEEDS_SPLATS.has(v)||hasSplats()); if (!fxs.som
 const fx = FX.find(f=>f[0]===S.fx) || FX[0], st = S.strength||'gentle';
 const moveHint = fx[2]+' The move starts from the view on screen.';
 tr.innerHTML = `<h3>Move</h3><div class="scroller">${MOVE_NAMES.map(([v,n])=>`<button class="chip" data-move="${v}" aria-pressed="${mv===v}">${n}</button>`).join('')}</div>
+${S.clip ? `<h3 style="margin-top:10px">Clip frame</h3><input type="range" id="clipI" min="0" max="${S.clip.n-1}" step="1" value="${S.clip.want}" aria-label="Clip frame" style="width:100%;accent-color:var(--accent)">` : ''}
 <h3 style="margin-top:10px">Effect</h3><div class="scroller">${fxs.map(([v,n])=>`<button class="chip" data-fx="${v}" aria-pressed="${fx[0]===v}">${n}</button>`).join('')}</div>
 <h3 style="margin-top:10px">Strength</h3>
 <div class="scroller">${STRENGTH.map(([v,n])=>`<button class="chip" data-strength="${v}" aria-pressed="${st===v}">${n}</button>`).join('')}</div>
@@ -2277,6 +2337,7 @@ tr.innerHTML = `<h3>Move</h3><div class="scroller">${MOVE_NAMES.map(([v,n])=>`<b
 <div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button><button class="chip" id="lenChip" aria-label="Length ${len} seconds, tap to change">Length ${len} s</button><button class="chip" id="loopChip" aria-pressed="${!!S.loop}">Loop</button></div>`;
 const peek = async () => { if (S.peeking){ S.stopReq=true; await S.playP; } S.playP = previewMove(S.move||'push', S.moveLen||6, Math.min(1, 4/(S.moveLen||6)), true); };
 tr.querySelectorAll('[data-move]').forEach(b=>b.addEventListener('click',()=>{ S.move=b.dataset.move; persist(); renderTray(); peek(); }));
+if ($('#clipI')) $('#clipI').addEventListener('change', async e=>{ S.clip.want=+e.target.value; await clipFrame(S.clip.want); S.dirtyDraw=true; });
 $('#loopChip').addEventListener('click',()=>{ S.loop=!S.loop; persist(); renderTray(); });
 $('#lenChip').addEventListener('click',()=>{ const i=MOVE_LENGTHS.indexOf(S.moveLen||6); S.moveLen=MOVE_LENGTHS[(i+1)%MOVE_LENGTHS.length]; persist(); renderTray(); });
 tr.querySelectorAll('[data-strength]').forEach(b=>b.addEventListener('click',()=>{ S.strength=b.dataset.strength; persist(); renderTray(); peek(); }));
@@ -2603,9 +2664,9 @@ m.hidden=false; btn.setAttribute('aria-expanded','true');
 return m;
 }
 $('#openBtn').addEventListener('click', e=>{ e.stopPropagation();
-const m=menu($('#openBtn'), '#openMenu', [['photo','Photo','From your camera or gallery'],['scan','3D scan','A .ply file from Polycam, a lidar app or a splat trainer']]);
+const m=menu($('#openBtn'), '#openMenu', [['photo','Photo','From your camera or gallery'],['clip','Video clip','Up to 6 seconds; every frame gets depth'],['scan','3D scan','A .ply, .splat or .spz from Polycam, Scaniverse, a lidar app or a splat trainer']]);
 if (m) m.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ m.hidden=true; $('#openBtn').setAttribute('aria-expanded','false');
-(b.dataset.v==='scan' ? $('#fileScan') : $('#file')).click(); })); });
+(b.dataset.v==='scan' ? $('#fileScan') : b.dataset.v==='clip' ? $('#fileClip') : $('#file')).click(); })); });
 $('#shapeBtn').addEventListener('click', e=>{ e.stopPropagation();
 const items=[['photo','Same as the photo','',S.shape==='photo'],['wide','Wide','16 by 9',S.shape==='wide'],['square','Square','',S.shape==='square'],['tall','Tall','9 by 16, for stories',S.shape==='tall']];
 const m=menu($('#shapeBtn'), '#shapeMenu', items);
@@ -2663,7 +2724,7 @@ const i=y*D.w+x; if (!p.seg || p.seg[i]) G[i]=0; } }
 S.compCache=null;
 }
 async function setPhoto(ph, D, credit, restore){
-const g = S.gen;
+const g = S.gen; S.clip = null;
 if (!restore) mediaId = null;      // until this photo is saved, nothing is paired with the previous one
 S.scan=null; document.body.classList.remove('scan'); $('#compareBtn').hidden=false; S.roll=0; S.rollAuto=0; S.pitchTan=0;
 if (S.colourBeforeScan){ P.colour=S.colourBeforeScan; S.colourBeforeScan=null; }

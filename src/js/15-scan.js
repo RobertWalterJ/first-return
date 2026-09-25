@@ -134,7 +134,7 @@ function buildScanCloud(cfg){
 }
 
 async function openScan(file){
-  const g = ++S.gen;
+  const g = ++S.gen; S.clip = null;
   busy('Reading the scan', null); await tick();
   const name = (file.name||'').toLowerCase(), buf = await file.arrayBuffer();
   let sc;
