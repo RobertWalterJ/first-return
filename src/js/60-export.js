@@ -47,7 +47,7 @@ async function savePicture(){
   const [W,H] = exportSize(MOBILE ? 2048 : 2880);
   const c2 = document.createElement('canvas'); c2.width=W; c2.height=H; const x=c2.getContext('2d');
   S.exporting=true; try { withCanvasSize(W, H, ()=>{ draw(W,H); x.drawImage(cv,0,0); }); } finally { S.exporting=false; }
-  drawLabels2D(x, W, H);
+  drawLabels2D(x, W, H); drawMeasures2D(x, W, H);
   c2.toBlob(b=>{ busy(null); showSheet(URL.createObjectURL(b), 'image', 'first-return.png', b); }, 'image/png');
 }
 async function savePly(){
@@ -125,7 +125,7 @@ async function recordMove(move, secs){
   const [W,H] = exportSize(MOBILE ? 1280 : 1920, 1920);
   const rc=document.createElement('canvas'); rc.width=W; rc.height=H; const rx=rc.getContext('2d');
   // a loop's last frame stops one short of its first, so the repeat is seamless
-  const frameAt = i => { const t = S.loop||LOOPING.has(move) ? i/frames : (i-hold)/(frames-2*hold-1), lt=loopT(move, Math.min(1,Math.max(0,t))); Object.assign(S, poseAt(base, move, lt, secs)); S.fxT=lt; S.fxTime=i/fps; draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); };
+  const frameAt = i => { const t = S.loop||LOOPING.has(move) ? i/frames : (i-hold)/(frames-2*hold-1), lt=loopT(move, Math.min(1,Math.max(0,t))); Object.assign(S, poseAt(base, move, lt, secs)); S.fxT=lt; S.fxTime=i/fps; draw(W,H); rx.drawImage(cv,0,0); drawLabels2D(rx,W,H); drawMeasures2D(rx,W,H); };
   S.recording=true; S.exporting=true; S.stopReq=false; S.fxNow=S.fx||'none'; S.spin=false; syncSpin(); $('#recbar').hidden=false; $('#stopBtn').hidden=false; document.body.classList.add('locked'); stayAwake(true);
   let blob=null, ext='mp4';
   try {

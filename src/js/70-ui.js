@@ -486,7 +486,8 @@ cv.addEventListener('pointermove', e=>{ const p=ptrs.get(e.pointerId); if(!p || 
   S.dirtyDraw=true; viewButton(); });
 cv.addEventListener('pointerup', e=>{
   if (ptrs.size===1 && moved<8){ const r=cv.getBoundingClientRect(), now=performance.now(), cx=e.clientX-r.left, cy=e.clientY-r.top;
-    if (S.panMode && S.tab!=='subject' && !S.placing){ const hit=pickPoint(cx,cy); if (hit) centreOn(hit.p); }      // no timing needed
+    if (S.measure){ measureTap(cx, cy); }
+    else if (S.panMode && S.tab!=='subject' && !S.placing){ const hit=pickPoint(cx,cy); if (hit) centreOn(hit.p); }      // no timing needed
     else if (S.tab!=='subject' && !S.placing && now-lastTap<320){ const hit=pickPoint(cx,cy); if (hit) centreOn(hit.p); lastTap=0; }
     else { lastTap=now; onTap(cx, cy); } }
   ptrs.delete(e.pointerId); pinch0=0; mid0 = ptrs.size===2 ? midOf() : null;
@@ -530,6 +531,7 @@ function syncSpin(){ $('#spin').setAttribute('aria-pressed', S.spin); }
 $('#photoView').addEventListener('click', resetView);
 $('#spin').addEventListener('click', ()=>{ S.spin=!S.spin; syncSpin(); });
 function syncPan(){ $('#panBtn').setAttribute('aria-pressed', S.panMode); $('#panPill').hidden = !S.panMode; }
+$('#panBtn').addEventListener('click', ()=>{ if (S.measure) setMeasure(false); });
 $('#panBtn').addEventListener('click', ()=>{ S.panMode=!S.panMode; syncPan(); });
 $('#panPill').addEventListener('click', ()=>{ S.panMode=false; syncPan(); });
 let compareURL=null;
@@ -647,7 +649,7 @@ async function setPhoto(ph, D, credit, restore){
   if (tv && Math.abs(tv.roll) > 0.4*Math.PI/180 && Math.abs(tv.roll) < 12*Math.PI/180) S.rollAuto = tv.roll;
   S.pitchTan = tv ? Math.max(-0.6, Math.min(0.6, tv.pitchTan)) : 0;
   const vh = 0.5 + PITCH_SIGN*S.pitchTan/(2*S.tanV);
-  S.picks=[]; S.labels=[]; S.faces=[]; S.facesFound=false; S.faceMask=null;
+  S.picks=[]; S.labels=[]; S.faces=[]; S.facesFound=false; S.faceMask=null; S.mLines=[]; S.mPts=[]; S.mScale=null; S.mCorr=1; S.hzV=null;
   // Find people and things before looking for floors: a close-up body is a big surface facing the
   // camera, and without this it could be fitted as a "floor" and wiped out along with everything behind it.
   let found = null;
@@ -701,7 +703,7 @@ function frame(){
   if (gl && G){
     if (S.dirtyBuild && !S.recording) build();
     if (S.spin && !S.recording){ S.yaw+=0.25; S.dirtyDraw=true; viewButton(); }
-    if (S.dirtyDraw && !S.recording){ S.dirtyDraw=false; draw(); renderLabels(); renderPins(); }
+    if (S.dirtyDraw && !S.recording){ S.dirtyDraw=false; draw(); renderLabels(); renderPins(); renderMeasures(); }
   }
   requestAnimationFrame(frame);
 }
