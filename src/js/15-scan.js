@@ -147,6 +147,7 @@ async function openScan(file){
 }
 // A parsed scan (from a file, or made from a video) is levelled, framed and shown.
 async function finishScan(sc, name, g, credit){
+  store('welcomed', true);
   if (sc.n < 100) throw new Error('only '+sc.n+' usable points in this file');
   busy('Levelling the scan', null); await tick(); if (g!==S.gen) return;
   const L = levelScan(sc);

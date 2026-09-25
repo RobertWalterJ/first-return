@@ -100,7 +100,11 @@ function renderTray(){
   const undoBtn = `<button class="chip" id="undoBtn" ${S.undo.length?'':'disabled'}>Undo</button>`;
   if (S.tab==='look'){
     const mine = myLooks(), custom = isCustom();
-    tr.innerHTML = `<h3>Look ${custom?'<span class="chip" style="padding:3px 8px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent);border-color:var(--accent)">Changed</span>':''}<span class="sp"></span><button class="chip small" id="resetLook" ${custom?'':'disabled'}>Reset look</button>${undoBtn.replace('class="chip"','class="chip small"')}</h3>
+    const wText = 'Start here. One: open a photo, or make a live scan. Two: pick a look below. Three: use Move to make a video, and Save to keep it.';
+    const welcome = recall('welcomed') ? '' : `<div class="welcome"><h3 style="margin:0 0 8px">Start here<span class="sp">${sayBtn(wText)}</span></h3>
+      <ol class="msteps"><li class="now"><span>Open a photo, or make a live scan.</span></li><li><span>Pick a look below.</span></li><li><span>Use Move to make a video, and Save to keep it.</span></li></ol>
+      <div class="row"><button class="btn primary" id="wPhoto">Open a photo</button><button class="btn" id="wLive">Live scan</button><button class="chip" id="wDone">Got it</button></div></div>`;
+    tr.innerHTML = `${welcome}<h3>Look ${custom?'<span class="chip" style="padding:3px 8px;font-size:11px;letter-spacing:0;text-transform:none;color:var(--accent);border-color:var(--accent)">Changed</span>':''}<span class="sp"></span><button class="chip small" id="resetLook" ${custom?'':'disabled'}>Reset look</button>${undoBtn.replace('class="chip"','class="chip small"')}</h3>
       ${[['Dots', k=>!LOOKS[k].splat && !LOOKS[k].pack], ['Styles', k=>LOOKS[k].pack], ['Photo', k=>LOOKS[k].splat]].map(([title, test])=>{ const ks=Object.keys(LOOKS).filter(k=>test(k) && lookAvailable(k)); return ks.length ? `<p class="rowlabel">${title}</p><div class="looks">${ks.map(k=>`<button class="look" data-look="${k}" aria-pressed="${k===look && !S.activeMine}"><canvas id="thumb-${k}" width="208" height="156"></canvas><b>${LOOKS[k].name}</b></button>`).join('')}</div>` : ''; }).join('')}
       <p class="hint">${sayBtn(LOOK_HINT[look]||'')}<span>${LOOK_HINT[look]||''}</span></p>
       ${(LOOKS[look].splat && !LOOKS[look].mix) || S.scan ? '' : `<h3 style="margin-top:12px">Dot pattern</h3>
@@ -110,6 +114,7 @@ function renderTray(){
         ${S.savingLook ? `<div class="row" style="margin-top:8px"><input id="lookName" class="nameinput" value="My look ${mine.length+1}" aria-label="Name for this look" maxlength="40"><button class="btn primary" id="saveLookOk">Save</button><button class="btn" id="saveLookNo">Cancel</button></div>`
           : `<div class="row" style="margin-top:8px"><button class="chip" id="saveLook">Save this look</button><button class="chip" id="shareLooks" ${mine.length?'':'disabled'}>Share looks</button><button class="chip" id="loadLooks">Load looks</button>${S.lastRemoved?`<button class="chip" id="bringBack">Bring back ${esc(S.lastRemoved.m.name)}</button>`:''}</div>`}
       </div>`;
+    if ($('#wPhoto')){ $('#wPhoto').addEventListener('click',()=>$('#file').click()); $('#wLive').addEventListener('click',()=>openLiveScan()); $('#wDone').addEventListener('click',()=>{ store('welcomed', true); renderTray(); }); }
     tr.querySelectorAll('[data-look]').forEach(b=>b.addEventListener('click',()=>applyLook(b.dataset.look)));
     tr.querySelectorAll('[data-mine]').forEach(b=>b.addEventListener('click',()=>applyMine(b.dataset.mine)));
     tr.querySelectorAll('[data-pat]').forEach(b=>b.addEventListener('click',()=>{ if (P.pattern===b.dataset.pat) return; pushUndo(); P.pattern=b.dataset.pat; S.dirtyBuild=true; commit(); }));
@@ -166,9 +171,9 @@ function renderTray(){
     tr.innerHTML = `<p class="hint" style="margin:0 0 10px">${sayBtn(sHint)}<span>${sHint}</span></p>
       <div class="row" style="margin-bottom:10px"><button class="btn primary" id="findThings">Find people and things</button></div>
       ${S.picks.length ? `<div class="scroller" style="margin-bottom:8px">${S.picks.map((p,i)=>`<button class="chip" data-unpick="${i}" aria-label="Remove ${esc(pickName(p,i))}">${esc(pickName(p,i))} &#x2715;</button>`).join('')}</div>` : ''}
-      <div class="scroller"><button class="chip" id="autoSub" aria-pressed="${!S.picks.length}">Nearest things</button>
-      ${['Tighter','Normal','Looser'].map((n,i)=>`<button class="chip" data-band="${i}" aria-pressed="${S.band===i}">${n}</button>`).join('')}
-      <button class="chip" id="sharp" aria-pressed="${outlined}">Sharper outline</button>${undoBtn}</div>
+      <p class="rowlabel">How much a tap takes in</p>
+      <div class="row">${['Tighter','Normal','Looser'].map((n,i)=>`<button class="chip" data-band="${i}" aria-pressed="${S.band===i}">${n}</button>`).join('')}</div>
+      <div class="row" style="margin-top:10px"><button class="chip" id="autoSub" aria-pressed="${!S.picks.length}">Nearest things</button><button class="chip" id="sharp" aria-pressed="${outlined}">Sharper outline</button>${undoBtn}</div>
       <p class="hint">${sayBtn(sHint2)}<span>${sHint2}</span></p>`;
     $('#autoSub').addEventListener('click',()=>{ pushUndo(); S.picks=[]; S.dirtyBuild=true; S.reframe=true; commit(); banner(modeText()); });
     tr.querySelectorAll('[data-unpick]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); S.picks.splice(+b.dataset.unpick,1); S.dirtyBuild=true; S.reframe=true; commit(); banner(modeText()); }));
@@ -192,10 +197,10 @@ function renderTray(){
     const moveHint = fx[2]+' The move starts from the view on screen.';
     tr.innerHTML = `<h3>Move</h3><div class="scroller">${MOVE_NAMES.map(([v,n])=>`<button class="chip" data-move="${v}" aria-pressed="${mv===v}">${n}</button>`).join('')}</div>
       <h3 style="margin-top:10px">Effect</h3><div class="scroller">${fxs.map(([v,n])=>`<button class="chip" data-fx="${v}" aria-pressed="${fx[0]===v}">${n}</button>`).join('')}</div>
-      <h3 style="margin-top:10px">Strength</h3>
-      <div class="scroller">${STRENGTH.map(([v,n])=>`<button class="chip" data-strength="${v}" aria-pressed="${st===v}">${n}</button>`).join('')}</div>
+      <p class="rowlabel">Strength, length and loop</p>
+      <div class="row">${STRENGTH.map(([v,n])=>`<button class="chip" data-strength="${v}" aria-pressed="${st===v}">${n}</button>`).join('')}<button class="chip" id="lenChip" aria-label="Length ${len} seconds, tap to change">${len} s</button><button class="chip" id="loopChip" aria-pressed="${!!S.loop}">Loop</button></div>
       <p class="hint">${sayBtn(moveHint)}<span>${moveHint}</span></p>
-      <div class="sect row"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button><button class="chip" id="lenChip" aria-label="Length ${len} seconds, tap to change">Length ${len} s</button><button class="chip" id="loopChip" aria-pressed="${!!S.loop}">Loop</button></div>`;
+      <div class="actbar"><button class="btn" id="playMove">Play</button><button class="btn rec" id="recMove">Record video</button></div>`;
     // a tapped chip plays the opening of the real move at its real speed
     // a new tap cuts off the look still playing, so trying options never means waiting
     const peek = async () => { if (S.peeking){ S.stopReq=true; await S.playP; } S.playP = previewMove(S.move||'push', S.moveLen||6, Math.min(1, 4/(S.moveLen||6)), true); };
@@ -228,7 +233,9 @@ function renderTray(){
     S.labels.forEach((L,i)=>{ $('#label-'+i).addEventListener('input',e=>{ L.text=e.target.value; S.dirtyDraw=true; }); });
     tr.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click',()=>{ S.labels.splice(+b.dataset.del,1); renderTray(); S.dirtyDraw=true; }));
   }
-  tr.querySelectorAll('.scroller [aria-pressed="true"], .looks [aria-pressed="true"]').forEach(b=>{ const sc=b.parentElement; sc.scrollLeft = b.offsetLeft - sc.clientWidth/2 + b.offsetWidth/2; });
+  tr.querySelectorAll('.scroller, .looks').forEach(sc=>{ const b=sc.querySelector('[aria-pressed="true"]'); if (!b) return;
+    const r=b.getBoundingClientRect(), s=sc.getBoundingClientRect();
+    if (r.left < s.left) sc.scrollLeft -= s.left - r.left + 16; else if (r.right > s.right) sc.scrollLeft += r.right - s.right + 16; });
   const u=$('#undoBtn'); if (u) u.addEventListener('click', undo);
   tr.querySelectorAll('[data-say]').forEach(b=>b.addEventListener('click',()=>say(b.dataset.say)));
 }
@@ -311,7 +318,7 @@ function markStops(c){ document.querySelectorAll('[data-stop]').forEach(b=>(!b.d
 
 // ---------------------------------------------------------------- look thumbnails, drawn from your own photo
 let thumbsFor = null, thumbJob = 0;
-function queueThumbs(){ thumbsFor = null; const job=++thumbJob; setTimeout(()=>makeThumbs(job), 400); }
+function queueThumbs(){ thumbsFor = null; thumbsPart = null; const job=++thumbJob; setTimeout(()=>makeThumbs(job), 400); }
 function makeThumbs(job){
   if (job!==thumbJob) return;
   if (S.recording){ setTimeout(()=>makeThumbs(job), 500); return; }     // re-sorting splats mid-move would flicker
@@ -330,14 +337,19 @@ function makeThumbs(job){
         glow:val2('glow',L.glow), edges:val2('edges',L.edges), light:val('light'), yaw:L.yaw, pitch:L.pitch, zoom:Math.max(1, L.zoom*0.78), thumb:true, sync:true, dof:val2('focus',L.focus||0), targetKey:'thumb'});
       if (G.splat) G.splat.sortedFor = null;       // the main view needs its own order again
       const c=document.createElement('canvas'); c.width=tw; c.height=th; c.getContext('2d').drawImage(cv, 0, cv.height-th, tw, th, 0, 0, tw, th);
-      out[k]=c; S.dirtyDraw=true;
+      out[k]=c; S.dirtyDraw=true; thumbsPart=out; const el=$('#thumb-'+k); if (el) el.getContext('2d').drawImage(c,0,0);
     }
     setTimeout(()=>next(i+1), 30);
   };
   next(0);
 }
 function val2(key, pos){ const c=CTRL[key], p=Math.max(0,Math.min(c.stops.length-1,pos)), i=Math.min(c.stops.length-2,Math.floor(p)), f=p-i; return c.stops[i][1]*(1-f)+c.stops[i+1][1]*f; }
-function paintThumbs(){ if (!thumbsFor) return; for (const k in thumbsFor){ const el=$('#thumb-'+k); if (el) el.getContext('2d').drawImage(thumbsFor[k],0,0); } }
+let thumbsPart = null;
+function paintThumbs(){ const have = thumbsFor || thumbsPart || {}, ph = S.photoCanvas;
+  document.querySelectorAll('canvas[id^="thumb-"]').forEach(el=>{ const t=have[el.id.slice(6)], x=el.getContext('2d');
+    if (t){ x.drawImage(t,0,0); return; }
+    x.fillStyle='#0b0d0f'; x.fillRect(0,0,el.width,el.height);
+    if (ph && !S.scan){ const s=Math.max(el.width/ph.width, el.height/ph.height); x.globalAlpha=0.3; x.drawImage(ph, (el.width-ph.width*s)/2, (el.height-ph.height*s)/2, ph.width*s, ph.height*s); x.globalAlpha=1; } }); }
 
 // ---------------------------------------------------------------- picture: layout, labels, pins
 function layout(){
@@ -629,7 +641,7 @@ async function setPhoto(ph, D, credit, restore){
   if (S.colourBeforeScan){ P.colour=S.colourBeforeScan; S.colourBeforeScan=null; }
   S.photoCanvas=ph.canvas; S.photoSrc=S.photo={w:ph.w,h:ph.h,data:ph.data}; S.tanV=S.tanVAuto=ph.fov.tanV; S.fovSource=ph.fov.src; S.credit=credit||'';
   Object.assign(S.adv, {fov:null, ratio:null, roll:null, beams:null}); S.fillCache=null; S.dbg='result'; showDebug();
-  S.isSample = /^Sample/.test(S.credit);
+  S.isSample = /^Sample/.test(S.credit); if (!S.isSample) store('welcomed', true);
   invalidateCompare();
   S.undo=[]; undoArmed=true; S.placing=false; S.home=null; S.refFrozen=false; S.compCache=null; S.depthVer++;
   S.panMode=false; syncPan(); banner(''); notice('');
