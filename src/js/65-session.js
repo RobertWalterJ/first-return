@@ -27,7 +27,7 @@ async function saveMedia(m){
 // What is needed to rebuild the work on top of the saved photo or scan.
 function sessionState(){
   return {v:1, media:mediaId, savedAt:Date.now(),
-    picks: S.picks.map(p=>({u:p.u, v:p.v, name:p.name, box:p.box, seg:p.seg||null})), band:S.band, sharp:!!S.sharp,
+    picks: S.picks.map(p=>({u:p.u, v:p.v, name:p.name, box:p.box, seg:p.seg||null})), band:S.band, sharp:!!S.sharp, wholeScene:!!S.wholeScene,
     labels: S.labels.map(L=>({u:L.u, v:L.v, lift:L.lift, fixed:L.fixed, text:L.text})),
     faces: S.faces.map(f=>({...f})), facesFound:S.facesFound, anon:S.anon, anonLevel:S.anonLevel,
     view: {yaw:S.yaw, pitch:S.pitch, zoom:S.zoom, pan:S.pan.slice(), pivot:S.pivot.slice(), home:S.home, userMoved:S.userMoved, refDist:S.refDist},
@@ -54,7 +54,7 @@ async function restoreSession(){
       const x = c.getContext('2d', {willReadFrequently:true}); x.drawImage(bmp, 0, 0);
       const ph = {canvas:c, w:c.width, h:c.height, data:x.getImageData(0,0,c.width,c.height).data, fov:m.fov, url:URL.createObjectURL(m.blob)};
       const anon = ok && ok.anon; S.anon = false;               // faces come back from the saved list, not a new search
-      await setPhoto(ph, m.depth, m.credit, {picks: ok ? ok.picks.map(p=>({...p, seg:p.seg||undefined})) : []});
+      await setPhoto(ph, m.depth, m.credit, {picks: ok ? ok.picks.map(p=>({...p, seg:p.seg||undefined})) : [], wholeScene: ok ? ok.wholeScene : undefined});
       if (g!==S.gen) return true;
       if (ok){
         S.band = ok.band; S.sharp = ok.sharp;

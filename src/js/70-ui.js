@@ -11,12 +11,12 @@ const esc = s => String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&
 
 // ---------------------------------------------------------------- undo
 let undoArmed = true;
-function snapshot(){ return {P:{...P}, look, activeMine:S.activeMine, picks:S.picks.map(p=>({...p})), band:S.band, shape:S.shape, level:S.level}; }
+function snapshot(){ return {P:{...P}, look, activeMine:S.activeMine, picks:S.picks.map(p=>({...p})), band:S.band, shape:S.shape, level:S.level, wholeScene:!!S.wholeScene}; }
 function pushUndo(){ if (!undoArmed) return; S.undo.push(snapshot()); if (S.undo.length>40) S.undo.shift(); undoArmed=false; }
 function commit(){ undoArmed = true; persist(); renderTray(); }
 function undo(){
   const s = S.undo.pop(); if (!s) return;
-  Object.assign(P, s.P); look=s.look; S.activeMine=s.activeMine||null; S.picks=s.picks; S.band=s.band;
+  Object.assign(P, s.P); look=s.look; S.activeMine=s.activeMine||null; S.picks=s.picks; S.band=s.band; S.wholeScene=!!s.wholeScene;
   if (s.shape!==S.shape){ S.shape=s.shape; layout(); }
   if (s.level!==S.level){ S.level=s.level; S.roll = S.level ? S.rollAuto : 0; }
   S.dirtyBuild=true; undoArmed=true; persist(); renderTray(); banner(modeText());
@@ -166,22 +166,24 @@ function renderTray(){
   }
   else if (S.tab==='subject'){
     const outlined = S.sharp || S.picks.some(p=>p.seg);
-    const sHint = LOOKS[look].splat && !LOOKS[look].mix ? 'In Photoreal the subject shows only while this tab is open. It shapes Real subject and Real setting, and every dot look.' : 'Tap Find, or tap the thing that matters. It becomes the subject even if something else is nearer.';
+    const sHint = S.wholeScene ? 'The whole scene is the subject, as this looks like a landscape. Tap something in the picture, or Find, to make one thing the subject instead.'
+      : LOOKS[look].splat && !LOOKS[look].mix ? 'In Photoreal the subject shows only while this tab is open. It shapes Real subject and Real setting, and every dot look.' : 'Tap Find, or tap the thing that matters. It becomes the subject even if something else is nearer.';
     const sHint2 = outlined ? 'Outlines come from an outline finder, part of the 23 MB finder download.' : 'Tighter keeps only what sits at the same depth as your tap. Looser takes in more.';
     tr.innerHTML = `<p class="hint" style="margin:0 0 10px">${sayBtn(sHint)}<span>${sHint}</span></p>
       <div class="row" style="margin-bottom:10px"><button class="btn primary" id="findThings">Find people and things</button></div>
       ${S.picks.length ? `<div class="scroller" style="margin-bottom:8px">${S.picks.map((p,i)=>`<button class="chip" data-unpick="${i}" aria-label="Remove ${esc(pickName(p,i))}">${esc(pickName(p,i))} &#x2715;</button>`).join('')}</div>` : ''}
       <p class="rowlabel">How much a tap takes in</p>
       <div class="row">${['Tighter','Normal','Looser'].map((n,i)=>`<button class="chip" data-band="${i}" aria-pressed="${S.band===i}">${n}</button>`).join('')}</div>
-      <div class="row" style="margin-top:10px"><button class="chip" id="autoSub" aria-pressed="${!S.picks.length}">Nearest things</button><button class="chip" id="sharp" aria-pressed="${outlined}">Sharper outline</button>${undoBtn}</div>
+      <div class="row" style="margin-top:10px"><button class="chip" id="wholeSub" aria-pressed="${!!S.wholeScene}">Whole scene</button><button class="chip" id="autoSub" aria-pressed="${!S.picks.length && !S.wholeScene}">Nearest things</button><button class="chip" id="sharp" aria-pressed="${outlined}">Sharper outline</button>${undoBtn}</div>
       <p class="hint">${sayBtn(sHint2)}<span>${sHint2}</span></p>`;
-    $('#autoSub').addEventListener('click',()=>{ pushUndo(); S.picks=[]; S.dirtyBuild=true; S.reframe=true; commit(); banner(modeText()); });
+    $('#autoSub').addEventListener('click',()=>{ pushUndo(); S.picks=[]; S.wholeScene=false; S.wholeSceneUser=true; S.dirtyBuild=true; S.reframe=true; commit(); banner(modeText()); });
+    $('#wholeSub').addEventListener('click',()=>{ pushUndo(); S.wholeScene=!S.wholeScene; S.wholeSceneUser=true; S.dirtyBuild=true; S.reframe=true; commit(); banner(modeText()); });
     tr.querySelectorAll('[data-unpick]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); S.picks.splice(+b.dataset.unpick,1); S.dirtyBuild=true; S.reframe=true; commit(); banner(modeText()); }));
     $('#findThings').addEventListener('click', async ()=>{
       const g=S.gen, picks = await findThings(); if (g!==S.gen) return;
       if (picks===null){ notice('The finder could not start here. Tap what matters instead.'); return; }
       if (!picks.length){ notice('Nothing found. Tap what matters instead.'); return; }
-      pushUndo(); S.picks = picks; protectFound(picks); S.dirtyBuild = true; S.reframe=true; commit();
+      pushUndo(); S.picks = picks; S.wholeScene=false; S.wholeSceneUser=true; protectFound(picks); S.dirtyBuild = true; S.reframe=true; commit();
       notice('Found '+describePicks(picks)+'.');
     });
     tr.querySelectorAll('[data-band]').forEach(b=>b.addEventListener('click',()=>{ pushUndo(); S.band=+b.dataset.band; S.dirtyBuild=true; commit(); }));
@@ -425,7 +427,7 @@ async function onTap(cx, cy){
       const hitP=pickPoint(cx,cy); if (!hitP){ if (pushed) S.undo.pop(); undoArmed=true; return; }
       const u=hitP.u, v=hitP.v;
       const pick={u,v}; if (S.sharp){ pick.seg = await outlineFor(u,v); if (g!==S.gen) return; }
-      S.picks.push(pick); if (S.picks.length>5){ S.picks.shift(); notice('Up to five at once, so the first one was let go.'); }
+      S.wholeScene=false; S.wholeSceneUser=true; S.picks.push(pick); if (S.picks.length>5){ S.picks.shift(); notice('Up to five at once, so the first one was let go.'); }
     }
     S.dirtyBuild=true; S.reframe=true; commit(); banner(modeText()); return;
   }
@@ -654,6 +656,7 @@ async function setPhoto(ph, D, credit, restore){
   S.pitchTan = tv ? Math.max(-0.6, Math.min(0.6, tv.pitchTan)) : 0;
   const vh = 0.5 + PITCH_SIGN*S.pitchTan/(2*S.tanV);
   S.picks=[]; S.labels=[]; S.faces=[]; S.facesFound=false; S.faceMask=null; S.mLines=[]; S.mPts=[]; S.mScale=null; S.mCorr=1; S.hzV=null;
+  S.wholeScene = !!(restore && restore.wholeScene); S.wholeSceneUser = !!(restore && restore.wholeScene!=null); S.sceneryKey = null;
   // Find people and things before looking for floors: a close-up body is a big surface facing the
   // camera, and without this it could be fitted as a "floor" and wiped out along with everything behind it.
   let found = null;

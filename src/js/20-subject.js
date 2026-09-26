@@ -74,10 +74,12 @@ function growFrom(pick, id, map){
 }
 function subjectMap(){
   // cached: the subject only depends on the depth, the picks and the band, not on the look
-  const key = S.depthVer+'|'+S.band+'|'+S.autoCut+'|'+S.picks.map(p=>p.u.toFixed(4)+','+p.v.toFixed(4)+(p.seg?'s':'')+(p.box?p.box.join(','):'')).join(';');
+  const key = (S.wholeScene ? 'whole|' : '')+S.depthVer+'|'+S.band+'|'+S.autoCut+'|'+S.picks.map(p=>p.u.toFixed(4)+','+p.v.toFixed(4)+(p.seg?'s':'')+(p.box?p.box.join(','):'')).join(';');
   if (S.compCache && S.compCache.key===key) return S.compCache.map;
   let map;
-  if (!S.picks.length) map = autoComponents();
+  // Whole scene: a landscape has no one subject, so everything but the sky gets the subject's full dots
+  if (S.wholeScene){ map = new Int32Array(S.depth.w*S.depth.h); for (let i=0;i<map.length;i++) map[i] = S.sky && S.sky[i] ? -1 : 0; }
+  else if (!S.picks.length) map = autoComponents();
   else {
     map = new Int32Array(S.depth.w*S.depth.h).fill(-1); let area=0;
     S.picks.forEach((p,i)=>{ area += growFrom(p, i, map); });
@@ -86,6 +88,17 @@ function subjectMap(){
   }
   S.compCache = {key, map};
   return map;
+}
+
+// Scenery: a fair amount of sky, and no found subject, or one that fills only a sliver of the picture
+// (a rower on a wide lake, a walker on a hill). Then the scene itself is what the picture is of.
+function looksLikeScenery(){
+  if (S.scan || !S.sky || !S.depth) return false;
+  const n=S.sky.length; let sky=0; for (let i=0;i<n;i+=4) if (S.sky[i]) sky++; sky = sky*4/n;
+  if (sky < 0.12) return false;
+  if (!S.picks.length) return true;
+  const m = new Int32Array(n).fill(-1); let area=0; S.picks.forEach((p,i)=>{ area += growFrom(p, i, m); });
+  return area/n < 0.06;
 }
 
 // ---------------------------------------------------------------- optional sharper outline (MediaPipe Magic Touch)

@@ -219,6 +219,9 @@ function build(){
   SHIFT = curShift();
   S.skyR = S.sky ? skyRadius(S.depth, S.sky) : 0;
   S.compMap = subjectMap();
+  // a landscape gets Whole scene by itself (checked again when the found things change), unless you chose
+  if (!S.wholeSceneUser){ const sk = S.depthVer+'|'+S.picks.length;
+    if (S.sceneryKey !== sk){ S.sceneryKey = sk; const w = looksLikeScenery(); if (w !== !!S.wholeScene){ S.wholeScene = w; S.compMap = subjectMap(); } } }
   const R = buildCloud(cfgFromP({low:S.lowDetail}));
   S.cpu = R.out; S.cpuComp = R.comp; S.count = R.n; S.nComp = R.live.length; S.floor3d = R.floorPlane;
   S.comps = R.live;
