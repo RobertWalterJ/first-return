@@ -40,5 +40,5 @@ async function boot(){
       if (c0){ const Lb={u:c0.topUV[0], v:c0.topUV[1], lift:(c0.maxY-c0.minY)*0.07, text:'Standing Lincoln'}; Lb.pos=labelWorld(Lb); S.labels=[Lb]; S.dirtyDraw=true; if (S.tab==='people') renderTray(); } });
   } catch(err){ console.error(err); banner('Tap Open to choose a photo.'); }
 }
-window.__fr = {S, P, LOOKS, build, currentSplats, photoSplats, hasSplats, previewMove, recordMove, applyLook, setTab, queueThumbs, draw, findThings, tiltFromVerticals, outline:outlineFor};   // for testing from the console
+window.__fr = {S, P, LOOKS, build, decodedVideo, currentSplats, photoSplats, hasSplats, previewMove, recordMove, applyLook, setTab, queueThumbs, draw, findThings, tiltFromVerticals, outline:outlineFor};   // for testing from the console
 boot();

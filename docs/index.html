@@ -2221,39 +2221,107 @@ const d = new Float32Array(raw.d.length); for (let k=0;k<d.length;k++) d[k] = Ma
 const cc=document.createElement('canvas'); cc.width=raw.w; cc.height=raw.h; const cx=cc.getContext('2d', {willReadFrequently:true}); cx.drawImage(c, 0, 0, raw.w, raw.h);
 return {col:cx.getImageData(0,0,raw.w,raw.h).data, depth:{w:raw.w, h:raw.h, d}, feat:features(data, w, h), sharp: sharp ?? sharpness(data, w, h)};
 }
-async function scanFromVideo(file){
-const g = ++S.gen, url = URL.createObjectURL(file), vid = document.createElement('video');
+async function decodedVideo(file){
+if (!('VideoDecoder' in window) || window.__vsOpt?.noDecode) return null;
+if (!window.MP4Box) await loadScript('vendor/mp4box.all.min.js');
+const buf = await file.arrayBuffer(); buf.fileStart = 0;
+const mp4 = MP4Box.createFile();
+const info = await new Promise((res, rej)=>{ mp4.onReady = res; mp4.onError = e => rej(new Error(String(e))); mp4.appendBuffer(buf); mp4.flush(); setTimeout(()=>rej(new Error('not an MP4')), 8000); });
+const tr = info.videoTracks && info.videoTracks[0]; if (!tr) return null;
+const trak = mp4.getTrackById(tr.id); let description;
+for (const e of trak.mdia.minf.stbl.stsd.entries){ const box = e.avcC || e.hvcC || e.vpcC || e.av1C;
+if (box){ const s = new DataStream(undefined, 0, DataStream.BIG_ENDIAN); box.write(s); description = new Uint8Array(s.buffer, 8); break; } }
+const config = {codec: tr.codec, codedWidth: tr.video.width, codedHeight: tr.video.height, description, optimizeForLatency: false};
+const sup = await VideoDecoder.isConfigSupported(config).catch(()=>null); if (!sup || !sup.supported) return null;
+const m = tr.matrix || [65536,0,0,0,65536,0,0,0,1073741824];
+const rot = ((Math.round(Math.atan2(m[1], m[0])*180/Math.PI) % 360) + 360) % 360;
+const side = rot===90 || rot===270, dw = side ? tr.video.height : tr.video.width, dh = side ? tr.video.width : tr.video.height;
+const samples = []; mp4.onSamples = (id, user, s) => { for (const x of s) samples.push(x); };
+mp4.setExtractionOptions(tr.id, null, {nbSamples: tr.nb_samples}); mp4.start(); mp4.flush();
+if (!samples.length) return null;
+const duration = tr.duration && tr.timescale ? tr.duration/tr.timescale : samples[samples.length-1].cts/samples[0].timescale;
+return { duration, width: dw, height: dh, how: 'decoded',
+async pick(targets, spread, w, h, progress, g){
+const cand = []; targets.forEach((t, i)=>{ for (let k=-1;k<=1;k++) cand.push({t: Math.max(0.03, Math.min(duration-0.03, t + k*spread)), i}); });
+cand.sort((a,b)=>a.t-b.t);
+const best = targets.map(()=>({canvas:null, sharp:-1})), tmp = document.createElement('canvas'); tmp.width=w; tmp.height=h;
+const tx = tmp.getContext('2d', {willReadFrequently:true});
+const take = (frame, c) => { tx.save(); tx.translate(w/2, h/2); tx.rotate(rot*Math.PI/180);
+const fw = side ? h : w, fh = side ? w : h; tx.drawImage(frame, -fw/2, -fh/2, fw, fh); tx.restore();
+const s = sharpness(tx.getImageData(0,0,w,h).data, w, h), B = best[c.i];
+if (s > B.sharp){ if (!B.canvas){ B.canvas = document.createElement('canvas'); B.canvas.width=w; B.canvas.height=h; }
+B.canvas.getContext('2d').drawImage(tmp, 0, 0); B.sharp = s; } };
+let ci = 0, prev = null, err = null;
+const dec = new VideoDecoder({
+output: frame => { const t = frame.timestamp/1e6;
+while (ci < cand.length && t >= cand[ci].t){ const c = cand[ci++], usePrev = prev && Math.abs(prev.t - c.t) < Math.abs(t - c.t); take(usePrev ? prev.f : frame, c); }
+if (prev) prev.f.close(); prev = {f: frame, t}; },
+error: e => { err = e; } });
+dec.configure(config);
+const last = cand[cand.length-1].t + 0.2;
+for (let k=0; k<samples.length; k++){ const s = samples[k], t = s.cts/s.timescale;
+if (t > last && s.is_sync) break;                       // past the last moment needed
+dec.decode(new EncodedVideoChunk({type: s.is_sync ? 'key' : 'delta', timestamp: Math.round(1e6*s.cts/s.timescale), duration: Math.round(1e6*s.duration/s.timescale), data: s.data}));
+if (dec.decodeQueueSize > 12) await new Promise(r=>dec.addEventListener('dequeue', r, {once:true}));
+if (k % 30 === 0){ progress(Math.min(1, t/duration)); await tick(); if (g!==S.gen || err){ break; } } }
+await dec.flush().catch(e=>{ err = err || e; });
+while (ci < cand.length && prev) take(prev.f, cand[ci++]);
+if (prev) prev.f.close(); try { dec.close(); } catch(e){}
+if (err) throw err;
+mp4.releaseUsedSamples?.(tr.id, samples.length);
+return best; } };
+}
+async function elementVideo(file){
+const url = URL.createObjectURL(file), vid = document.createElement('video');
 vid.muted = true; vid.playsInline = true; vid.preload = 'auto'; vid.src = url;
-busy('Opening the video', null);
-let wake = null; try { wake = await navigator.wakeLock?.request('screen'); } catch(e){}     // keep the screen on while it works
-try {
 await new Promise((res, rej)=>{ vid.onloadeddata = res; vid.onerror = () => rej(new Error('this video could not be read')); setTimeout(()=>rej(new Error('this video took too long to open')), 20000); });
 if (!isFinite(vid.duration)){ vid.currentTime = 1e7; await new Promise(res=>{ vid.ondurationchange = res; vid.onseeked = res; setTimeout(res, 3000); }); vid.currentTime = 0; }
-if (!(vid.duration > 1)) throw new Error('this video is too short to scan from');
-const budget = MOBILE ? 36 : 44, dur = Math.min(vid.duration, budget/1.5), n = Math.max(6, Math.min(budget, Math.round(dur*2.5))), trimmed = vid.duration > dur + 0.5;
-const gap = (dur-0.2)/(n-1);
 const seekTo = t => new Promise(res=>{ let done=false; const fin=()=>{ if (!done){ done=true; res(); } };
 vid.onseeked = () => { if (vid.requestVideoFrameCallback) { vid.requestVideoFrameCallback(()=>fin()); setTimeout(fin, 400); } else fin(); };
 setTimeout(fin, 4000); vid.currentTime = t; });
-const LONG = 640, sc = Math.min(1, LONG/Math.max(vid.videoWidth, vid.videoHeight)), w = Math.round(vid.videoWidth*sc), h = Math.round(vid.videoHeight*sc);
+return { duration: vid.duration, width: vid.videoWidth, height: vid.videoHeight, how: 'played',
+release(){ vid.removeAttribute('src'); vid.load(); URL.revokeObjectURL(url); },
+async pick(targets, spread, w, h, progress, g){
+const cv = [0,1,2].map(()=>{ const c=document.createElement('canvas'); c.width=w; c.height=h; return c; }), out = [];
+for (let i=0;i<targets.length;i++){ progress(i/targets.length); let best=-1, bi=0;
+for (let k=0;k<3;k++){ await seekTo(Math.max(0.05, Math.min(vid.duration-0.05, targets[i] + (k-1)*spread))); if (g!==S.gen) return null;
+const x=cv[k].getContext('2d', {willReadFrequently:true}); x.drawImage(vid, 0, 0, w, h);
+let d; try { d = x.getImageData(0,0,w,h).data; }
+catch(e){ throw new Error("this phone would not let the app read the video's pictures. Try a video recorded without HDR, or with High efficiency video turned off in the camera's settings"); }
+const s=sharpness(d, w, h); if (s>best){ best=s; bi=k; } }
+const c=document.createElement('canvas'); c.width=w; c.height=h; c.getContext('2d').drawImage(cv[bi],0,0); out.push({canvas:c, sharp:best}); }
+return out; } };
+}
+async function scanFromVideo(file){
+const g = ++S.gen;
+busy('Opening the video', null);
+let wake = null; try { wake = await navigator.wakeLock?.request('screen'); } catch(e){}     // keep the screen on while it works
+let src = null;
+try {
+try { src = await decodedVideo(file); } catch(e){ console.warn('decoding the video here failed, playing it instead', e); src = null; }
+if (g!==S.gen) return;
+if (!src) src = await elementVideo(file);
+if (!(src.duration > 1)) throw new Error('this video is too short to scan from');
+const budget = MOBILE ? 36 : 44, dur = Math.min(src.duration, budget/1.5), n = Math.max(6, Math.min(budget, Math.round(dur*2.5))), trimmed = src.duration > dur + 0.5;
+const gap = (dur-0.2)/(n-1), targets = [...Array(n)].map((_, i)=>0.1 + i*gap);
+const LONG = 640, sc = Math.min(1, LONG/Math.max(src.width, src.height)), w = Math.round(src.width*sc), h = Math.round(src.height*sc);
 const TL = window.__vsOpt?.tan || 0.62;             // a phone camera's usual view
 const K = {tanX: w>=h ? TL : TL*w/h, tanY: w>=h ? TL*h/w : TL, ox:0, oy:0};
 const frames = [], st = {};
-const cv = [0,1,2].map(()=>{ const c=document.createElement('canvas'); c.width=w; c.height=h; return c; });
 const cached = window.__vsKeep && window.__vsKeep[file.name];          // testing only: reuse frames already read
 if (cached) frames.push(...cached);
-for (let i=frames.length;i<n;i++){
-busy(`Reading frame ${i+1} of ${n}: finding the sharpest moment`, i/n*0.8);
-const t0 = 0.1 + i*gap; let best=-1, bi=0;
-for (let k=0;k<3;k++){ await seekTo(Math.max(0.05, Math.min(dur-0.05, t0 + (k-1)*gap*0.3))); if (g!==S.gen) return;
-const x=cv[k].getContext('2d', {willReadFrequently:true}); x.drawImage(vid, 0, 0, w, h);
-const s=sharpness(x.getImageData(0,0,w,h).data, w, h); if (s>best){ best=s; bi=k; } }
-busy(`Reading frame ${i+1} of ${n}: depth and features`, (i+0.3)/n*0.8); await tick();
-frames.push(await frameFromCanvas(cv[bi], w, h, st, best)); if (g!==S.gen) return;
+else {
+const picked = await src.pick(targets, gap*0.3, w, h, f=>busy(`Reading the video: finding the sharpest moments`, f*0.3), g);
+if (!picked || g!==S.gen) return;
+S.vscanHow = src.how;
+for (let i=0;i<n;i++){
+busy(`Reading frame ${i+1} of ${n}: depth and features`, 0.3 + i/n*0.5); await tick();
+frames.push(await frameFromCanvas(picked[i].canvas, w, h, st, picked[i].sharp)); picked[i].canvas = null; if (g!==S.gen) return;
+}
 }
 if (window.__vsKeep) window.__vsKeep[file.name] = frames;
 await buildScanScene(frames, {g, w, h, K, name:file.name, from:'the video', note: trimmed ? ` Only the first ${Math.round(dur)} seconds were used.` : ''});
-} finally { vid.removeAttribute('src'); vid.load(); URL.revokeObjectURL(url); try { wake?.release(); } catch(e){} }
+} finally { try { src?.release?.(); } catch(e){} try { wake?.release(); } catch(e){} }
 }
 async function buildScanScene(frames, o){
 const {g, w, h, K} = o, {tanX, tanY, ox, oy} = K, n = frames.length, known = !!o.poses;
@@ -3637,7 +3705,7 @@ requestAnimationFrame(()=>{ const c0=S.comps.slice().sort((a,b)=>b.n-a.n)[0];
 if (c0){ const Lb={u:c0.topUV[0], v:c0.topUV[1], lift:(c0.maxY-c0.minY)*0.07, text:'Standing Lincoln'}; Lb.pos=labelWorld(Lb); S.labels=[Lb]; S.dirtyDraw=true; if (S.tab==='people') renderTray(); } });
 } catch(err){ console.error(err); banner('Tap Open to choose a photo.'); }
 }
-window.__fr = {S, P, LOOKS, build, currentSplats, photoSplats, hasSplats, previewMove, recordMove, applyLook, setTab, queueThumbs, draw, findThings, tiltFromVerticals, outline:outlineFor};   // for testing from the console
+window.__fr = {S, P, LOOKS, build, decodedVideo, currentSplats, photoSplats, hasSplats, previewMove, recordMove, applyLook, setTab, queueThumbs, draw, findThings, tiltFromVerticals, outline:outlineFor};   // for testing from the console
 boot();
 })();
 </script>
