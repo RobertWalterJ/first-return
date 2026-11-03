@@ -1,4 +1,5 @@
 {
+ "id": "/first-return/",
  "name": "First Return",
  "short_name": "First Return",
  "description": "Turns a photo into a lidar-style point cloud and 3D splats, on your device.",
